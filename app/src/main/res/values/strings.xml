@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Arv</string>
+
+    <string name="tab_family">Home</string>
+    <string name="tab_timeline">Timeline</string>
+    <string name="tab_tree">Tree</string>
+    <string name="tab_librarian">Librarian</string>
+    <string name="tab_record">Record</string>
+
+    <string name="record_start">Start recording</string>
+    <string name="record_stop">Stop recording</string>
+    <string name="record_pause">Pause recording</string>
+    <string name="record_resume">Resume recording</string>
+
+    <string name="recording_channel_name">Recording</string>
+    <string name="recording_channel_description">Shown while Arv is recording so the recording keeps running with the screen off.</string>
+    <string name="recording_notification_title">Recording a story</string>
+    <string name="recording_notification_text">Tap to return to Arv. The screen can turn off.</string>
+
+    <string name="permission_mic_rationale">Arv needs the microphone to record stories. Recordings stay on this phone until you choose to upload them.</string>
+</resources>

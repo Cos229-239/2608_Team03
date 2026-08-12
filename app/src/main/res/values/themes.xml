@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose owns the real theming. This exists only for the window background
+         and the pre-Compose splash frame. See ui/theme/Theme.kt. -->
+    <style name="Theme.Arv" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
