@@ -1,0 +1,1013 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arv Lo-Fi Wireframes (Android)</title>
+<style>
+  :root{
+    --ink:#111;
+    --line:#111;
+    --mid:#8a8a8a;
+    --fill:#e6e6e6;
+    --fill2:#f2f2f2;
+    --page:#ffffff;
+    --frame-w:360px;
+    --frame-h:800px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:#cfcfcf;
+    font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink);
+    padding:48px 32px 96px;
+  }
+  .sheet-head{max-width:1400px;margin:0 auto 40px}
+  .sheet-head h1{font-size:28px;letter-spacing:-.02em}
+  .sheet-head p{font-size:14px;color:#333;margin-top:8px;max-width:70ch;line-height:1.5}
+  .sheet-head .meta{font-size:12px;color:#444;margin-top:12px}
+
+  .grid{
+    display:flex;flex-wrap:wrap;gap:56px 40px;
+    max-width:1400px;margin:0 auto;
+    align-items:flex-start;
+  }
+  .frame-wrap{width:var(--frame-w)}
+  .frame-label{
+    font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+    margin-bottom:8px;color:#222;
+  }
+  .frame-note{font-size:11px;color:#444;margin-top:8px;line-height:1.45}
+
+  .frame{
+    width:var(--frame-w);height:var(--frame-h);
+    background:var(--page);
+    border:1.5px solid var(--line);
+    display:flex;flex-direction:column;
+    overflow:hidden;position:relative;
+  }
+
+  /* --- chrome --- */
+  .statusbar{
+    height:24px;flex:0 0 24px;border-bottom:1px solid var(--mid);
+    display:flex;align-items:center;justify-content:space-between;
+    padding:0 12px;font-size:10px;color:var(--mid);
+  }
+  .appbar{
+    flex:0 0 56px;border-bottom:1.5px solid var(--line);
+    display:flex;align-items:center;gap:12px;padding:0 14px;
+  }
+  .appbar .title{font-size:16px;font-weight:600;flex:1}
+  .icon{
+    width:24px;height:24px;border:1.5px solid var(--line);border-radius:4px;
+    flex:0 0 24px;display:flex;align-items:center;justify-content:center;
+    font-size:10px;color:var(--mid);
+  }
+  .icon.round{border-radius:50%}
+  .body{flex:1;overflow:hidden;padding:14px;display:flex;flex-direction:column;gap:12px}
+  .body.tight{gap:8px}
+  .body.flush{padding:0}
+  .navbar{
+    flex:0 0 60px;border-top:1.5px solid var(--line);
+    display:flex;align-items:center;justify-content:space-around;padding:0 6px;
+  }
+  .navitem{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:9px;color:var(--mid);width:56px}
+  .navitem .icon{width:22px;height:22px;flex:0 0 22px}
+  .navitem.active{color:var(--ink);font-weight:700}
+  .navitem.active .icon{background:var(--fill)}
+
+  /* --- primitives --- */
+  .box{border:1.5px solid var(--line);background:var(--page)}
+  .card{border:1.5px solid var(--line);padding:10px;display:flex;flex-direction:column;gap:8px}
+  .row{display:flex;gap:10px;align-items:center}
+  .col{display:flex;flex-direction:column;gap:6px}
+  .grow{flex:1;min-width:0}
+  .thumb{width:56px;height:56px;flex:0 0 56px;border:1.5px solid var(--line);background:var(--fill);
+    display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--mid)}
+  .thumb.wide{width:100%;height:96px;flex:none}
+  .thumb.tall{width:100%;height:150px;flex:none}
+  .avatar{width:36px;height:36px;flex:0 0 36px;border:1.5px solid var(--line);border-radius:50%;
+    background:var(--fill);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--mid)}
+  .avatar.lg{width:72px;height:72px;flex:0 0 72px;font-size:12px}
+  .h1{font-size:20px;font-weight:700;letter-spacing:-.01em;line-height:1.25}
+  .h2{font-size:15px;font-weight:600;line-height:1.3}
+  .h3{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#333}
+  .p{font-size:11.5px;line-height:1.5;color:#333}
+  .p.sm{font-size:10.5px;color:#555}
+  .btn{
+    border:1.5px solid var(--line);height:44px;display:flex;align-items:center;justify-content:center;
+    font-size:13px;font-weight:600;text-align:center;padding:0 12px;
+  }
+  .btn.fill{background:var(--ink);color:#fff}
+  .btn.sm{height:34px;font-size:11px;padding:0 12px}
+  .chip{
+    border:1.5px solid var(--line);border-radius:999px;height:26px;padding:0 10px;
+    display:inline-flex;align-items:center;font-size:10.5px;white-space:nowrap;
+  }
+  .chip.on{background:var(--ink);color:#fff}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .field{border:1.5px solid var(--line);height:44px;display:flex;align-items:center;padding:0 12px;font-size:12px;color:var(--mid)}
+  .field.area{height:auto;min-height:88px;align-items:flex-start;padding:12px}
+  .divider{height:1px;background:var(--mid);margin:2px 0}
+  .list{display:flex;flex-direction:column}
+  .list-row{display:flex;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid var(--mid)}
+  .list-row:last-child{border-bottom:none}
+  .fab{
+    position:absolute;right:16px;bottom:76px;width:60px;height:60px;border-radius:50%;
+    border:1.5px solid var(--line);background:var(--ink);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;text-align:center;line-height:1.1;
+  }
+  .badge{border:1.5px solid var(--line);border-radius:3px;font-size:9px;padding:2px 5px;white-space:nowrap}
+  .badge.dark{background:var(--ink);color:#fff}
+  .bar{height:8px;border:1.5px solid var(--line);background:var(--page);position:relative}
+  .bar > i{position:absolute;left:0;top:0;bottom:0;background:var(--ink);display:block}
+  .skel{height:9px;background:var(--fill);display:block}
+  .skel.w80{width:80%}.skel.w60{width:60%}.skel.w40{width:40%}
+  .center{display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px}
+  .spacer{flex:1}
+
+  /* waveform */
+  .wave{display:flex;align-items:center;gap:2px;height:72px;border:1.5px solid var(--line);padding:0 8px}
+  .wave i{flex:1;background:var(--ink);display:block;min-width:2px}
+
+  /* timeline */
+  .tl{display:flex;flex-direction:column;position:relative;padding-left:26px}
+  .tl:before{content:"";position:absolute;left:8px;top:6px;bottom:6px;width:1.5px;background:var(--line)}
+  .tl-node{position:relative;padding:0 0 16px}
+  .tl-node:before{content:"";position:absolute;left:-22px;top:5px;width:11px;height:11px;border:1.5px solid var(--line);border-radius:50%;background:#fff}
+  .tl-node.filled:before{background:var(--ink)}
+
+  /* transcript */
+  .tr-line{display:flex;gap:8px;padding:7px 0;border-bottom:1px solid #ddd}
+  .tr-time{font-size:9.5px;color:var(--mid);flex:0 0 34px;padding-top:1px}
+  .tr-text{font-size:11px;line-height:1.5;flex:1}
+  .hl{background:var(--fill);border-bottom:1.5px solid var(--ink)}
+
+  .modal-scrim{position:absolute;inset:0;background:rgba(17,17,17,.35)}
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:#fff;border-top:1.5px solid var(--line);padding:16px 14px 20px;display:flex;flex-direction:column;gap:12px}
+  .grabber{width:44px;height:4px;background:var(--mid);border-radius:2px;align-self:center}
+
+  .legend{max-width:1400px;margin:0 auto 40px;background:#fff;border:1.5px solid var(--line);padding:18px 20px}
+  .legend h2{font-size:14px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
+  .legend ul{margin-left:18px;font-size:12.5px;line-height:1.7}
+  .legend .owner{display:inline-block;border:1.5px solid var(--line);padding:1px 6px;font-size:10px;margin-right:6px;font-weight:700}
+</style>
+</head>
+<body>
+
+<div class="sheet-head">
+  <h1>Arv Lo-Fi Wireframes</h1>
+  <p>A private family network and living memory archive. Stay connected today, build the shared family story together, and preserve the voices of the people you are going to lose. Native Android, portrait, 360 × 800 dp frames. Grayscale on purpose: this pass is about structure, hierarchy, and flow, not color or brand.</p>
+  <p><strong>22 screens.</strong> 01 to 16 are the month-one build. 17 to 22 cover the family network, the permission model, the librarians, and the Memory Garden that the roadmap ends in.</p>
+  <div class="meta">COS229 Project &amp; Portfolio II · Milestone 01 · <strong>People rarely lose someone all at once. They lose the stories first.</strong></div>
+</div>
+
+<div class="legend">
+  <h2>Which teammate owns which screens</h2>
+  <ul>
+    <li><span class="owner">CAPTURE</span> Audio and photo recording, media management, playback → 04, 05, 06, 07, 15</li>
+    <li><span class="owner">BACKEND</span> Firebase, storage, sync, roles, the permission model → 02, 13, 14, 15, 16, 20</li>
+    <li><span class="owner">AI</span> Transcription, search, prompts, the two librarians → 07, 08, 10, 12, 21</li>
+    <li><span class="owner">UI</span> Timeline, feed, family tree, profiles, shell → 01, 03, 09, 11, 17, 18, 19</li>
+  </ul>
+  <ul style="margin-top:10px">
+    <li><strong>Phase 4, after this term:</strong> 22, the Memory Garden. Same archive, different door.</li>
+  </ul>
+</div>
+
+<div class="grid">
+
+<!-- 01 ONBOARDING -->
+<div class="frame-wrap">
+  <div class="frame-label">01 · Onboarding / Value</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="body">
+      <div class="spacer"></div>
+      <div class="center">
+        <div class="thumb" style="width:96px;height:96px;flex:none">LOGO</div>
+        <div class="h1">Some things only exist<br>in someone's voice.</div>
+        <div class="p">Record the stories, songs, recipes, and languages your family carries. Arv transcribes them, organizes them, and keeps them safe for the people who come after.</div>
+        <div class="p sm">Family means whoever held you. Blood, chosen, found, or built. Arv does not check.</div>
+      </div>
+      <div class="spacer"></div>
+      <div class="row" style="justify-content:center;gap:6px">
+        <div style="width:22px;height:6px;background:var(--ink)"></div>
+        <div style="width:6px;height:6px;background:var(--fill);border:1px solid var(--mid)"></div>
+        <div style="width:6px;height:6px;background:var(--fill);border:1px solid var(--mid)"></div>
+      </div>
+      <div class="btn fill">Start an archive</div>
+      <div class="btn">I have an invite code</div>
+      <div class="p sm" style="text-align:center">Your recordings are private to your family by default.</div>
+    </div>
+  </div>
+  <div class="frame-note">Three-panel carousel. Panel 2 = "AI writes it down for you." Panel 3 = "You decide who sees it, forever."</div>
+</div>
+
+<!-- 02 JOIN CIRCLE -->
+<div class="frame-wrap">
+  <div class="frame-label">02 · Join your family</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="icon">←</div><div class="title">Join your family</div></div>
+    <div class="body">
+      <div class="p">A <strong>family</strong> is whoever you say it is: the one you were born into, the one you chose, a congregation, a tribal council, a neighborhood that raised each other. Arv never asks how you are related.</div>
+      <div class="col">
+        <div class="h3">Invite code</div>
+        <div class="field" style="letter-spacing:.35em;font-size:16px;color:var(--ink)">R7K · 4M2</div>
+      </div>
+      <div class="btn fill">Continue</div>
+      <div class="divider"></div>
+      <div class="h3">Or start your own</div>
+      <div class="col">
+        <div class="p sm">Family name</div>
+        <div class="field">The Delaney family</div>
+      </div>
+      <div class="col">
+        <div class="p sm">What is this family preserving?</div>
+        <div class="chips">
+          <div class="chip on">Family history</div>
+          <div class="chip">Language</div>
+          <div class="chip">Recipes</div>
+          <div class="chip on">Music</div>
+          <div class="chip">Ceremony</div>
+          <div class="chip">Community</div>
+        </div>
+      </div>
+      <div class="p sm">This only shapes the prompts we suggest. You can change it later.</div>
+      <div class="spacer"></div>
+      <div class="btn">Create family</div>
+    </div>
+  </div>
+  <div class="frame-note">Backend: family = the permission boundary. Every asset, transcript, and person row is scoped to a family_id. Roles: owner, keeper, contributor, viewer.</div>
+</div>
+
+<!-- 03 HOME -->
+<div class="frame-wrap">
+  <div class="frame-label">03 · Home / Archive</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar">
+      <div class="avatar">RF</div>
+      <div class="title">The Delaney family</div>
+      <div class="icon">⌕</div>
+      <div class="icon">⋮</div>
+    </div>
+    <div class="body tight">
+      <div class="card">
+        <div class="row"><div class="badge dark">PROMPT</div><div class="p sm grow">Suggested for Grandma Ruth</div></div>
+        <div class="h2">"What did your mother's kitchen smell like on a Sunday?"</div>
+        <div class="row"><div class="btn sm fill grow">Record answer</div><div class="btn sm">Skip</div></div>
+      </div>
+      <div class="row" style="justify-content:space-between;align-items:baseline">
+        <div class="h3">Recently added</div><div class="p sm">See all</div>
+      </div>
+      <div class="list">
+        <div class="list-row">
+          <div class="thumb">▶ 12:04</div>
+          <div class="col grow">
+            <div class="h2">The night the levee broke</div>
+            <div class="p sm">Ruth Delaney · added 2 days ago</div>
+            <div class="row"><div class="badge">Transcribed</div><div class="badge">1953</div></div>
+          </div>
+        </div>
+        <div class="list-row">
+          <div class="thumb">IMG ×14</div>
+          <div class="col grow">
+            <div class="h2">Box of photos from the attic</div>
+            <div class="p sm">Dana · added 4 days ago</div>
+            <div class="row"><div class="badge">9 unidentified</div></div>
+          </div>
+        </div>
+        <div class="list-row">
+          <div class="thumb">▶ 03:31</div>
+          <div class="col grow">
+            <div class="h2">Pot roast, the way Nana did it</div>
+            <div class="p sm">Ruth Delaney · added 1 week ago</div>
+            <div class="row"><div class="badge">Recipe</div><div class="badge">Transcribed</div></div>
+          </div>
+        </div>
+        <div class="list-row">
+          <div class="thumb">▶ 27:52</div>
+          <div class="col grow">
+            <div class="h2">Uncle Ray on the shipyard years</div>
+            <div class="p sm">Ray Delaney · added 2 weeks ago</div>
+            <div class="row"><div class="badge">Needs review</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="fab">REC</div>
+    <div class="navbar">
+      <div class="navitem active"><div class="icon">▤</div>Archive</div>
+      <div class="navitem"><div class="icon">┃</div>Timeline</div>
+      <div class="navitem"><div class="icon">◎</div>People</div>
+      <div class="navitem"><div class="icon">⌕</div>Search</div>
+    </div>
+  </div>
+  <div class="frame-note">The prompt card is the engine of the whole product. Empty archives are the failure mode; the app always has the next question ready.</div>
+</div>
+
+<!-- 04 RECORD -->
+<div class="frame-wrap">
+  <div class="frame-label">04 · Record (active)</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="icon">✕</div><div class="title">Recording</div><div class="badge">Local only</div></div>
+    <div class="body">
+      <div class="card">
+        <div class="p sm">Prompt on screen for the storyteller</div>
+        <div class="h2">"What did your mother's kitchen smell like on a Sunday?"</div>
+        <div class="row"><div class="btn sm">Next prompt</div><div class="btn sm">Hide</div></div>
+      </div>
+      <div class="spacer"></div>
+      <div class="center">
+        <div style="font-size:42px;font-weight:700;letter-spacing:-.02em">08:17</div>
+        <div class="p sm">Recording · 48 kHz · saved to this phone</div>
+      </div>
+      <div class="wave">
+        <i style="height:20%"></i><i style="height:55%"></i><i style="height:80%"></i><i style="height:35%"></i>
+        <i style="height:70%"></i><i style="height:95%"></i><i style="height:45%"></i><i style="height:60%"></i>
+        <i style="height:85%"></i><i style="height:30%"></i><i style="height:65%"></i><i style="height:90%"></i>
+        <i style="height:40%"></i><i style="height:75%"></i><i style="height:25%"></i><i style="height:55%"></i>
+        <i style="height:88%"></i><i style="height:42%"></i><i style="height:68%"></i><i style="height:22%"></i>
+      </div>
+      <div class="row" style="justify-content:center;gap:8px">
+        <div class="chip">+ Mark a moment</div><div class="chip">+ Who's talking</div>
+      </div>
+      <div class="spacer"></div>
+      <div class="row" style="justify-content:center;gap:24px;align-items:center">
+        <div class="icon round" style="width:52px;height:52px;flex:0 0 52px;font-size:10px">❚❚</div>
+        <div class="icon round" style="width:76px;height:76px;flex:0 0 76px;background:var(--ink);color:#fff;font-size:11px">STOP</div>
+        <div class="icon round" style="width:52px;height:52px;flex:0 0 52px;font-size:10px">⚑</div>
+      </div>
+      <div class="p sm" style="text-align:center">Screen can turn off. Recording keeps going.</div>
+    </div>
+  </div>
+  <div class="frame-note">Foreground service + notification so a 40-minute interview survives the screen locking. Chunked writes to disk, never holding the whole file in memory.</div>
+</div>
+
+<!-- 05 REVIEW / SAVE -->
+<div class="frame-wrap">
+  <div class="frame-label">05 · Review &amp; Save Recording</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="icon">←</div><div class="title">Save this story</div><div class="btn sm fill">Save</div></div>
+    <div class="body tight">
+      <div class="wave" style="height:52px">
+        <i style="height:30%"></i><i style="height:70%"></i><i style="height:45%"></i><i style="height:90%"></i>
+        <i style="height:55%"></i><i style="height:75%"></i><i style="height:35%"></i><i style="height:60%"></i>
+        <i style="height:85%"></i><i style="height:40%"></i><i style="height:65%"></i><i style="height:25%"></i>
+        <i style="height:78%"></i><i style="height:50%"></i><i style="height:88%"></i><i style="height:33%"></i>
+      </div>
+      <div class="row"><div class="p sm grow">00:00</div><div class="icon">▶</div><div class="p sm">18:42</div></div>
+      <div class="col">
+        <div class="h3">Title</div>
+        <div class="field" style="color:var(--ink)">Sunday kitchen, Bellwood Ave</div>
+      </div>
+      <div class="col">
+        <div class="h3">Whose voice is this?</div>
+        <div class="chips">
+          <div class="chip on">Ruth Delaney ✕</div>
+          <div class="chip on">Dana ✕</div>
+          <div class="chip">+ Add person</div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="h3">When did this happen?</div>
+        <div class="row">
+          <div class="field grow">1958 – 1964</div>
+          <div class="chip">Unsure</div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="h3">Where</div>
+        <div class="field">Bellwood Ave, Chicago IL</div>
+      </div>
+      <div class="col">
+        <div class="h3">Tags <span class="p sm" style="text-transform:none;letter-spacing:0">AI suggested</span></div>
+        <div class="chips">
+          <div class="chip on">Food</div><div class="chip on">Migration</div>
+          <div class="chip">Church</div><div class="chip">Great Migration</div><div class="chip">+</div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="row"><div class="p grow"><strong>Transcribe this recording</strong><br><span class="p sm">Uses Wi-Fi. About 2 min.</span></div><div class="box" style="width:44px;height:26px;border-radius:999px;position:relative"><span style="position:absolute;right:2px;top:2px;width:20px;height:20px;border-radius:50%;background:var(--ink);display:block"></span></div></div>
+    </div>
+  </div>
+  <div class="frame-note">Metadata is captured at the moment memory is freshest. "Unsure" is a first-class answer. Forcing exact dates is how archives get lies in them.</div>
+</div>
+
+<!-- 06 MEDIA / PHOTOS -->
+<div class="frame-wrap">
+  <div class="frame-label">06 · Add Photos &amp; Documents</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="icon">←</div><div class="title">Add media</div><div class="btn sm fill">Next</div></div>
+    <div class="body tight">
+      <div class="chips">
+        <div class="chip on">Gallery</div><div class="chip">Camera</div><div class="chip">Scan document</div><div class="chip">Files</div>
+      </div>
+      <div class="p sm">14 selected · 62 MB · will upload on Wi-Fi</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+        <div class="thumb" style="width:100%;height:92px;flex:none;background:var(--fill)">✓ IMG</div>
+        <div class="thumb" style="width:100%;height:92px;flex:none;background:var(--fill)">✓ IMG</div>
+        <div class="thumb" style="width:100%;height:92px;flex:none">IMG</div>
+        <div class="thumb" style="width:100%;height:92px;flex:none;background:var(--fill)">✓ IMG</div>
+        <div class="thumb" style="width:100%;height:92px;flex:none">DOC</div>
+        <div class="thumb" style="width:100%;height:92px;flex:none;background:var(--fill)">✓ IMG</div>
+        <div class="thumb" style="width:100%;height:92px;flex:none">IMG</div>
+        <div class="thumb" style="width:100%;height:92px;flex:none;background:var(--fill)">✓ IMG</div>
+        <div class="thumb" style="width:100%;height:92px;flex:none">IMG</div>
+      </div>
+      <div class="divider"></div>
+      <div class="card">
+        <div class="row"><div class="badge dark">AI</div><div class="p grow">We found <strong>4 faces</strong> across these photos. Want to label them?</div></div>
+        <div class="row"><div class="btn sm grow">Label faces</div><div class="btn sm">Later</div></div>
+        <div class="p sm">Face grouping happens on your phone. Nothing leaves your device for this step.</div>
+      </div>
+      <div class="card">
+        <div class="row"><div class="badge">OCR</div><div class="p grow">2 documents contain readable text. We'll make them searchable.</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="frame-note">On-device ML Kit for faces and OCR. Server-side only for speech. That distinction is a real privacy story and a real engineering story. Good pitch material.</div>
+</div>
+
+<!-- 07 TRANSCRIPT -->
+<div class="frame-wrap">
+  <div class="frame-label">07 · Story Detail / Transcript</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="icon">←</div><div class="title">Sunday kitchen</div><div class="icon">↗</div><div class="icon">⋮</div></div>
+    <div class="body tight">
+      <div class="row"><div class="avatar">RD</div><div class="col grow"><div class="h2">Ruth Delaney</div><div class="p sm">1958–1964 · Bellwood Ave · 18:42</div></div></div>
+      <div class="wave" style="height:40px">
+        <i style="height:40%"></i><i style="height:75%"></i><i style="height:55%"></i><i style="height:85%"></i>
+        <i style="height:35%"></i><i style="height:65%"></i><i style="height:90%"></i><i style="height:45%"></i>
+        <i style="height:70%"></i><i style="height:30%"></i><i style="height:80%"></i><i style="height:50%"></i>
+      </div>
+      <div class="row"><div class="icon">▶</div><div class="bar grow" style="height:6px"><i style="width:34%"></i></div><div class="p sm">06:18</div></div>
+      <div class="chips">
+        <div class="chip on">Transcript</div><div class="chip">Photos 6</div><div class="chip">People 2</div><div class="chip">Map</div>
+      </div>
+      <div style="overflow:hidden;flex:1">
+        <div class="tr-line"><div class="tr-time">05:52</div><div class="tr-text">She'd start the roast before church so the whole house smelled like it by the time we got back.</div></div>
+        <div class="tr-line"><div class="tr-time">06:04</div><div class="tr-text">My father never ate before grace. Not once. <span class="hl">Not even the year he was sick.</span></div></div>
+        <div class="tr-line"><div class="tr-time">06:18</div><div class="tr-text">And there was a song she hummed. I couldn't tell you the words, it was her mother's, from back home.</div></div>
+        <div class="tr-line"><div class="tr-time">06:41</div><div class="tr-text">You want me to try it? I'll butcher it. [<em>hums</em>]</div></div>
+      </div>
+      <div class="divider"></div>
+      <div class="row"><div class="btn sm grow">Fix a word</div><div class="btn sm grow">Add a note</div><div class="chip">⚑</div></div>
+    </div>
+  </div>
+  <div class="frame-note">Transcript is time-linked: tap a line, audio seeks. Human correction feeds back so the archive gets more accurate over time, not less.</div>
+</div>
+
+<!-- 08 SEARCH -->
+<div class="frame-wrap">
+  <div class="frame-label">08 · Search</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="icon">←</div><div class="field grow" style="height:40px;color:var(--ink)">the song grandma hummed</div></div>
+    <div class="body tight">
+      <div class="chips">
+        <div class="chip on">Everything</div><div class="chip">Audio</div><div class="chip">Photos</div><div class="chip">Documents</div><div class="chip">People</div>
+      </div>
+      <div class="p sm">7 results · searched 41 recordings, 2,318 photos</div>
+      <div class="card">
+        <div class="row"><div class="badge dark">BEST MATCH</div><div class="p sm grow">96% · in transcript</div></div>
+        <div class="h2">Sunday kitchen, Bellwood Ave</div>
+        <div class="p">"…there was a song she hummed. I couldn't tell you the words, <span class="hl">it was her mother's, from back home</span>…"</div>
+        <div class="row"><div class="chip">Ruth Delaney</div><div class="chip">▶ 06:18</div></div>
+      </div>
+      <div class="list">
+        <div class="list-row">
+          <div class="thumb">▶ 04:12</div>
+          <div class="col grow"><div class="h2">Ruth sings, kitchen table</div><div class="p sm">Untitled melody · 1994 · 88% match</div></div>
+        </div>
+        <div class="list-row">
+          <div class="thumb">DOC</div>
+          <div class="col grow"><div class="h2">Hymnal, handwritten margin</div><div class="p sm">OCR text · "Mama's tune, p. 114" · 71%</div></div>
+        </div>
+        <div class="list-row">
+          <div class="thumb">IMG</div>
+          <div class="col grow"><div class="h2">Ruth at the piano</div><div class="p sm">Undated · 64%</div></div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="p sm">Search understands meaning, not just words. "grandma" found "her mother's" because we know who Ruth is.</div>
+    </div>
+    <div class="navbar">
+      <div class="navitem"><div class="icon">▤</div>Archive</div>
+      <div class="navitem"><div class="icon">┃</div>Timeline</div>
+      <div class="navitem"><div class="icon">◎</div>People</div>
+      <div class="navitem active"><div class="icon">⌕</div>Search</div>
+    </div>
+  </div>
+  <div class="frame-note">Semantic search over transcript + OCR + captions using embeddings. This is the screen that makes the archive usable instead of a shoebox.</div>
+</div>
+
+<!-- 09 TIMELINE -->
+<div class="frame-wrap">
+  <div class="frame-label">09 · Timeline</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="title">Timeline</div><div class="chip">Everyone ▾</div><div class="icon">⌕</div></div>
+    <div class="body tight">
+      <div class="chips">
+        <div class="chip">1900s</div><div class="chip">1920s</div><div class="chip on">1950s</div><div class="chip">1970s</div><div class="chip">1990s</div><div class="chip">2020s</div>
+      </div>
+      <div style="overflow:hidden;flex:1">
+        <div class="tl">
+          <div class="tl-node filled">
+            <div class="h3">1953</div>
+            <div class="card" style="margin-top:6px">
+              <div class="row"><div class="thumb">▶</div><div class="col grow"><div class="h2">The night the levee broke</div><div class="p sm">Ruth Delaney · 12:04</div></div></div>
+            </div>
+          </div>
+          <div class="tl-node filled">
+            <div class="h3">1957 · approximate</div>
+            <div class="row" style="margin-top:6px;gap:6px">
+              <div class="thumb" style="height:64px">IMG</div><div class="thumb" style="height:64px">IMG</div><div class="thumb" style="height:64px">IMG</div>
+            </div>
+            <div class="p sm" style="margin-top:4px">Bellwood Ave, front steps · 3 photos</div>
+          </div>
+          <div class="tl-node filled">
+            <div class="h3">1958 – 1964</div>
+            <div class="card" style="margin-top:6px">
+              <div class="row"><div class="thumb">▶</div><div class="col grow"><div class="h2">Sunday kitchen</div><div class="p sm">Ruth Delaney · 18:42</div></div></div>
+              <div class="row"><div class="badge">Recipe</div><div class="badge">Music</div></div>
+            </div>
+          </div>
+          <div class="tl-node">
+            <div class="h3">1961 · gap</div>
+            <div class="card" style="margin-top:6px">
+              <div class="p"><strong>Nothing here yet.</strong> Ruth was 19. Ask her about it?</div>
+              <div class="btn sm">Send a prompt</div>
+            </div>
+          </div>
+          <div class="tl-node filled">
+            <div class="h3">1966</div>
+            <div class="p sm" style="margin-top:6px">Wedding, St. Aloysius · 22 photos, 1 recording</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="navbar">
+      <div class="navitem"><div class="icon">▤</div>Archive</div>
+      <div class="navitem active"><div class="icon">┃</div>Timeline</div>
+      <div class="navitem"><div class="icon">◎</div>People</div>
+      <div class="navitem"><div class="icon">⌕</div>Search</div>
+    </div>
+  </div>
+  <div class="frame-note">Gaps are surfaced, not hidden. The timeline actively tells you what's missing while the person who remembers it is still here.</div>
+</div>
+
+<!-- 10 PROMPTS -->
+<div class="frame-wrap">
+  <div class="frame-label">10 · Prompt Library</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="icon">←</div><div class="title">Questions to ask</div><div class="icon">⌕</div></div>
+    <div class="body tight">
+      <div class="row"><div class="avatar">RD</div><div class="col grow"><div class="h2">For Ruth Delaney</div><div class="p sm">Age 83 · 11 recordings · last recorded 2 days ago</div></div></div>
+      <div class="chips">
+        <div class="chip on">Suggested</div><div class="chip">Childhood</div><div class="chip">Food</div><div class="chip">Work</div><div class="chip">Hard things</div><div class="chip">Faith</div>
+      </div>
+      <div class="card">
+        <div class="row"><div class="badge dark">WHY THIS ONE</div></div>
+        <div class="h2">"You mentioned a song your mother hummed. Can you try to sing it?"</div>
+        <div class="p sm">Ruth referenced this at 06:18 in "Sunday kitchen" but never sang it. Melodies are the first thing lost.</div>
+        <div class="row"><div class="btn sm fill grow">Record now</div><div class="btn sm">Save for later</div></div>
+      </div>
+      <div class="list">
+        <div class="list-row"><div class="col grow"><div class="h2">"Who taught you to cook?"</div><div class="p sm">Food · often opens into migration stories</div></div><div class="icon">+</div></div>
+        <div class="list-row"><div class="col grow"><div class="h2">"What did your street sound like at night?"</div><div class="p sm">Sensory · good for people who say they don't remember much</div></div><div class="icon">+</div></div>
+        <div class="list-row"><div class="col grow"><div class="h2">"What's a word your family used that nobody else did?"</div><div class="p sm">Language · high preservation value</div></div><div class="icon">+</div></div>
+        <div class="list-row"><div class="col grow"><div class="h2">"Tell me about a day you'd live again."</div><div class="p sm">Open · good closer</div></div><div class="icon">+</div></div>
+      </div>
+      <div class="divider"></div>
+      <div class="btn">Write your own question</div>
+    </div>
+  </div>
+  <div class="frame-note">Prompts are generated from gaps in that person's own transcripts, not a static list. This is where the AI role has the most interesting work.</div>
+</div>
+
+<!-- 11 PERSON -->
+<div class="frame-wrap">
+  <div class="frame-label">11 · Person Profile</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="icon">←</div><div class="title">Ruth Delaney</div><div class="icon">⋮</div></div>
+    <div class="body tight">
+      <div class="row"><div class="avatar lg">RD</div>
+        <div class="col grow">
+          <div class="h1" style="font-size:17px">Ruth Delaney</div>
+          <div class="p sm">b. 1942, Vicksburg MS · "Nana"</div>
+          <div class="row"><div class="badge">Grandmother</div><div class="badge">11 stories</div></div>
+        </div>
+      </div>
+      <div class="row"><div class="btn sm fill grow">Record with Ruth</div><div class="btn sm grow">Send a prompt</div></div>
+      <div class="card">
+        <div class="row"><div class="badge dark">VOICE</div><div class="p sm grow">4h 12m of Ruth's voice preserved</div></div>
+        <div class="bar"><i style="width:62%"></i></div>
+        <div class="p sm">Covering 1948–2019. Biggest gap: 1968–1979.</div>
+      </div>
+      <div class="chips">
+        <div class="chip on">Stories</div><div class="chip">Photos 84</div><div class="chip">Recipes 6</div><div class="chip">Family</div>
+      </div>
+      <div class="list">
+        <div class="list-row"><div class="thumb">▶ 18:42</div><div class="col grow"><div class="h2">Sunday kitchen</div><div class="p sm">1958–1964 · Bellwood Ave</div></div></div>
+        <div class="list-row"><div class="thumb">▶ 12:04</div><div class="col grow"><div class="h2">The night the levee broke</div><div class="p sm">1953 · Vicksburg</div></div></div>
+        <div class="list-row"><div class="thumb">▶ 06:55</div><div class="col grow"><div class="h2">Meeting Grandpa Ray</div><div class="p sm">1965 · Chicago</div></div></div>
+      </div>
+    </div>
+    <div class="navbar">
+      <div class="navitem"><div class="icon">▤</div>Archive</div>
+      <div class="navitem"><div class="icon">┃</div>Timeline</div>
+      <div class="navitem active"><div class="icon">◎</div>People</div>
+      <div class="navitem"><div class="icon">⌕</div>Search</div>
+    </div>
+  </div>
+  <div class="frame-note">"Hours of this person's voice preserved" is the metric that makes people act. It is also honest about what an archive is for.</div>
+</div>
+
+<!-- 12 COLLECTION -->
+<div class="frame-wrap">
+  <div class="frame-label">12 · Tradition / Collection</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="icon">←</div><div class="title">Nana's pot roast</div><div class="icon">↗</div></div>
+    <div class="body tight">
+      <div class="thumb tall">HERO IMAGE</div>
+      <div class="row"><div class="badge dark">RECIPE</div><div class="badge">4 sources</div><div class="badge">3 generations</div></div>
+      <div class="p">Assembled from three recordings and a handwritten card. Where the versions disagree, both are kept.</div>
+      <div class="card">
+        <div class="h3">In her words</div>
+        <div class="p">"You don't measure the vinegar. You pour till it looks wrong, then a little more."</div>
+        <div class="row"><div class="chip">▶ Ruth, 03:31</div></div>
+      </div>
+      <div class="col">
+        <div class="h3">Ingredients</div>
+        <div class="p">Chuck roast, 4 lb · yellow onion · bay · cider vinegar (see above) · "the brown jar spice, the one from the Polish store"</div>
+      </div>
+      <div class="card">
+        <div class="row"><div class="badge">DISPUTED</div></div>
+        <div class="p"><strong>Ray says</strong> there were carrots. <strong>Ruth says</strong> never carrots.</div>
+        <div class="row"><div class="chip">▶ Ray, 11:02</div><div class="chip">▶ Ruth, 04:47</div></div>
+      </div>
+      <div class="col">
+        <div class="h3">Handwritten card</div>
+        <div class="thumb wide">SCAN · OCR'd</div>
+      </div>
+      <div class="btn">Add your version</div>
+    </div>
+  </div>
+  <div class="frame-note">Collections stitch fragments across media into one cultural object. Contradictions are preserved as data, not resolved away. That's the archival ethic.</div>
+</div>
+
+<!-- 13 CIRCLE MEMBERS -->
+<div class="frame-wrap">
+  <div class="frame-label">13 · Family &amp; Permissions</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="icon">←</div><div class="title">The Delaney family</div></div>
+    <div class="body tight">
+      <div class="card">
+        <div class="h3">Invite code</div>
+        <div class="row"><div class="h1" style="letter-spacing:.2em">R7K-4M2</div><div class="spacer"></div><div class="btn sm">Share</div></div>
+        <div class="p sm">Expires in 7 days · 3 uses left</div>
+      </div>
+      <div class="h3">Members · 6</div>
+      <div class="list">
+        <div class="list-row"><div class="avatar">DM</div><div class="col grow"><div class="h2">Dana (you)</div><div class="p sm">Owner · full access</div></div></div>
+        <div class="list-row"><div class="avatar">RD</div><div class="col grow"><div class="h2">Ruth Delaney</div><div class="p sm">Keeper · can approve and delete</div></div><div class="icon">▾</div></div>
+        <div class="list-row"><div class="avatar">TH</div><div class="col grow"><div class="h2">Theo</div><div class="p sm">Contributor · can add, can't delete</div></div><div class="icon">▾</div></div>
+        <div class="list-row"><div class="avatar">MD</div><div class="col grow"><div class="h2">Marcus</div><div class="p sm">Viewer · sensitive items hidden</div></div><div class="icon">▾</div></div>
+        <div class="list-row"><div class="avatar">?</div><div class="col grow"><div class="h2">2 pending invites</div><div class="p sm">Sent 3 days ago</div></div></div>
+      </div>
+      <div class="divider"></div>
+      <div class="h3">Default for new recordings</div>
+      <div class="chips"><div class="chip on">Family only</div><div class="chip">Keepers only</div><div class="chip">Just me</div></div>
+      <div class="btn">Sensitive items &amp; restrictions</div>
+    </div>
+  </div>
+  <div class="frame-note">Role model is the backend's hardest problem: per-asset visibility, not just per-family. Community and tribal archives require restriction rules that most consumer apps don't have.</div>
+</div>
+
+<!-- 14 LEGACY -->
+<div class="frame-wrap">
+  <div class="frame-label">14 · Legacy &amp; Consent</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="icon">←</div><div class="title">Legacy plan</div></div>
+    <div class="body tight">
+      <div class="p">Archives outlive the person who started them. Decide now what happens later.</div>
+      <div class="card">
+        <div class="h3">If this account goes inactive</div>
+        <div class="col">
+          <div class="row"><div class="box" style="width:18px;height:18px;flex:0 0 18px;background:var(--ink)"></div><div class="p grow">Pass ownership to a named keeper</div></div>
+          <div class="row"><div class="box" style="width:18px;height:18px;flex:0 0 18px"></div><div class="p grow">Freeze the archive, read-only</div></div>
+          <div class="row"><div class="box" style="width:18px;height:18px;flex:0 0 18px"></div><div class="p grow">Delete everything</div></div>
+        </div>
+        <div class="field" style="color:var(--ink)">Keeper: Ruth Delaney</div>
+        <div class="p sm">Inactive means no sign-in for 18 months, after 3 notices.</div>
+      </div>
+      <div class="card">
+        <div class="h3">Storyteller consent</div>
+        <div class="p">Ruth agreed on Mar 4, 2026 that her recordings may be shared with the family and kept after her death.</div>
+        <div class="row"><div class="badge">Signed in-app</div><div class="badge">Audio consent on file</div></div>
+        <div class="btn sm">View consent record</div>
+      </div>
+      <div class="card">
+        <div class="h3">Restricted material</div>
+        <div class="p">4 items are marked restricted by a keeper: ceremonial recordings, not for general viewing.</div>
+        <div class="btn sm">Review restrictions</div>
+      </div>
+      <div class="btn">Export a full copy of this archive</div>
+    </div>
+  </div>
+  <div class="frame-note">This screen is the reason the project is worth doing. Every commercial competitor treats consent and death as edge cases. For cultural preservation they are the core case.</div>
+</div>
+
+<!-- 15 SYNC -->
+<div class="frame-wrap">
+  <div class="frame-label">15 · Sync &amp; Offline</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮ ▯ no service</span></div>
+    <div class="appbar"><div class="icon">←</div><div class="title">Sync</div><div class="badge">Offline</div></div>
+    <div class="body tight">
+      <div class="card">
+        <div class="row"><div class="badge dark">OFFLINE</div><div class="p grow">You can keep recording. Everything is saved on this phone.</div></div>
+        <div class="p sm">3 items waiting · 214 MB</div>
+      </div>
+      <div class="h3">Waiting to upload</div>
+      <div class="list">
+        <div class="list-row"><div class="thumb">▶</div><div class="col grow"><div class="h2">Uncle Ray, shipyard</div><div class="p sm">27:52 · 168 MB</div><div class="bar"><i style="width:0%"></i></div></div></div>
+        <div class="list-row"><div class="thumb">IMG ×9</div><div class="col grow"><div class="h2">Attic box, part 2</div><div class="p sm">44 MB</div><div class="bar"><i style="width:0%"></i></div></div></div>
+        <div class="list-row"><div class="thumb">✎</div><div class="col grow"><div class="h2">Transcript edits</div><div class="p sm">6 corrections</div></div></div>
+      </div>
+      <div class="divider"></div>
+      <div class="h3">Settings</div>
+      <div class="row"><div class="p grow">Upload on Wi-Fi only</div><div class="box" style="width:44px;height:26px;border-radius:999px;position:relative"><span style="position:absolute;right:2px;top:2px;width:20px;height:20px;border-radius:50%;background:var(--ink);display:block"></span></div></div>
+      <div class="row"><div class="p grow">Keep originals on this phone</div><div class="box" style="width:44px;height:26px;border-radius:999px;position:relative"><span style="position:absolute;left:2px;top:2px;width:20px;height:20px;border-radius:50%;background:var(--fill);border:1.5px solid var(--mid);display:block"></span></div></div>
+      <div class="divider"></div>
+      <div class="card">
+        <div class="row"><div class="badge">CONFLICT</div></div>
+        <div class="p">Theo edited the transcript of "Sunday kitchen" while you were offline.</div>
+        <div class="row"><div class="btn sm grow">Compare</div><div class="btn sm grow">Keep both</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="frame-note">Field recording happens in kitchens, cemeteries, reservations, care homes. Offline-first is not a nice-to-have. It's the primary environment.</div>
+</div>
+
+<!-- 16 EXPORT -->
+<div class="frame-wrap">
+  <div class="frame-label">16 · Export / Handoff</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="icon">←</div><div class="title">Export archive</div></div>
+    <div class="body tight">
+      <div class="p">A copy you own, that works without us. Plain folders, plain files, readable in 40 years.</div>
+      <div class="h3">What's included</div>
+      <div class="list">
+        <div class="list-row"><div class="col grow"><div class="h2">Original audio</div><div class="p sm">41 files · WAV + M4A · 6.2 GB</div></div><div class="box" style="width:18px;height:18px;flex:0 0 18px;background:var(--ink)"></div></div>
+        <div class="list-row"><div class="col grow"><div class="h2">Photos &amp; documents</div><div class="p sm">2,318 files · original resolution · 11.4 GB</div></div><div class="box" style="width:18px;height:18px;flex:0 0 18px;background:var(--ink)"></div></div>
+        <div class="list-row"><div class="col grow"><div class="h2">Transcripts</div><div class="p sm">Plain text + timed WebVTT</div></div><div class="box" style="width:18px;height:18px;flex:0 0 18px;background:var(--ink)"></div></div>
+        <div class="list-row"><div class="col grow"><div class="h2">Metadata</div><div class="p sm">JSON + CSV · people, places, dates, consent records</div></div><div class="box" style="width:18px;height:18px;flex:0 0 18px;background:var(--ink)"></div></div>
+        <div class="list-row"><div class="col grow"><div class="h2">Readable index</div><div class="p sm">Offline HTML site, opens in any browser</div></div><div class="box" style="width:18px;height:18px;flex:0 0 18px;background:var(--ink)"></div></div>
+      </div>
+      <div class="divider"></div>
+      <div class="h3">Send to</div>
+      <div class="chips"><div class="chip on">This phone</div><div class="chip">Google Drive</div><div class="chip">A library or archive</div></div>
+      <div class="p sm">17.6 GB total. We'll build it in the background and notify you.</div>
+      <div class="spacer"></div>
+      <div class="btn fill">Build export</div>
+    </div>
+  </div>
+  <div class="frame-note">No lock-in, by design. An institution can ingest this. That single decision is what separates a preservation tool from a photo app.</div>
+</div>
+
+<!-- 17 FAMILY FEED -->
+<div class="frame-wrap">
+  <div class="frame-label">17 · Family Feed</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar">
+      <div class="avatar">DM</div>
+      <div class="title">The Delaney family</div>
+      <div class="icon">✎</div>
+      <div class="icon">⋮</div>
+    </div>
+    <div class="body tight">
+      <div class="chips">
+        <div class="chip on">Everyone</div><div class="chip">My branch</div><div class="chip">Stories only</div>
+      </div>
+      <div class="card">
+        <div class="row"><div class="avatar">TH</div><div class="col grow"><div class="h2">Theo</div><div class="p sm">Yesterday · shared with the whole family</div></div></div>
+        <div class="thumb wide">PHOTO</div>
+        <div class="p">Maya lost her first tooth. She wants everyone to know it was "extremely dramatic."</div>
+        <div class="row"><div class="chip">♡ 6</div><div class="chip">3 replies</div><div class="badge">Saved to Maya's timeline</div></div>
+      </div>
+      <div class="card">
+        <div class="row"><div class="avatar">RD</div><div class="col grow"><div class="h2">Ruth</div><div class="p sm">2 days ago · recorded a story</div></div></div>
+        <div class="row"><div class="thumb">▶ 18:42</div><div class="col grow"><div class="h2">Sunday kitchen, Bellwood Ave</div><div class="p sm">Answering "what did your mother's kitchen smell like?"</div></div></div>
+        <div class="row"><div class="chip">♡ 11</div><div class="chip">Listen</div></div>
+      </div>
+      <div class="card">
+        <div class="row"><div class="badge dark">MILESTONE</div><div class="p sm grow">Added by Dana</div></div>
+        <div class="p"><strong>Ray and Ruth, 58 years married today.</strong></div>
+      </div>
+    </div>
+    <div class="fab">POST</div>
+    <div class="navbar">
+      <div class="navitem active"><div class="icon">▤</div>Family</div>
+      <div class="navitem"><div class="icon">┃</div>Timeline</div>
+      <div class="navitem"><div class="icon">◎</div>Tree</div>
+      <div class="navitem"><div class="icon">✦</div>Librarian</div>
+    </div>
+  </div>
+  <div class="frame-note">This is what makes people open the app on an ordinary Tuesday, which is what keeps the archive from going empty. A tooth today is archive material in thirty years, so a post and a recorded story are the same object with different settings.</div>
+</div>
+
+<!-- 18 FAMILY TREE -->
+<div class="frame-wrap">
+  <div class="frame-label">18 · Family Tree</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="title">Family tree</div><div class="chip">Delaney ▾</div><div class="icon">⌕</div></div>
+    <div class="body tight">
+      <div class="row" style="justify-content:center;gap:10px">
+        <div class="col" style="align-items:center;gap:4px"><div class="avatar">RD</div><div class="p sm">Ruth</div></div>
+        <div style="width:22px;height:1.5px;background:var(--ink)"></div>
+        <div class="col" style="align-items:center;gap:4px"><div class="avatar" style="border-style:dashed">R</div><div class="p sm">Ray †</div></div>
+      </div>
+      <div style="height:18px;width:1.5px;background:var(--ink);margin:0 auto"></div>
+      <div style="height:1.5px;background:var(--ink);margin:0 24px"></div>
+      <div class="row" style="justify-content:space-around">
+        <div class="col" style="align-items:center;gap:4px"><div style="height:12px;width:1.5px;background:var(--ink)"></div><div class="avatar">DM</div><div class="p sm">Dana</div></div>
+        <div class="col" style="align-items:center;gap:4px"><div style="height:12px;width:1.5px;background:var(--ink)"></div><div class="avatar">TH</div><div class="p sm">Theo</div></div>
+        <div class="col" style="align-items:center;gap:4px"><div style="height:12px;width:1.5px;background:var(--ink)"></div><div class="avatar" style="border-style:dashed">?</div><div class="p sm">Unnamed</div></div>
+      </div>
+      <div style="height:16px;width:1.5px;background:var(--ink);margin:0 0 0 62px"></div>
+      <div class="row" style="padding-left:40px"><div class="avatar">MY</div><div class="col"><div class="p sm">Maya, 6</div></div></div>
+      <div class="divider"></div>
+      <div class="card">
+        <div class="row"><div class="badge">NEEDS A PERSON</div></div>
+        <div class="p">Ruth mentions "my aunt Cora" in three recordings, but Cora is not in the tree yet.</div>
+        <div class="row"><div class="btn sm grow">Add Cora</div><div class="btn sm">Not now</div></div>
+      </div>
+      <div class="row"><div class="btn sm grow">Add a person</div><div class="btn sm grow">Claim my profile</div></div>
+    </div>
+    <div class="navbar">
+      <div class="navitem"><div class="icon">▤</div>Family</div>
+      <div class="navitem"><div class="icon">┃</div>Timeline</div>
+      <div class="navitem active"><div class="icon">◎</div>Tree</div>
+      <div class="navitem"><div class="icon">✦</div>Librarian</div>
+    </div>
+  </div>
+  <div class="frame-note">The tree is a navigation surface, not a genealogy product. Dashed nodes are people who exist in the stories but not yet in the record, surfaced by the librarian. Disputed links are marked, never silently resolved.</div>
+</div>
+
+<!-- 19 MEMORIAL PROFILE -->
+<div class="frame-wrap">
+  <div class="frame-label">19 · Memorial Profile</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="icon">←</div><div class="title">Ray Delaney</div><div class="icon">⋮</div></div>
+    <div class="body tight">
+      <div class="row"><div class="avatar lg">RD</div>
+        <div class="col grow">
+          <div class="h1" style="font-size:17px">Ray Delaney</div>
+          <div class="p sm">1939 – 2021 · "Pop"</div>
+          <div class="row"><div class="badge dark">MEMORIAL</div><div class="badge">Kept by Dana</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="p">Ray chose what happens to his profile in 2019. His settings still apply. Nothing here can be made more public than he allowed.</div>
+        <div class="row"><div class="chip">View his choices</div></div>
+      </div>
+      <div class="card">
+        <div class="row"><div class="badge dark">HIS VOICE</div><div class="p sm grow">6h 41m preserved</div></div>
+        <div class="bar"><i style="width:74%"></i></div>
+        <div class="p sm">1971 to 2019. He answered 34 questions.</div>
+      </div>
+      <div class="chips">
+        <div class="chip on">His stories</div><div class="chip">Photos 212</div><div class="chip">About him</div><div class="chip">Tree</div>
+      </div>
+      <div class="list">
+        <div class="list-row"><div class="thumb">▶ 27:52</div><div class="col grow"><div class="h2">The shipyard years</div><div class="p sm">1971 to 1979 · his voice</div></div></div>
+        <div class="list-row"><div class="thumb">▶ 04:09</div><div class="col grow"><div class="h2">Advice about starting out</div><div class="p sm">2016 · his voice</div></div></div>
+        <div class="list-row"><div class="thumb">✎</div><div class="col grow"><div class="h2">"How Pop taught me to drive"</div><div class="p sm">Written by Theo, 2024 · about him, not by him</div></div></div>
+      </div>
+      <div class="btn">Leave something for him</div>
+    </div>
+  </div>
+  <div class="frame-note">A living profile becomes this without losing a single choice the person made. Note the labeling: things in his voice and things written about him are visibly different objects. That distinction never collapses.</div>
+</div>
+
+<!-- 20 MEMORY PERMISSIONS -->
+<div class="frame-wrap">
+  <div class="frame-label">20 · Who can see this</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="icon">←</div><div class="title">Sunday kitchen</div></div>
+    <div class="body tight" style="opacity:.35">
+      <div class="h2">Ruth Delaney · 18:42</div>
+      <div class="wave" style="height:40px"><i style="height:40%"></i><i style="height:75%"></i><i style="height:55%"></i><i style="height:85%"></i><i style="height:35%"></i><i style="height:65%"></i></div>
+      <div class="p">She'd start the roast before church so the whole house smelled like it…</div>
+    </div>
+    <div class="modal-scrim"></div>
+    <div class="sheet">
+      <div class="grabber"></div>
+      <div class="h2">Who can see this memory</div>
+      <div class="col">
+        <div class="row"><div class="box" style="width:18px;height:18px;flex:0 0 18px"></div><div class="col grow"><div class="p"><strong>Only me</strong></div><div class="p sm">In my vault. Nobody else, ever.</div></div></div>
+        <div class="row"><div class="box" style="width:18px;height:18px;flex:0 0 18px"></div><div class="col grow"><div class="p"><strong>People I choose</strong></div><div class="p sm">Ruth, Theo</div></div></div>
+        <div class="row"><div class="box" style="width:18px;height:18px;flex:0 0 18px"></div><div class="col grow"><div class="p"><strong>My branch</strong></div><div class="p sm">Ruth's descendants, 9 people</div></div></div>
+        <div class="row"><div class="box" style="width:18px;height:18px;flex:0 0 18px;background:var(--ink)"></div><div class="col grow"><div class="p"><strong>The whole family</strong></div><div class="p sm">24 people</div></div></div>
+      </div>
+      <div class="divider"></div>
+      <div class="h3">What the librarian may do with it</div>
+      <div class="chips">
+        <div class="chip">Never use it</div><div class="chip">Quote only</div><div class="chip on">Summarize</div>
+      </div>
+      <div class="p sm">Separate from who can see it. "My cousins may read this" and "a model may rewrite this" are different permissions.</div>
+      <div class="row"><div class="btn sm grow">Cancel</div><div class="btn sm fill grow">Save</div></div>
+    </div>
+  </div>
+  <div class="frame-note">Set on every memory, defaulting to whatever the owner last chose. The librarian re-checks this on every single answer. Being in the same family never grants access to a private memory.</div>
+</div>
+
+<!-- 21 LIBRARIANS -->
+<div class="frame-wrap">
+  <div class="frame-label">21 · The two librarians</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="title">Librarian</div><div class="icon">⋮</div></div>
+    <div class="body tight">
+      <div class="chips">
+        <div class="chip">My librarian</div><div class="chip on">Our family librarian</div>
+      </div>
+      <div class="p sm">Answering only from what family members chose to share. Your private vault is not readable here.</div>
+      <div class="field" style="color:var(--ink)">Tell the story of how we ended up in Chicago</div>
+      <div class="card">
+        <div class="p">Ruth's family left Vicksburg after the 1953 flood. She describes the water reaching the porch and her father deciding that night. They arrived on Bellwood Ave the next spring, where Ray met her in 1965.</div>
+        <div class="divider"></div>
+        <div class="h3">Where this came from</div>
+        <div class="row"><div class="badge dark">HER VOICE</div><div class="p sm grow">"The night the levee broke" · 04:12</div></div>
+        <div class="row"><div class="badge dark">HER VOICE</div><div class="p sm grow">"Sunday kitchen" · 02:38</div></div>
+        <div class="row"><div class="badge">HIS VOICE</div><div class="p sm grow">"Meeting Ruth" · 01:05</div></div>
+        <div class="row"><div class="badge">WRITTEN</div><div class="p sm grow">Arrival date, added by Dana</div></div>
+      </div>
+      <div class="card">
+        <div class="row"><div class="badge">WITHHELD</div><div class="p grow">2 memories matched but are private to their owners. They were not read.</div></div>
+      </div>
+      <div class="p sm">Connecting sentences are written by the librarian and marked. Nothing inside quotation marks was ever generated.</div>
+    </div>
+    <div class="navbar">
+      <div class="navitem"><div class="icon">▤</div>Family</div>
+      <div class="navitem"><div class="icon">┃</div>Timeline</div>
+      <div class="navitem"><div class="icon">◎</div>Tree</div>
+      <div class="navitem active"><div class="icon">✦</div>Librarian</div>
+    </div>
+  </div>
+  <div class="frame-note">Two scopes, one interface. Personal reads your whole vault; family reads only what was shared. An answer with no sources does not render at all. The withheld count is shown but never names what was withheld.</div>
+</div>
+
+<!-- 22 MEMORY GARDEN -->
+<div class="frame-wrap">
+  <div class="frame-label">22 · Memory Garden (phase 4)</div>
+  <div class="frame">
+    <div class="statusbar"><span>9:41</span><span>▮▮▮ ▯</span></div>
+    <div class="appbar"><div class="icon">←</div><div class="title">Memory Garden</div><div class="badge">BETA</div></div>
+    <div class="body tight">
+      <div class="thumb tall">3D SCENE · the Bellwood Ave kitchen</div>
+      <div class="row"><div class="badge dark">HER VOICE</div><div class="p sm grow">Ruth, recorded 2019 · playing</div></div>
+      <div class="p">"She'd start the roast before church so the whole house smelled like it by the time we got back."</div>
+      <div class="divider"></div>
+      <div class="h3">In this room</div>
+      <div class="row" style="gap:6px">
+        <div class="thumb" style="height:56px">PHOTO<br>1961</div>
+        <div class="thumb" style="height:56px">RECIPE<br>card</div>
+        <div class="thumb" style="height:56px">▶ song</div>
+      </div>
+      <div class="card">
+        <div class="row"><div class="badge">RECONSTRUCTED</div></div>
+        <div class="p">The room is built from 6 photographs and Ruth's description. The objects, walls, and light are an interpretation.</div>
+        <div class="p sm">Her voice is not. Everything you hear in this garden was actually recorded.</div>
+      </div>
+      <div class="chips">
+        <div class="chip">Paths by person</div><div class="chip">By decade</div><div class="chip">By place</div>
+      </div>
+      <div class="row"><div class="btn sm grow">Leave a note here</div><div class="btn sm grow">Visit with family</div></div>
+    </div>
+  </div>
+  <div class="frame-note">Another door into the same archive, not a second archive. The hard boundary carries through: reconstructed rooms are labeled as interpretation, recorded voices are never synthesized, and the app never puts words in a dead person's mouth.</div>
+</div>
+
+</div>
+</body>
+</html>
