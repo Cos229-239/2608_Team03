@@ -41,6 +41,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.arv.app.R
+import com.arv.app.feature.documents.DocumentsScreen
 import com.arv.app.feature.feed.FeedScreen
 import com.arv.app.feature.librarian.LibrarianScreen
 import com.arv.app.feature.people.PeopleScreen
@@ -58,6 +59,9 @@ sealed class Destination(val route: String) {
 
     /** TODO(UX-6): the interactive tree; today this is the flat people list. */
     data object Tree : Destination("tree")
+
+    /** Records rather than recordings, linked to the people they name. */
+    data object Documents : Destination("documents")
 
     data object Librarian : Destination("librarian")
 
@@ -197,7 +201,16 @@ fun ArvAppRoot() {
                         onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) }
                     )
                 }
-                composable(Destination.Tree.route) { PeopleScreen() }
+                composable(Destination.Tree.route) {
+                    PeopleScreen(
+                        onOpenDocuments = { navController.navigate(Destination.Documents.route) }
+                    )
+                }
+                composable(Destination.Documents.route) {
+                    DocumentsScreen(
+                        onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) }
+                    )
+                }
                 composable(Destination.Librarian.route) {
                     LibrarianScreen(
                         onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) }

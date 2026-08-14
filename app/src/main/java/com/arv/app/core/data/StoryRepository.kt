@@ -49,6 +49,9 @@ class StoryRepository(
     fun observeById(storyId: String): Flow<Story?> =
         db.storyDao().observeById(storyId).map { it?.toDomain() }
 
+    fun observeDocuments(familyId: String): Flow<List<Story>> =
+        db.storyDao().observeDocuments(familyId).map { rows -> rows.map { it.toDomain() } }
+
     fun observePendingSyncCount(): Flow<Int> = db.outboxDao().observePendingCount()
 
     /**
@@ -412,6 +415,62 @@ class StoryRepository(
                     uploadState = UploadState.SYNCED,
                     createdBy = "u_theo",
                     createdAt = 1_754_500_000_000
+                ),
+
+                // --- Documents ---
+                // Records rather than recordings. They belong to LINEAGE because a
+                // marriage certificate is a fact about the family structure, not a story
+                // somebody told, and the tree reads from them.
+                StoryEntity(
+                    storyId = "d_marriage_ruth_ray",
+                    familyId = familyId,
+                    title = "Marriage certificate, Ruth and Ray",
+                    kind = StoryKind.DOCUMENT,
+                    area = ArchiveArea.LINEAGE,
+                    subjectPersonIds = listOf("p_ruth", "p_ray"),
+                    eraStart = 1961,
+                    eraEnd = 1961,
+                    eraPrecision = EraPrecision.EXACT,
+                    placeLabel = "Cook County, IL",
+                    tags = listOf("marriage", "record"),
+                    provenance = Provenance.AUTHENTIC_DOCUMENT,
+                    assetCount = 1,
+                    uploadState = UploadState.SYNCED,
+                    createdAt = 1_754_600_000_000
+                ),
+                StoryEntity(
+                    storyId = "d_death_ray",
+                    familyId = familyId,
+                    title = "Death record, Ray Delaney",
+                    kind = StoryKind.DOCUMENT,
+                    area = ArchiveArea.LINEAGE,
+                    subjectPersonIds = listOf("p_ray"),
+                    eraStart = 2021,
+                    eraEnd = 2021,
+                    eraPrecision = EraPrecision.EXACT,
+                    placeLabel = "Cook County, IL",
+                    tags = listOf("death", "record"),
+                    provenance = Provenance.AUTHENTIC_DOCUMENT,
+                    assetCount = 1,
+                    uploadState = UploadState.SYNCED,
+                    createdAt = 1_754_610_000_000
+                ),
+                // Nobody has found this one. It is in a box in somebody's garage and the
+                // family knows it exists. Recording the gap is what eventually gets the
+                // box opened, so a wanted document is a real record with no file yet.
+                StoryEntity(
+                    storyId = "d_ship_postcard",
+                    familyId = familyId,
+                    title = "Postcard of the ship Ruth's mother came over on",
+                    kind = StoryKind.DOCUMENT,
+                    area = ArchiveArea.LINEAGE,
+                    subjectPersonIds = listOf("p_ruth"),
+                    eraPrecision = EraPrecision.UNKNOWN,
+                    tags = listOf("migration", "wanted"),
+                    provenance = Provenance.AUTHENTIC_DOCUMENT,
+                    assetCount = 0,
+                    uploadState = UploadState.LOCAL_ONLY,
+                    createdAt = 1_754_620_000_000
                 )
             )
         )
