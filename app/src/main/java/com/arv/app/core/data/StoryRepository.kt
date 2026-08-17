@@ -52,7 +52,18 @@ class StoryRepository(
     fun observeDocuments(familyId: String): Flow<List<Story>> =
         db.storyDao().observeDocuments(familyId).map { rows -> rows.map { it.toDomain() } }
 
+    /** One-shot reads for the librarian pipeline. */
+    suspend fun peopleFor(familyId: String) =
+        db.personDao().all(familyId).map { it.toDomain() }
+
+    suspend fun transcriptForStory(storyId: String) =
+        db.transcriptDao().forStory(storyId).map { it.toDomain() }
+
     fun observePendingSyncCount(): Flow<Int> = db.outboxDao().observePendingCount()
+
+    /** Total recorded audio for one person. Drives the hours-preserved meter. */
+    fun observeRecordedMsFor(familyId: String, personId: String): Flow<Long> =
+        db.personDao().observeRecordedMsFor(familyId, personId)
 
     /**
      * Timeline grouping. Undated material is returned under a null key rather than being
@@ -471,6 +482,77 @@ class StoryRepository(
                     assetCount = 0,
                     uploadState = UploadState.LOCAL_ONLY,
                     createdAt = 1_754_620_000_000
+                )
+            )
+        )
+
+        // Transcript lines for the seeded recordings, so the librarian has actual words
+        // to search and quote on a first run. Without these, "READY" is a costume.
+        db.assetDao().upsert(
+            AssetEntity(
+                assetId = "a_levee",
+                storyId = "s_levee",
+                familyId = familyId,
+                type = AssetType.AUDIO,
+                localPath = "seed://s_levee",
+                mimeType = "audio/m4a",
+                durationMs = 724_000,
+                uploadState = UploadState.SYNCED,
+                createdAt = 1_754_000_000_000
+            )
+        )
+        db.assetDao().upsert(
+            AssetEntity(
+                assetId = "a_kitchen",
+                storyId = "s_kitchen",
+                familyId = familyId,
+                type = AssetType.AUDIO,
+                localPath = "seed://s_kitchen",
+                mimeType = "audio/m4a",
+                durationMs = 1_122_000,
+                uploadState = UploadState.SYNCED,
+                createdAt = 1_754_100_000_000
+            )
+        )
+        db.assetDao().upsert(
+            AssetEntity(
+                assetId = "a_opal_porch",
+                storyId = "s_opal_porch",
+                familyId = familyId,
+                type = AssetType.AUDIO,
+                localPath = "seed://s_opal_porch",
+                mimeType = "audio/m4a",
+                durationMs = 498_000,
+                uploadState = UploadState.SYNCED,
+                createdAt = 1_754_350_000_000
+            )
+        )
+        db.transcriptDao().insertAll(
+            listOf(
+                TranscriptSegmentEntity(
+                    assetId = "a_levee", startMs = 12_000, endMs = 31_000,
+                    text = "The water came up Jackson Street before sunrise and Daddy carried us out one at a time.",
+                    confidence = 0.94f
+                ),
+                TranscriptSegmentEntity(
+                    assetId = "a_levee", startMs = 31_000, endMs = 52_000,
+                    text = "We watched the levee go from the church roof. The whole town was on that roof by noon.",
+                    confidence = 0.91f
+                ),
+                TranscriptSegmentEntity(
+                    assetId = "a_kitchen", startMs = 8_000, endMs = 24_000,
+                    text = "Sunday mornings the whole house smelled like biscuits and coffee before anybody was even dressed.",
+                    confidence = 0.95f
+                ),
+                TranscriptSegmentEntity(
+                    assetId = "a_kitchen", startMs = 24_000, endMs = 47_000,
+                    text = "Mama kept the radio on the gospel station and you learned to roll dough to that music.",
+                    confidence = 0.9f
+                ),
+                TranscriptSegmentEntity(
+                    assetId = "a_opal_porch", startMs = 5_000, endMs = 22_000,
+                    text = "Forty years of coffee on that porch with Ruth. We solved every problem this street ever had.",
+                    confidence = 0.93f
                 )
             )
         )

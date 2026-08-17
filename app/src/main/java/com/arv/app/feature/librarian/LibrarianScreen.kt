@@ -156,6 +156,13 @@ fun LibrarianScreen(
                                 fontStyle = FontStyle.Italic,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            if (answer.routedThrough.isNotEmpty()) {
+                                Text(
+                                    "Shelves consulted: ${answer.routedThrough.joinToString(", ")}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             HorizontalDivider()
                             Text(
                                 "WHERE THIS CAME FROM",

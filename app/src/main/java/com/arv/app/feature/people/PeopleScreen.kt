@@ -44,6 +44,7 @@ class PeopleViewModel(app: Application) : AndroidViewModel(app) {
 @Composable
 fun PeopleScreen(
     onOpenDocuments: () -> Unit = {},
+    onOpenPerson: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: PeopleViewModel = viewModel()
 ) {
@@ -81,7 +82,10 @@ fun PeopleScreen(
         }
 
         items(people, key = { it.personId }) { person ->
-            Card(Modifier.fillMaxWidth()) {
+            Card(
+                onClick = { onOpenPerson(person.personId) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Column(
                     Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)

@@ -92,6 +92,10 @@ interface PersonDao {
     @Query("SELECT * FROM people WHERE familyId = :familyId ORDER BY displayName ASC")
     fun observeAll(familyId: String): Flow<List<PersonEntity>>
 
+    /** One-shot read for the librarian's name detection. */
+    @Query("SELECT * FROM people WHERE familyId = :familyId")
+    suspend fun all(familyId: String): List<PersonEntity>
+
     @Query("SELECT * FROM people WHERE personId = :personId")
     suspend fun byId(personId: String): PersonEntity?
 
@@ -161,6 +165,17 @@ interface TranscriptDao {
 
     @Query("SELECT * FROM transcript_segments WHERE assetId = :assetId ORDER BY startMs ASC")
     fun observeForAsset(assetId: String): Flow<List<TranscriptSegmentEntity>>
+
+    /** Every transcript line for a story, across its assets. The librarian reads these. */
+    @Query(
+        """
+        SELECT t.* FROM transcript_segments t
+        JOIN assets a ON t.assetId = a.assetId
+        WHERE a.storyId = :storyId
+        ORDER BY t.startMs ASC
+        """
+    )
+    suspend fun forStory(storyId: String): List<TranscriptSegmentEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(segments: List<TranscriptSegmentEntity>)
