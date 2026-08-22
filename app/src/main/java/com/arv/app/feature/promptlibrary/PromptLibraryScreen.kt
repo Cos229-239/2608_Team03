@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.FilterChip
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Text
 import androidx.compose.material3.Card
 import androidx.compose.material3.Button
 
@@ -135,6 +133,33 @@ fun PromptLibraryScreen(
              }
          }
        }
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth()
+        ){
+          Row(
+              modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+          ) {
+             Column{
+                Text(
+                    text = "Who taught you to cook?"
+                )
+
+                 Text(
+                     text = "Food • often opens into migration stories"
+                 )
+             }
+              Button(
+                  onClick = { },
+              ){
+                  Text("+")
+              }
+          }
+        }
 
     }
 }
