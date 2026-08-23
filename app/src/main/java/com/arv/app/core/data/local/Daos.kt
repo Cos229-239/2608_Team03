@@ -30,6 +30,23 @@ interface StoryDao {
     @Query("SELECT * FROM stories WHERE storyId = :storyId")
     fun observeById(storyId: String): Flow<StoryEntity?>
 
+    /**
+     * Records rather than recordings: marriage certificates, death records, ship
+     * manifests, the postcard in somebody's box.
+     *
+     * Sorted so the ones nobody has found yet (assetCount = 0) sit at the top. A family
+     * archive that only shows what has already been scanned hides the work still to do,
+     * and the work still to do is how the box in the attic eventually gets opened.
+     */
+    @Query(
+        """
+        SELECT * FROM stories
+        WHERE familyId = :familyId AND kind = 'DOCUMENT'
+        ORDER BY (assetCount > 0) ASC, eraStart ASC, title ASC
+        """
+    )
+    fun observeDocuments(familyId: String): Flow<List<StoryEntity>>
+
     @Query("SELECT COUNT(*) FROM stories WHERE familyId = :familyId")
     suspend fun count(familyId: String): Int
 
@@ -74,6 +91,10 @@ interface PersonDao {
 
     @Query("SELECT * FROM people WHERE familyId = :familyId ORDER BY displayName ASC")
     fun observeAll(familyId: String): Flow<List<PersonEntity>>
+
+    /** One-shot read for the librarian's name detection. */
+    @Query("SELECT * FROM people WHERE familyId = :familyId")
+    suspend fun all(familyId: String): List<PersonEntity>
 
     @Query("SELECT * FROM people WHERE personId = :personId")
     suspend fun byId(personId: String): PersonEntity?
@@ -144,6 +165,17 @@ interface TranscriptDao {
 
     @Query("SELECT * FROM transcript_segments WHERE assetId = :assetId ORDER BY startMs ASC")
     fun observeForAsset(assetId: String): Flow<List<TranscriptSegmentEntity>>
+
+    /** Every transcript line for a story, across its assets. The librarian reads these. */
+    @Query(
+        """
+        SELECT t.* FROM transcript_segments t
+        JOIN assets a ON t.assetId = a.assetId
+        WHERE a.storyId = :storyId
+        ORDER BY t.startMs ASC
+        """
+    )
+    suspend fun forStory(storyId: String): List<TranscriptSegmentEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(segments: List<TranscriptSegmentEntity>)

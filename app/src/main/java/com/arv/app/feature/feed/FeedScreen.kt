@@ -130,6 +130,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 fun FeedScreen(
     onOpenStory: (String) -> Unit,
     onRecord: () -> Unit,
+    onOpenPerson: (String) -> Unit = {},
     onViewAll: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: FeedViewModel = viewModel()
@@ -144,7 +145,8 @@ fun FeedScreen(
         item {
             HomeHeader(
                 people = state.people,
-                pendingSyncCount = state.pendingSyncCount
+                pendingSyncCount = state.pendingSyncCount,
+                onOpenPerson = onOpenPerson
             )
         }
 
@@ -226,7 +228,11 @@ fun FeedScreen(
  * theme; it is the brand roof over the page, not a surface that inverts.
  */
 @Composable
-private fun HomeHeader(people: List<Person>, pendingSyncCount: Int) {
+private fun HomeHeader(
+    people: List<Person>,
+    pendingSyncCount: Int,
+    onOpenPerson: (String) -> Unit
+) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -289,7 +295,10 @@ private fun HomeHeader(people: List<Person>, pendingSyncCount: Int) {
             horizontalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             items(people, key = { it.personId }) { person ->
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.clickable { onOpenPerson(person.personId) }
+                ) {
                     Box(
                         Modifier
                             .size(64.dp)
@@ -492,6 +501,7 @@ private fun PromptCard(
     modifier: Modifier = Modifier
 ) {
     Card(
+        onClick = onRecord,
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = ForestLight)

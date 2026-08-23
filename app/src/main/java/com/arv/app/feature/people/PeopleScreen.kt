@@ -4,16 +4,22 @@ import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -37,6 +43,8 @@ class PeopleViewModel(app: Application) : AndroidViewModel(app) {
 /** Screen 11 list. UX-6 builds the detail view with the hours-preserved meter. */
 @Composable
 fun PeopleScreen(
+    onOpenDocuments: () -> Unit = {},
+    onOpenPerson: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: PeopleViewModel = viewModel()
 ) {
@@ -47,8 +55,37 @@ fun PeopleScreen(
         contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        item {
+            // Documents sit next to people because that is how families think about
+            // them: the certificate belongs to whoever it names.
+            Card(onClick = onOpenDocuments, modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(Icons.Outlined.Description, contentDescription = null)
+                    Column(Modifier.weight(1f)) {
+                        Text("Documents", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Records and certificates, linked to people",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                        contentDescription = null
+                    )
+                }
+            }
+        }
+
         items(people, key = { it.personId }) { person ->
-            Card(Modifier.fillMaxWidth()) {
+            Card(
+                onClick = { onOpenPerson(person.personId) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Column(
                     Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)

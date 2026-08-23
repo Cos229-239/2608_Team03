@@ -2,9 +2,9 @@ package com.arv.app.core.di
 
 import android.content.Context
 import com.arv.app.core.ai.ClinicalClaimGuard
-import com.arv.app.core.ai.FakeLibrarianService
 import com.arv.app.core.ai.FakeTranscriptionService
 import com.arv.app.core.ai.GroundingEnforcer
+import com.arv.app.core.ai.LibrarianHive
 import com.arv.app.core.ai.LibrarianService
 import com.arv.app.core.ai.TranscriptionService
 import com.arv.app.core.data.StoryRepository
@@ -43,11 +43,15 @@ object ServiceLocator {
             librarian ?: run {
                 val repo = storyRepository(context)
                 // Order matters. Grounding runs innermost so an ungrounded answer is gone
-                // before the clinical guard ever inspects it.
+                // before the clinical guard ever inspects it. The hive replaced the flat
+                // pipeline as the wired retrieval; the guards wrap it unchanged, which is
+                // the whole point of keeping them as decorators.
                 ClinicalClaimGuard(
                     GroundingEnforcer(
-                        FakeLibrarianService(
-                            storiesProvider = { familyId -> repo.allForLibrarian(familyId) }
+                        LibrarianHive(
+                            storiesProvider = { familyId -> repo.allForLibrarian(familyId) },
+                            peopleProvider = { familyId -> repo.peopleFor(familyId) },
+                            segmentsForStory = { storyId -> repo.transcriptForStory(storyId) }
                         )
                     )
                 ).also { librarian = it }

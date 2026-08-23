@@ -47,6 +47,7 @@ class TimelineViewModel(app: Application) : AndroidViewModel(app) {
 @Composable
 fun TimelineScreen(
     onOpenStory: (String) -> Unit,
+    onRecord: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: TimelineViewModel = viewModel()
 ) {
@@ -88,14 +89,14 @@ fun TimelineScreen(
                 }
             }
             if (decade != null && gaps.contains(decade)) {
-                item(key = "gap-$decade") { GapCard(decade + 10) }
+                item(key = "gap-$decade") { GapCard(decade + 10, onRecord = onRecord) }
             }
         }
     }
 }
 
 @Composable
-private fun GapCard(missingDecade: Int) {
+private fun GapCard(missingDecade: Int, onRecord: () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
@@ -111,8 +112,9 @@ private fun GapCard(missingDecade: Int) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            // TODO(AI-8): open the prompt library filtered to this decade.
-            OutlinedButton(onClick = {}) { Text("Ask about it") }
+            // TODO(AI-8): open the prompt library filtered to this decade. Until the
+            // library exists, the honest action is the recorder itself.
+            OutlinedButton(onClick = onRecord) { Text("Ask about it") }
         }
     }
 }

@@ -41,9 +41,11 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.arv.app.R
+import com.arv.app.feature.documents.DocumentsScreen
 import com.arv.app.feature.feed.FeedScreen
 import com.arv.app.feature.librarian.LibrarianScreen
 import com.arv.app.feature.people.PeopleScreen
+import com.arv.app.feature.people.PersonDetailScreen
 import com.arv.app.feature.record.RecordScreen
 import com.arv.app.feature.record.RecordingBus
 import com.arv.app.feature.record.ReviewSaveScreen
@@ -59,6 +61,9 @@ sealed class Destination(val route: String) {
     /** TODO(UX-6): the interactive tree; today this is the flat people list. */
     data object Tree : Destination("tree")
 
+    /** Records rather than recordings, linked to the people they name. */
+    data object Documents : Destination("documents")
+
     data object Librarian : Destination("librarian")
 
     /** Same retrieval as the librarian, without generation. Reached from the Librarian tab. */
@@ -69,6 +74,11 @@ sealed class Destination(val route: String) {
     data object ReviewSave : Destination("review")
     data object StoryDetail : Destination("story/{storyId}") {
         fun of(storyId: String) = "story/$storyId"
+    }
+
+    /** Screen 19. One person, their voice meter, and everything they touch in the archive. */
+    data object PersonDetail : Destination("person/{personId}") {
+        fun of(personId: String) = "person/$personId"
     }
 }
 
@@ -180,6 +190,7 @@ fun ArvAppRoot() {
                 composable(Destination.Family.route) {
                     FeedScreen(
                         onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) },
+                        onOpenPerson = { navController.navigate(Destination.PersonDetail.of(it)) },
                         onRecord = { navController.navigate(Destination.Record.route) },
                         onViewAll = {
                             navController.navigate(Destination.Timeline.route) {
@@ -194,10 +205,29 @@ fun ArvAppRoot() {
                 }
                 composable(Destination.Timeline.route) {
                     TimelineScreen(
+                        onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) },
+                        onRecord = { navController.navigate(Destination.Record.route) }
+                    )
+                }
+                composable(Destination.Tree.route) {
+                    PeopleScreen(
+                        onOpenDocuments = { navController.navigate(Destination.Documents.route) },
+                        onOpenPerson = { navController.navigate(Destination.PersonDetail.of(it)) }
+                    )
+                }
+                composable(
+                    route = Destination.PersonDetail.route,
+                    arguments = listOf(navArgument("personId") { type = NavType.StringType })
+                ) {
+                    PersonDetailScreen(
                         onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) }
                     )
                 }
-                composable(Destination.Tree.route) { PeopleScreen() }
+                composable(Destination.Documents.route) {
+                    DocumentsScreen(
+                        onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) }
+                    )
+                }
                 composable(Destination.Librarian.route) {
                     LibrarianScreen(
                         onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) }

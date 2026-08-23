@@ -250,6 +250,12 @@ data class LibrarianAnswer(
     val sources: List<LibrarianSource>,
     /** Memories that matched but were withheld by permission. Counted, never named. */
     val withheldCount: Int = 0,
+    /**
+     * Names of the hive shelves the answer came through, in nomination order. Empty when
+     * a flat librarian answered. Shown to the user: retrieval that cannot explain itself
+     * has no place in an archive built on provenance.
+     */
+    val routedThrough: List<String> = emptyList(),
     /** Set by the clinical guard. Drives the disclosure the UI must render. */
     val medicalRecordsPresent: Boolean = false
 ) {
