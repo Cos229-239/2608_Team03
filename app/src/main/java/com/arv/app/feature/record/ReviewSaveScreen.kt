@@ -46,6 +46,7 @@ data class ReviewSaveUiState(
     val narratorIds: List<String> = emptyList(),
     val eraText: String = "",
     val eraUnknown: Boolean = false,
+    val eraError: String? = null,
     val place: String = "",
     val tagText: String = "",
     val visibility: Visibility = Visibility.FAMILY,
@@ -67,7 +68,26 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun onTitle(v: String) { _state.value = _state.value.copy(title = v) }
-    fun onEra(v: String) { _state.value = _state.value.copy(eraText = v, eraUnknown = false) }
+    fun onEra(v: String) {
+        val years = Regex("\\d{4}")
+            .findAll(v)
+            .map { it.value.toInt() }
+            .toList()
+
+        val currentYear = java.time.Year.now().value
+
+        val hasFutureYear = years.any { it > currentYear }
+
+        _state.value = _state.value.copy(
+            eraText = v,
+            eraUnknown = false,
+            eraError = if (hasFutureYear) {
+                "The year cannot be in the future."
+            } else {
+                null
+            }
+        )
+    }
     fun onPlace(v: String) { _state.value = _state.value.copy(place = v) }
     fun onTags(v: String) { _state.value = _state.value.copy(tagText = v) }
     fun onVisibility(v: Visibility) { _state.value = _state.value.copy(visibility = v) }
@@ -75,7 +95,11 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleEraUnknown() {
         val s = _state.value
-        _state.value = s.copy(eraUnknown = !s.eraUnknown, eraText = if (!s.eraUnknown) "" else s.eraText)
+        _state.value = s.copy(
+            eraUnknown = !s.eraUnknown,
+            eraText = if (!s.eraUnknown) "" else s.eraText,
+            eraError = null
+        )
     }
 
     fun toggleNarrator(personId: String) {
@@ -102,6 +126,25 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
     fun save(localAudioPath: String, durationMs: Long, nowMillis: Long) {
         val s = _state.value
         if (s.saving) return
+
+        val years = if (s.eraUnknown) {
+            emptyList()
+        } else {
+            Regex("\\d{4}")
+                .findAll(s.eraText)
+                .map { it.value.toInt() }
+                .toList()
+        }
+
+        val currentYear = java.time.Year.now().value
+
+        if (years.any { it > currentYear }) {
+            _state.value = s.copy(
+                eraError = "The year cannot be in the future."
+            )
+            return
+        }
+
         _state.value = s.copy(saving = true)
 
         val (start, end, precision) =
@@ -180,15 +223,29 @@ fun ReviewSaveScreen(
                 }
             }
         }
-
         item {
-            OutlinedTextField(
-                value = state.title,
-                onValueChange = viewModel::onTitle,
-                label = { Text("Title") },
-                placeholder = { Text("Sunday kitchen, Bellwood Avenue") },
-                modifier = Modifier.fillMaxWidth()
-            )
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = state.eraText,
+                    onValueChange = viewModel::onEra,
+                    enabled = !state.eraUnknown,
+                    isError = state.eraError != null,
+                    label = { Text("Year or range") },
+                    placeholder = { Text("1958 to 1964") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            state.eraError?.let { error ->
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
 
         item { SectionLabel("Whose voice is this?") }
