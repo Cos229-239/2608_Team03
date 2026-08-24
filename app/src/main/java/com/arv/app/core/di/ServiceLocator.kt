@@ -1,6 +1,7 @@
 package com.arv.app.core.di
 
 import android.content.Context
+import com.arv.app.core.audio.PlaybackController
 import com.arv.app.core.ai.ClinicalClaimGuard
 import com.arv.app.core.ai.FakeTranscriptionService
 import com.arv.app.core.ai.GroundingEnforcer
@@ -64,4 +65,7 @@ object ServiceLocator {
      */
     var transcriptionService: TranscriptionService = FakeTranscriptionService()
         internal set
+
+    /** One voice at a time, app-wide. Every play button goes through here. */
+    val playback: PlaybackController by lazy { PlaybackController() }
 }
