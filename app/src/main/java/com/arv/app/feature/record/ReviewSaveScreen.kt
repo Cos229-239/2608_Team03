@@ -9,17 +9,26 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
@@ -41,6 +50,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+/** Identity for the unsaved recording inside [com.arv.app.core.audio.PlaybackController].
+ *  It has no storyId yet, and it must not collide with a real one. */
+internal const val DRAFT_PLAYBACK_KEY = "review-draft"
+
 data class ReviewSaveUiState(
     val title: String = "",
     val narratorIds: List<String> = emptyList(),
@@ -58,7 +71,7 @@ data class ReviewSaveUiState(
 class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = ServiceLocator.storyRepository(app)
-    private val familyId = ServiceLocator.DEMO_FAMILY_ID
+    private val familyId = ServiceLocator.familyId
 
     private val _state = MutableStateFlow(ReviewSaveUiState())
     val state: StateFlow<ReviewSaveUiState> = _state.asStateFlow()
@@ -110,7 +123,7 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val id = repo.saveRecording(
                 familyId = familyId,
-                createdByUserId = ServiceLocator.DEMO_USER_ID,
+                createdByUserId = ServiceLocator.userId,
                 localAudioPath = localAudioPath,
                 durationMs = durationMs,
                 title = s.title,
@@ -154,6 +167,12 @@ fun ReviewSaveScreen(
         androidx.compose.runtime.LaunchedEffect(id) { onSaved(id) }
     }
 
+    // Belongs to the screen, not to a list item. Inside the LazyColumn this disposed
+    // whenever the player card scrolled out of view, which stopped playback mid-sentence.
+    DisposableEffect(Unit) {
+        onDispose { ServiceLocator.playback.stop() }
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 48.dp),
@@ -164,19 +183,78 @@ fun ReviewSaveScreen(
         }
 
         item {
+            // Nobody decides whether to keep a recording of someone by reading its length.
+            // Hearing it back before saving is the point of this screen, and it was the one
+            // thing missing from it.
+            val playback by ServiceLocator.playback.state.collectAsStateWithLifecycle()
+            val isThisDraft = playback.storyId == DRAFT_PLAYBACK_KEY
+            val playable = ServiceLocator.playback.canPlay(localAudioPath)
+            val positionMs = if (isThisDraft) playback.positionMs else 0L
+            val totalMs =
+                if (isThisDraft && playback.durationMs > 0L) playback.durationMs else durationMs
+
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             ) {
-                Row(
+                Column(
                     Modifier
                         .fillMaxWidth()
                         .padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text("Recorded just now", style = MaterialTheme.typography.bodyMedium)
-                    Text(formatElapsed(durationMs), style = MaterialTheme.typography.bodyMedium)
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Recorded just now", style = MaterialTheme.typography.bodyMedium)
+                        Text(formatElapsed(totalMs), style = MaterialTheme.typography.bodyMedium)
+                    }
+
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        IconButton(
+                            onClick = {
+                                ServiceLocator.playback.toggle(DRAFT_PLAYBACK_KEY, localAudioPath)
+                            },
+                            enabled = playable,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            val playing = isThisDraft && playback.isPlaying
+                            Icon(
+                                if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                contentDescription =
+                                    if (playing) "Pause" else "Play what you just recorded"
+                            )
+                        }
+
+                        Slider(
+                            value = if (totalMs > 0L) positionMs.toFloat() / totalMs else 0f,
+                            onValueChange = { fraction ->
+                                ServiceLocator.playback.seekTo(
+                                    DRAFT_PLAYBACK_KEY,
+                                    localAudioPath,
+                                    (fraction * totalMs).toLong()
+                                )
+                            },
+                            enabled = playable,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        Text(formatElapsed(positionMs), style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    if (!playable) {
+                        Text(
+                            "The audio file is missing, so there is nothing to play back.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
         }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -36,7 +37,7 @@ class PeopleViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = ServiceLocator.storyRepository(app)
 
     val people: StateFlow<List<Person>> =
-        repo.observePeople(ServiceLocator.DEMO_FAMILY_ID)
+        repo.observePeople(ServiceLocator.familyId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 }
 
@@ -45,6 +46,7 @@ class PeopleViewModel(app: Application) : AndroidViewModel(app) {
 fun PeopleScreen(
     onOpenDocuments: () -> Unit = {},
     onOpenPerson: (String) -> Unit = {},
+    onAddPerson: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: PeopleViewModel = viewModel()
 ) {
@@ -55,6 +57,32 @@ fun PeopleScreen(
         contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        item {
+            // First card, above Documents: an archive whose people list cannot grow is
+            // a viewer, not an archive.
+            Card(onClick = onAddPerson, modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(Icons.Outlined.PersonAdd, contentDescription = null)
+                    Column(Modifier.weight(1f)) {
+                        Text("Add someone", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "A name is enough to start",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                        contentDescription = null
+                    )
+                }
+            }
+        }
+
         item {
             // Documents sit next to people because that is how families think about
             // them: the certificate belongs to whoever it names.

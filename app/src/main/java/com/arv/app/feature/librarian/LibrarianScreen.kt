@@ -48,11 +48,11 @@ data class LibrarianUiState(
 class LibrarianViewModel(app: Application) : AndroidViewModel(app) {
 
     private val service = ServiceLocator.librarianService(app)
-    private val familyId = ServiceLocator.DEMO_FAMILY_ID
+    private val familyId = ServiceLocator.familyId
 
     // TODO(DAT-1): the real signed-in member, their role, and their branch root.
     private val viewer = Viewer(
-        userId = ServiceLocator.DEMO_USER_ID,
+        userId = ServiceLocator.userId,
         role = MemberRole.OWNER,
         branchRootPersonId = null
     )

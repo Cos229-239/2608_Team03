@@ -32,7 +32,7 @@ class TimelineViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = ServiceLocator.storyRepository(app)
 
     val decades: StateFlow<Map<Int?, List<Story>>> =
-        repo.observeByDecade(ServiceLocator.DEMO_FAMILY_ID)
+        repo.observeByDecade(ServiceLocator.familyId)
             .map { it }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 }

@@ -10,6 +10,7 @@ import com.arv.app.core.ai.LibrarianService
 import com.arv.app.core.ai.TranscriptionService
 import com.arv.app.core.data.StoryRepository
 import com.arv.app.core.data.local.ArvDatabase
+import com.arv.app.core.session.ActiveSession
 
 /**
  * Deliberately not Hilt.
@@ -23,11 +24,25 @@ object ServiceLocator {
     @Volatile private var repository: StoryRepository? = null
     @Volatile private var librarian: LibrarianService? = null
 
-    /** TODO(DAT-1): replace with the signed-in user's active family. */
+    /**
+     * The sample family. Kept deliberately: it is what the class demo and the team video
+     * run on, and it is the one archive that can be shown to strangers. Real families get
+     * their own id from [com.arv.app.core.session.ActiveSession] and never mix with it.
+     */
     const val DEMO_FAMILY_ID = "demo-family"
-
-    /** TODO(DAT-1): replace with the signed-in user id. */
     const val DEMO_USER_ID = "u_dana"
+
+    /**
+     * The family every screen reads. One property, ten call sites, so switching archives
+     * is a session change rather than a refactor.
+     *
+     * Falls back to the sample family only when nothing is signed in, which onboarding
+     * makes impossible in practice. The fallback exists so a Compose preview or a test
+     * that skips onboarding still renders something instead of crashing.
+     */
+    val familyId: String get() = ActiveSession.familyId ?: DEMO_FAMILY_ID
+
+    val userId: String get() = ActiveSession.userId ?: DEMO_USER_ID
 
     fun storyRepository(context: Context): StoryRepository =
         repository ?: synchronized(this) {

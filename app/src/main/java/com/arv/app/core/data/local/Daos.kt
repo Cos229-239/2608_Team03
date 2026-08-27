@@ -147,6 +147,13 @@ interface AssetDao {
     @Query("SELECT * FROM assets WHERE storyId = :storyId ORDER BY createdAt ASC")
     fun observeForStory(storyId: String): Flow<List<AssetEntity>>
 
+    /**
+     * Every asset in the family, so a list screen can offer a working play button on each
+     * row from one query instead of one query per card.
+     */
+    @Query("SELECT * FROM assets WHERE familyId = :familyId ORDER BY createdAt ASC")
+    fun observeForFamily(familyId: String): Flow<List<AssetEntity>>
+
     @Query("SELECT * FROM assets WHERE uploadState IN (:states) ORDER BY createdAt ASC")
     fun observeByUploadState(states: List<UploadState>): Flow<List<AssetEntity>>
 

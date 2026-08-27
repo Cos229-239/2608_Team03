@@ -41,9 +41,12 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.arv.app.R
+import com.arv.app.core.session.ActiveSession
 import com.arv.app.feature.documents.DocumentsScreen
 import com.arv.app.feature.feed.FeedScreen
 import com.arv.app.feature.librarian.LibrarianScreen
+import com.arv.app.feature.onboarding.OnboardingScreen
+import com.arv.app.feature.people.AddPersonScreen
 import com.arv.app.feature.people.PeopleScreen
 import com.arv.app.feature.people.PersonDetailScreen
 import com.arv.app.feature.record.RecordScreen
@@ -54,6 +57,12 @@ import com.arv.app.feature.story.StoryDetailScreen
 import com.arv.app.feature.timeline.TimelineScreen
 
 sealed class Destination(val route: String) {
+    /** Screen 01. Only reachable before an archive exists on this phone. */
+    data object Onboarding : Destination("onboarding")
+
+    /** Adding a relative by hand, reached from the Tree tab. */
+    data object AddPerson : Destination("addPerson")
+
     /** The private family feed. TODO(UX-3): the feed itself; today this shows the archive. */
     data object Family : Destination("family")
     data object Timeline : Destination("timeline")
@@ -115,7 +124,9 @@ fun ArvAppRoot() {
             // Every screen off the tabs gets a visible way back. The system gesture is
             // invisible, and a 78-year-old storyteller will never find it. Screen 04's
             // full-attention layout earns its own top bar; everything else shares this.
-            if (!onATab) {
+            val onOnboarding =
+                currentDestination?.route == Destination.Onboarding.route
+            if (!onATab && !onOnboarding) {
                 TopAppBar(
                     title = {},
                     navigationIcon = {
@@ -185,8 +196,30 @@ fun ArvAppRoot() {
         Box(Modifier.padding(innerPadding)) {
             NavHost(
                 navController = navController,
-                startDestination = Destination.Family.route
+                startDestination = if (ActiveSession.isSignedIn) {
+                    Destination.Family.route
+                } else {
+                    Destination.Onboarding.route
+                }
             ) {
+                composable(Destination.Onboarding.route) {
+                    OnboardingScreen(
+                        onReady = {
+                            navController.navigate(Destination.Family.route) {
+                                popUpTo(Destination.Onboarding.route) { inclusive = true }
+                            }
+                        }
+                    )
+                }
+                composable(Destination.AddPerson.route) {
+                    AddPersonScreen(
+                        onSaved = { personId ->
+                            navController.navigate(Destination.PersonDetail.of(personId)) {
+                                popUpTo(Destination.AddPerson.route) { inclusive = true }
+                            }
+                        }
+                    )
+                }
                 composable(Destination.Family.route) {
                     FeedScreen(
                         onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) },
@@ -212,7 +245,8 @@ fun ArvAppRoot() {
                 composable(Destination.Tree.route) {
                     PeopleScreen(
                         onOpenDocuments = { navController.navigate(Destination.Documents.route) },
-                        onOpenPerson = { navController.navigate(Destination.PersonDetail.of(it)) }
+                        onOpenPerson = { navController.navigate(Destination.PersonDetail.of(it)) },
+                        onAddPerson = { navController.navigate(Destination.AddPerson.route) }
                     )
                 }
                 composable(

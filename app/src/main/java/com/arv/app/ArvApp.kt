@@ -5,11 +5,18 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import androidx.core.content.getSystemService
+import com.arv.app.core.di.ServiceLocator
+import com.arv.app.core.session.ActiveSession
 
 class ArvApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Before the first frame. Which family is open decides whether onboarding runs,
+        // and that question cannot be answered asynchronously without flashing the wrong
+        // screen at someone.
+        ActiveSession.restore(this)
+        ServiceLocator.playback.attach(this)
         createRecordingChannel()
     }
 

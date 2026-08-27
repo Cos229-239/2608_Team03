@@ -18,15 +18,18 @@ import java.util.UUID
 import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.EraPrecision
 import com.arv.app.core.model.Person
+import com.arv.app.core.model.ProfileState
 import com.arv.app.core.model.Provenance
 import com.arv.app.core.model.Story
 import com.arv.app.core.model.StoryKind
 import com.arv.app.core.model.TranscriptStatus
 import com.arv.app.core.model.UploadState
 import com.arv.app.core.model.Visibility
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 
 /**
@@ -102,10 +105,104 @@ class StoryRepository(
 
     suspend fun upsert(story: StoryEntity) = db.storyDao().upsert(story)
 
+    // --- Making an archive real (DAT-1 groundwork) ---
+
+    /**
+     * Creates a family and the person who owns it.
+     *
+     * The owner is written as a [PersonEntity] as well as a user id, because in this app
+     * the person keeping the archive is also in it. Their consent is set at creation:
+     * they are the one choosing to record, and asking someone to consent to their own
+     * archive would be theater.
+     */
+    suspend fun createFamily(
+        familyName: String,
+        ownerDisplayName: String,
+        nowMillis: Long
+    ): NewFamily {
+        val familyId = "fam_" + UUID.randomUUID().toString().take(8)
+        val userId = "u_" + UUID.randomUUID().toString().take(8)
+        val personId = "p_" + UUID.randomUUID().toString().take(8)
+
+        db.personDao().upsert(
+            PersonEntity(
+                personId = personId,
+                familyId = familyId,
+                displayName = ownerDisplayName.trim(),
+                relationLabel = "You",
+                linkedUserId = userId,
+                state = ProfileState.LIVING,
+                consentGranted = true,
+                updatedAt = nowMillis
+            )
+        )
+
+        return NewFamily(familyId, userId, personId, familyName.trim())
+    }
+
+    /**
+     * Adds someone to the archive.
+     *
+     * Consent stays false and is never inferred from a relative having typed the name in.
+     * The people list renders that gap in red on purpose; a missing consent record is
+     * information, not an error to hide.
+     *
+     * A death year is what moves a profile to MEMORIAL. Nothing else does, because that
+     * transition changes who may add to the profile and it should never happen by accident.
+     */
+    suspend fun addPerson(
+        familyId: String,
+        displayName: String,
+        relationLabel: String? = null,
+        birthYear: Int? = null,
+        deathYear: Int? = null,
+        birthPlace: String? = null,
+        nowMillis: Long
+    ): String {
+        val personId = "p_" + UUID.randomUUID().toString().take(8)
+        db.personDao().upsert(
+            PersonEntity(
+                personId = personId,
+                familyId = familyId,
+                displayName = displayName.trim(),
+                relationLabel = relationLabel?.trim()?.takeIf { it.isNotEmpty() },
+                birthYear = birthYear,
+                deathYear = deathYear,
+                birthPlace = birthPlace?.trim()?.takeIf { it.isNotEmpty() },
+                state = if (deathYear != null) ProfileState.MEMORIAL else ProfileState.LIVING,
+                updatedAt = nowMillis
+            )
+        )
+        return personId
+    }
+
     fun observeTranscript(assetId: String) = db.transcriptDao().observeForAsset(assetId)
 
     suspend fun primaryAsset(storyId: String): AssetEntity? =
         db.assetDao().observeForStory(storyId).first().firstOrNull()
+
+    /**
+     * storyId to the audio file behind it, for every story in the family that actually has
+     * one on disk. List screens use this to decide whether a play button is real.
+     *
+     * Seed rows carry "seed://" paths and no file, so they are dropped here rather than in
+     * the UI: a play button that cannot play should not be offered in the first place. The
+     * existence check touches the disk, which is why this runs off the main thread.
+     */
+    fun observeAudioPaths(familyId: String): Flow<Map<String, String>> =
+        db.assetDao().observeForFamily(familyId)
+            .map { rows ->
+                rows.filter {
+                    it.type == AssetType.AUDIO &&
+                        !it.localPath.startsWith("seed://") &&
+                        File(it.localPath).exists()
+                }
+                    // Oldest first, matching primaryAsset, so the feed and the story screen
+                    // never disagree about which recording a story means.
+                    .groupBy { it.storyId }
+                    .mapValues { (_, assets) -> assets.first().localPath }
+            }
+            .flowOn(Dispatchers.IO)
 
     suspend fun correctSegment(segmentId: Long, newText: String) =
         db.transcriptDao().correct(segmentId, newText)
@@ -558,3 +655,11 @@ class StoryRepository(
         )
     }
 }
+
+/** What [StoryRepository.createFamily] hands back so the session can be opened on it. */
+data class NewFamily(
+    val familyId: String,
+    val userId: String,
+    val ownerPersonId: String,
+    val familyName: String
+)

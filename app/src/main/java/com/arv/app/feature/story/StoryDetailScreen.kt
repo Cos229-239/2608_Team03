@@ -73,7 +73,7 @@ class StoryDetailViewModel(
 
     /** For turning narrator and subject ids into names on screen. */
     val people: StateFlow<List<Person>> =
-        repo.observePeople(ServiceLocator.DEMO_FAMILY_ID)
+        repo.observePeople(ServiceLocator.familyId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** AI-4: the real transcript, live from Room, keyed off the story's audio asset. */

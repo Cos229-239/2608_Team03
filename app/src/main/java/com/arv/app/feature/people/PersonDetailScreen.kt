@@ -61,11 +61,11 @@ class PersonDetailViewModel(
 
     private val personId: String = savedStateHandle["personId"] ?: ""
     private val repo = ServiceLocator.storyRepository(app)
-    private val familyId = ServiceLocator.DEMO_FAMILY_ID
+    private val familyId = ServiceLocator.familyId
 
     // TODO(DAT-1): the real signed-in member.
     private val viewer = Viewer(
-        userId = ServiceLocator.DEMO_USER_ID,
+        userId = ServiceLocator.userId,
         role = MemberRole.OWNER,
         branchRootPersonId = null
     )

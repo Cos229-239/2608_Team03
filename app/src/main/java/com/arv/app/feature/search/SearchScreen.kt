@@ -35,7 +35,7 @@ import kotlinx.coroutines.flow.stateIn
 class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = ServiceLocator.storyRepository(app)
-    private val familyId = ServiceLocator.DEMO_FAMILY_ID
+    private val familyId = ServiceLocator.familyId
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query
