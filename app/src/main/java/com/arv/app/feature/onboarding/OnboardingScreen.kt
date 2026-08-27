@@ -97,7 +97,7 @@ fun OnboardingScreen(
             value = familyName,
             onValueChange = { familyName = it },
             label = { Text("Family name") },
-            placeholder = { Text("The Reinhold family") },
+            placeholder = { Text("The Delaney family") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
