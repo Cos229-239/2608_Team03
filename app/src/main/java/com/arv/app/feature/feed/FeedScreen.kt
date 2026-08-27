@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.CloudOff
@@ -78,7 +79,9 @@ data class FeedUiState(
     val posts: List<Story> = emptyList(),
     val people: List<Person> = emptyList(),
     val pendingSyncCount: Int = 0,
-    val loading: Boolean = true
+    val loading: Boolean = true,
+    /** storyId to its audio file, present only for stories that can actually be played. */
+    val audioPaths: Map<String, String> = emptyMap()
 ) {
     val isEmpty: Boolean get() = !loading && posts.isEmpty()
 
@@ -90,14 +93,17 @@ data class FeedUiState(
 class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = ServiceLocator.storyRepository(app)
-    private val familyId = ServiceLocator.DEMO_FAMILY_ID
+    private val familyId = ServiceLocator.familyId
 
     // TODO(DAT-1): the real signed-in member.
     private val viewer = Viewer(
-        userId = ServiceLocator.DEMO_USER_ID,
+        userId = ServiceLocator.userId,
         role = MemberRole.OWNER,
         branchRootPersonId = null
     )
+
+    /** Home plays through the same controller as every other screen. One voice at a time. */
+    val playback = ServiceLocator.playback
 
     val uiState: StateFlow<FeedUiState> =
         combine(
@@ -107,14 +113,26 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 stories.filter { MemoryAccess.canRead(it, viewer) }
             },
             repo.observePeople(familyId),
-            repo.observePendingSyncCount()
-        ) { posts, people, pending ->
-            FeedUiState(posts = posts, people = people, pendingSyncCount = pending, loading = false)
+            repo.observePendingSyncCount(),
+            repo.observeAudioPaths(familyId)
+        ) { posts, people, pending, paths ->
+            FeedUiState(
+                posts = posts,
+                people = people,
+                pendingSyncCount = pending,
+                loading = false,
+                audioPaths = paths
+            )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FeedUiState())
 
     init {
+        // Only the sample family gets sample data. A real family's archive starts empty
+        // and stays that way until someone in it records something, because an archive
+        // that invents relatives is not an archive.
         // TODO(DAT-2): remove once real sync populates the local database.
-        viewModelScope.launch { repo.seedDemoDataIfEmpty(familyId) }
+        if (familyId == ServiceLocator.DEMO_FAMILY_ID) {
+            viewModelScope.launch { repo.seedDemoDataIfEmpty(familyId) }
+        }
     }
 }
 
@@ -136,6 +154,7 @@ fun FeedScreen(
     viewModel: FeedViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val playState by viewModel.playback.state.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -155,8 +174,14 @@ fun FeedScreen(
         } else {
             state.featured?.let { story ->
                 item {
+                    val path = state.audioPaths[story.storyId]
                     FeaturedStoryCard(
                         story = story,
+                        audioPath = path,
+                        isPlaying = playState.isPlaying && playState.storyId == story.storyId,
+                        onTogglePlay = {
+                            path?.let { viewModel.playback.toggle(story.storyId, it) }
+                        },
                         modifier = Modifier.padding(horizontal = 16.dp),
                         onClick = { onOpenStory(story.storyId) }
                     )
@@ -214,7 +239,17 @@ fun FeedScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         items(state.recent, key = { it.storyId }) { post ->
-                            RecentMemoryCard(post = post, onClick = { onOpenStory(post.storyId) })
+                            val path = state.audioPaths[post.storyId]
+                            RecentMemoryCard(
+                                post = post,
+                                audioPath = path,
+                                isPlaying = playState.isPlaying &&
+                                    playState.storyId == post.storyId,
+                                onTogglePlay = {
+                                    path?.let { viewModel.playback.toggle(post.storyId, it) }
+                                },
+                                onClick = { onOpenStory(post.storyId) }
+                            )
                         }
                     }
                 }
@@ -372,7 +407,14 @@ private fun HomeHeader(
 
 /** The big story card: serif title over deep green, play row, star ribbon. */
 @Composable
-private fun FeaturedStoryCard(story: Story, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun FeaturedStoryCard(
+    story: Story,
+    audioPath: String?,
+    isPlaying: Boolean,
+    onTogglePlay: () -> Unit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Card(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
@@ -431,16 +473,25 @@ private fun FeaturedStoryCard(story: Story, onClick: () -> Unit, modifier: Modif
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // A play button on the card people see first has to actually play.
+                    // Dimmed rather than hidden when there is no file, so the card keeps
+                    // its shape and the reason is legible instead of mysterious.
+                    val playable = audioPath != null
                     Box(
                         Modifier
                             .size(40.dp)
                             .clip(CircleShape)
-                            .background(PaperLight),
+                            .background(if (playable) PaperLight else PaperLight.copy(alpha = 0.4f))
+                            .clickable(enabled = playable, onClick = onTogglePlay),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            Icons.Filled.PlayArrow,
-                            contentDescription = "Play",
+                            if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = when {
+                                !playable -> "No audio for this story"
+                                isPlaying -> "Pause"
+                                else -> "Play"
+                            },
                             tint = InkLight
                         )
                     }
@@ -550,7 +601,13 @@ private fun PromptCard(
 
 /** One shelf card under Recent memories. */
 @Composable
-private fun RecentMemoryCard(post: Story, onClick: () -> Unit) {
+private fun RecentMemoryCard(
+    post: Story,
+    audioPath: String?,
+    isPlaying: Boolean,
+    onTogglePlay: () -> Unit,
+    onClick: () -> Unit
+) {
     Card(
         onClick = onClick,
         modifier = Modifier.width(190.dp),
@@ -588,18 +645,24 @@ private fun RecentMemoryCard(post: Story, onClick: () -> Unit) {
                     )
                 }
                 if (post.kind == StoryKind.AUDIO) {
+                    val playable = audioPath != null
                     Box(
                         Modifier
                             .align(Alignment.BottomEnd)
                             .padding(8.dp)
                             .size(28.dp)
                             .clip(CircleShape)
-                            .background(InkLight.copy(alpha = 0.75f)),
+                            .background(InkLight.copy(alpha = if (playable) 0.75f else 0.35f))
+                            .clickable(enabled = playable, onClick = onTogglePlay),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            Icons.Filled.PlayArrow,
-                            contentDescription = "Play",
+                            if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = when {
+                                !playable -> "No audio for this story"
+                                isPlaying -> "Pause"
+                                else -> "Play"
+                            },
                             tint = PaperLight,
                             modifier = Modifier.size(18.dp)
                         )
