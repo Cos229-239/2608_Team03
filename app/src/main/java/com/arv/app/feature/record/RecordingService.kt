@@ -55,6 +55,24 @@ object RecordingBus {
     internal fun reset() {
         _state.value = RecordingState()
     }
+
+    /**
+     * Throw the finished recording away, bytes and all.
+     *
+     * Distinct from [reset], which only forgets the recording after it has been saved into
+     * the archive. This is the discard path, and it has to actually erase the file: an
+     * archive people trust with a grandmother's voice cannot quietly keep the takes someone
+     * chose not to keep. Returns false if the file was there and could not be removed, so
+     * the caller never tells someone it is gone when it is not.
+     */
+    fun discard(): Boolean {
+        val path = _state.value.outputPath
+        val erased = path == null || runCatching { File(path) }
+            .map { !it.exists() || it.delete() }
+            .getOrDefault(false)
+        _state.value = RecordingState()
+        return erased
+    }
 }
 
 /**

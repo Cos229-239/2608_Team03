@@ -17,21 +17,25 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.Slider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -42,6 +46,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arv.app.R
 import com.arv.app.ui.components.Waveform
+import com.arv.app.core.di.ServiceLocator
 import com.arv.app.ui.components.formatElapsed
 
 /**
@@ -55,6 +60,34 @@ fun RecordScreen(
 ) {
     val context = LocalContext.current
     val state by RecordingBus.state.collectAsStateWithLifecycle()
+
+    // Erasing someone's voice is not a mistap away. Confirm first.
+    var confirmDiscard by remember { mutableStateOf(false) }
+
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("Delete this recording?") },
+            text = {
+                Text(
+                    "The audio is erased from this phone and cannot be brought back. " +
+                        "Nothing is saved to the archive."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        ServiceLocator.playback.stop()
+                        RecordingBus.discard()
+                        confirmDiscard = false
+                    }
+                ) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDiscard = false }) { Text("Keep it") }
+            }
+        )
+    }
 
     var hasMicPermission by remember {
         mutableStateOf(
@@ -184,6 +217,7 @@ fun RecordScreen(
                 } else {
                     Button(
                         onClick = {
+                            ServiceLocator.playback.stop()
                             RecordingService.send(context, RecordingService.ACTION_START)
                         },
                         modifier = Modifier
@@ -193,13 +227,87 @@ fun RecordScreen(
                 }
             }
 
-            // TODO(CAP-5): route to Review & Save (screen 05) instead of closing.
-            if (!state.isRecording && state.outputPath != null) {
-                // Does not reset the bus. Review reads the path and duration from it.
-                OutlinedButton(
-                    onClick = onDone,
+            val finishedPath = state.outputPath
+            if (!state.isRecording && finishedPath != null) {
+                // Saving is a commitment, and nobody makes it on a recording of their
+                // grandmother they have not heard. Listening comes before the commit,
+                // on this screen, not one screen later.
+                val playback by ServiceLocator.playback.state.collectAsStateWithLifecycle()
+                val isThisDraft = playback.storyId == DRAFT_PLAYBACK_KEY
+                val playable = ServiceLocator.playback.canPlay(finishedPath)
+                val positionMs = if (isThisDraft) playback.positionMs else 0L
+                val totalMs = if (isThisDraft && playback.durationMs > 0L) {
+                    playback.durationMs
+                } else {
+                    state.elapsedMs
+                }
+
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("Save this story") }
+                ) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        IconButton(
+                            onClick = {
+                                ServiceLocator.playback.toggle(DRAFT_PLAYBACK_KEY, finishedPath)
+                            },
+                            enabled = playable,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            val playing = isThisDraft && playback.isPlaying
+                            Icon(
+                                if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                contentDescription =
+                                    if (playing) "Pause" else "Listen before you save"
+                            )
+                        }
+
+                        Slider(
+                            value = if (totalMs > 0L) positionMs.toFloat() / totalMs else 0f,
+                            onValueChange = { fraction ->
+                                ServiceLocator.playback.seekTo(
+                                    DRAFT_PLAYBACK_KEY,
+                                    finishedPath,
+                                    (fraction * totalMs).toLong()
+                                )
+                            },
+                            enabled = playable,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        Text(formatElapsed(positionMs), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Does not reset the bus. Review reads the path and duration from it.
+                    OutlinedButton(
+                        onClick = {
+                            ServiceLocator.playback.stop()
+                            onDone()
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Save this story") }
+
+                    // Discarding a take has to be as reachable as keeping one. Without
+                    // this the only way out of a recording you do not want is to leave it
+                    // sitting on disk, which is the opposite of what this app promises.
+                    TextButton(onClick = { confirmDiscard = true }) {
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    }
+                }
             }
         }
     }
