@@ -132,10 +132,14 @@ class StoryRepository(
                     alsoKnownAs = person.alsoKnownAs,
                     birthYear = person.birthYear,
                     deathYear = person.deathYear,
+                    deathYearEnd = person.deathYearEnd,
+                    note = person.note,
                     birthPlace = person.birthPlace,
                     relationLabel = person.relationLabel,
-                    // A death year is what makes a profile a memorial, same as addPerson.
-                    state = if (person.deathYear != null) ProfileState.MEMORIAL
+                    // A stated death counts as much as a dated one. Requiring a year meant
+                    // somebody known to have died, with no year anybody recorded, imported
+                    // as living.
+                    state = if (person.deceased) ProfileState.MEMORIAL
                     else ProfileState.LIVING,
                     confidence = person.confidence,
                     source = person.source,

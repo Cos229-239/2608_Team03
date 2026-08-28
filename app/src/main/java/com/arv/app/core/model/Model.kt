@@ -173,6 +173,10 @@ data class Person(
     val memoryStewardUserId: String? = null,
     val consentGranted: Boolean = false,
     val postMortemOk: Boolean = false,
+    /** The later end of a death nobody can date exactly. Null when [deathYear] is exact. */
+    val deathYearEnd: Int? = null,
+    /** What the record says, in the words of whoever wrote it down. */
+    val note: String? = null,
     val confidence: Confidence = Confidence.FAMILY_TOLD,
     val source: String? = null,
     val verifiedAt: Long? = null

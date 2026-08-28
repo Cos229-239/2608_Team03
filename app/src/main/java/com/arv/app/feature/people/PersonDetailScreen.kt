@@ -544,10 +544,14 @@ private fun sidewaysLabel(g: Int): String = when (g) {
 private fun lifespan(person: Person?, thisYear: Int): String? {
     if (person == null) return null
     val born = person.birthYear
-    val died = person.deathYear
+    // A death the family could only place within a year or two prints as both years. The
+    // alternative is choosing one, which reads as a date the archive is standing behind.
+    val died = person.deathYear?.let { year ->
+        person.deathYearEnd?.let { "$year or $it" } ?: "$year"
+    }
     return when {
         born != null && died != null -> "$born to $died"
-        person.isDeceased && born != null -> "born $born, died"
+        person.isDeceased && born != null && died == null -> "born $born, died"
         person.isDeceased && died != null -> "died $died"
         person.isDeceased -> "died"
         // An age prints only while it is believable. Past that the record is not a living

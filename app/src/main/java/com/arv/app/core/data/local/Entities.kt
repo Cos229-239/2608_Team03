@@ -30,6 +30,14 @@ data class PersonEntity(
     val alsoKnownAs: List<String> = emptyList(),
     val birthYear: Int? = null,
     val deathYear: Int? = null,
+    /**
+     * The later end of a death nobody can date exactly.
+     *
+     * "2021 or 2022" is how a family actually remembers a death, and picking one of the two
+     * would turn somebody's honest uncertainty into a fact the archive appears to vouch
+     * for. Null means the year in [deathYear] is the whole answer.
+     */
+    val deathYearEnd: Int? = null,
     val birthPlace: String? = null,
     val relationLabel: String? = null,
     val linkedUserId: String? = null,
@@ -46,6 +54,14 @@ data class PersonEntity(
     val source: String? = null,
     /** Set when a person has been checked against a record, so the work is not redone. */
     val verifiedAt: Long? = null,
+    /**
+     * What the record says in the words of whoever wrote it down.
+     *
+     * The importer read these and dropped them on the floor, so every caveat a compiled
+     * history carried, every "predeceased his parents" and every disputed date, was lost on
+     * the way in while the confident parts survived.
+     */
+    val note: String? = null,
     val updatedAt: Long = 0L
 )
 
@@ -253,7 +269,9 @@ fun PersonEntity.toDomain() = Person(
     postMortemOk = postMortemOk,
     confidence = confidence,
     source = source,
-    verifiedAt = verifiedAt
+    verifiedAt = verifiedAt,
+    deathYearEnd = deathYearEnd,
+    note = note
 )
 
 fun RelationshipEntity.toDomain() = Relationship(

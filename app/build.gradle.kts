@@ -106,6 +106,9 @@ dependencies {
     implementation(libs.firebase.functions)
 
     testImplementation(libs.junit)
+    // Android ships org.json, the JVM does not. Without this the import parser could only
+    // be tested on a device, which is why it had no tests at all.
+    testImplementation(libs.json)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.androidx.espresso.core)

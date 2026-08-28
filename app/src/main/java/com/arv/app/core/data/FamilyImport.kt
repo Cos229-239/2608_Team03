@@ -30,6 +30,16 @@ object FamilyImport {
         val relationLabel: String?,
         val birthYear: Int?,
         val deathYear: Int?,
+        /**
+         * Known to have died, with no year on record.
+         *
+         * A family very often knows somebody is gone and not when. Inferring death from a
+         * death year alone meant those people imported as living, so an archive built to
+         * record who can still be asked was quietly listing people who cannot.
+         */
+        val deceased: Boolean,
+        /** The later end of a death the file could only place within a year or two. */
+        val deathYearEnd: Int?,
         val birthPlace: String?,
         val note: String?,
         val confidence: Confidence,
@@ -74,6 +84,13 @@ object FamilyImport {
                 relationLabel = label,
                 birthYear = o.optInt("birthYear").takeIf { it > 0 },
                 deathYear = o.optInt("deathYear").takeIf { it > 0 },
+                // Either a stated flag or a year. A year already means they died, so a file
+                // that gives one does not also have to say so.
+                deceased = o.optBoolean("deceased") || o.optInt("deathYear") > 0,
+                // Only a range if it is actually later. A file repeating the same year twice
+                // is stating one year, not an uncertainty.
+                deathYearEnd = o.optInt("deathYearEnd")
+                    .takeIf { it > 0 && it > o.optInt("deathYear") },
                 birthPlace = o.optString("birthPlace").takeIf { it.isNotBlank() },
                 note = o.optString("note").takeIf { it.isNotBlank() },
                 confidence = confidenceOf(o.optString("confidence")),

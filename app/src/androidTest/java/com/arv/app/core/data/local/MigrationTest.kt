@@ -92,6 +92,41 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate2To3_keepsEveryRowAndAddsTheUncertainDeathColumns() {
+        helper.createDatabase(TEST_DB, 2).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO people
+                  (personId, familyId, displayName, alsoKnownAs, birthYear, deathYear,
+                   birthPlace, relationLabel, linkedUserId, state, memoryStewardUserId,
+                   consentGranted, postMortemOk, updatedAt, confidence, source, verifiedAt)
+                VALUES
+                  ('p_1', 'fam_1', 'Ruth Delaney', '', 1931, 2004, 'Chicago', 'Grandmother',
+                   'u_1', 'MEMORIAL', NULL, 1, 0, 100, 'DOCUMENTED', 'Death certificate', 200)
+                """.trimIndent()
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB, 3, true, ArvDatabase.MIGRATION_2_3
+        )
+
+        db.query(
+            "SELECT displayName, deathYear, deathYearEnd, note, source FROM people"
+        ).use { c ->
+            assertTrue("the person survived the migration", c.moveToFirst())
+            assertEquals("Ruth Delaney", c.getString(0))
+            // The dated death is untouched. Adding room for an uncertain one must not
+            // disturb the people whose dates were never in doubt.
+            assertEquals(2004, c.getInt(1))
+            assertTrue("no death range invented for an exact date", c.isNull(2))
+            assertTrue("no note invented", c.isNull(3))
+            assertEquals("Death certificate", c.getString(4))
+            assertEquals("exactly one person, nothing duplicated", 1, c.count)
+        }
+    }
+
     private companion object {
         const val TEST_DB = "migration-test"
     }
