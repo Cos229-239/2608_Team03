@@ -7,7 +7,7 @@ Arv is the Swedish word for inheritance.
 
 ## Where the build stands
 
-Updated 2026-08-28. Branch `AngelaPersonal`. 123 unit tests, 0 failures.
+Updated 2026-08-28. 123 unit tests, 0 failures.
 
 Working end to end:
 
