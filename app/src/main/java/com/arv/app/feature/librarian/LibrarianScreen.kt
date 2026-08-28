@@ -48,14 +48,11 @@ data class LibrarianUiState(
 class LibrarianViewModel(app: Application) : AndroidViewModel(app) {
 
     private val service = ServiceLocator.librarianService(app)
-    private val familyId = ServiceLocator.DEMO_FAMILY_ID
+    private val familyId = ServiceLocator.familyId
 
-    // TODO(DAT-1): the real signed-in member, their role, and their branch root.
-    private val viewer = Viewer(
-        userId = ServiceLocator.DEMO_USER_ID,
-        role = MemberRole.OWNER,
-        branchRootPersonId = null
-    )
+    // One definition, in ServiceLocator. Four screens each building their own
+    // Viewer is four chances to disagree about what someone may read.
+    private val viewer = ServiceLocator.viewer
 
     private val _state = MutableStateFlow(LibrarianUiState())
     val state: StateFlow<LibrarianUiState> = _state.asStateFlow()

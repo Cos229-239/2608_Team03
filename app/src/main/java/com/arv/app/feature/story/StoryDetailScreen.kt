@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -36,6 +37,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.data.local.TranscriptSegmentEntity
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.model.Person
@@ -48,6 +50,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -59,9 +62,23 @@ class StoryDetailViewModel(
 
     private val storyId: String = savedStateHandle["storyId"] ?: ""
     private val repo = ServiceLocator.storyRepository(app)
+    private val viewer = ServiceLocator.viewer
 
+    /**
+     * Null while loading, and null again when this memory is not for this viewer. Opening
+     * a story by id has to answer to the same filter as the lists that link to it, or the
+     * permission model is only skin deep and a stale link walks straight through it.
+     *
+     * [accessDenied] separates the two cases so the screen never sits on "Loading" for
+     * something it is in fact refusing to show.
+     */
     val story: StateFlow<Story?> = repo.observeById(storyId)
+        .map { s -> s?.takeIf { MemoryAccess.canRead(it, viewer) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val accessDenied: StateFlow<Boolean> = repo.observeById(storyId)
+        .map { s -> s != null && !MemoryAccess.canRead(s, viewer) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /** Where the recording lives on disk. Null until loaded; "seed://" for demo items. */
     val audioPath: StateFlow<String?> =
@@ -73,7 +90,7 @@ class StoryDetailViewModel(
 
     /** For turning narrator and subject ids into names on screen. */
     val people: StateFlow<List<Person>> =
-        repo.observePeople(ServiceLocator.DEMO_FAMILY_ID)
+        repo.observePeople(ServiceLocator.familyId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** AI-4: the real transcript, live from Room, keyed off the story's audio asset. */
@@ -107,6 +124,27 @@ fun StoryDetailScreen(
 ) {
     val story by viewModel.story.collectAsStateWithLifecycle()
     val segments by viewModel.segments.collectAsStateWithLifecycle()
+    val accessDenied by viewModel.accessDenied.collectAsStateWithLifecycle()
+
+    if (accessDenied) {
+        // Say that it exists and is not yours to open. Pretending it is missing would be
+        // a second, quieter lie, and the person who kept it private is entitled to have
+        // that decision visibly honored rather than hidden.
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Private", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "This memory is private to the person who recorded it.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        return
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),

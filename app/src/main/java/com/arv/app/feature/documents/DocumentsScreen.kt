@@ -1,5 +1,9 @@
 package com.arv.app.feature.documents
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material3.Button
 import android.app.Application
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -72,14 +76,11 @@ data class DocumentsUiState(
 class DocumentsViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = ServiceLocator.storyRepository(app)
-    private val familyId = ServiceLocator.DEMO_FAMILY_ID
+    private val familyId = ServiceLocator.familyId
 
-    // TODO(DAT-1): the real signed-in member.
-    private val viewer = Viewer(
-        userId = ServiceLocator.DEMO_USER_ID,
-        role = MemberRole.OWNER,
-        branchRootPersonId = null
-    )
+    // One definition, in ServiceLocator. Four screens each building their own
+    // Viewer is four chances to disagree about what someone may read.
+    private val viewer = ServiceLocator.viewer
 
     val uiState: StateFlow<DocumentsUiState> =
         combine(
@@ -106,6 +107,7 @@ class DocumentsViewModel(app: Application) : AndroidViewModel(app) {
 @Composable
 fun DocumentsScreen(
     onOpenStory: (String) -> Unit,
+    onAddDocument: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: DocumentsViewModel = viewModel()
 ) {
@@ -140,6 +142,22 @@ fun DocumentsScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = PaperLight.copy(alpha = 0.85f)
                 )
+            }
+        }
+
+        item {
+            // The archive could only ever show what was seeded. Half of what a family
+            // actually holds is paper, and until now there was no way to put any of it in.
+            Button(
+                onClick = onAddDocument,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .heightIn(min = 52.dp)
+            ) {
+                Icon(Icons.Outlined.Add, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Add a record")
             }
         }
 

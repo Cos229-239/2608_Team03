@@ -8,18 +8,31 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
@@ -38,8 +51,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+/** Identity for the unsaved recording inside [com.arv.app.core.audio.PlaybackController].
+ *  It has no storyId yet, and it must not collide with a real one. */
+internal const val DRAFT_PLAYBACK_KEY = "review-draft"
 
 data class ReviewSaveUiState(
     val title: String = "",
@@ -52,13 +70,24 @@ data class ReviewSaveUiState(
     val aiUsePolicy: AiUsePolicy = AiUsePolicy.SUMMARY_OK,
     val area: ArchiveArea = ArchiveArea.STORIES,
     val saving: Boolean = false,
-    val savedStoryId: String? = null
-)
+    val savedStoryId: String? = null,
+    /** Which ancestor's line, when visibility is BRANCH. */
+    val branchRootPersonId: String? = null,
+    /** Set when a save failed. The recording itself is never at risk from this path. */
+    val error: String? = null
+) {
+    /**
+     * BRANCH with no line named would store a story that fails closed for everyone,
+     * including the person who just recorded it. Block the save rather than lose it.
+     */
+    val canSave: Boolean
+        get() = !saving && !(visibility == Visibility.BRANCH && branchRootPersonId == null)
+}
 
 class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = ServiceLocator.storyRepository(app)
-    private val familyId = ServiceLocator.DEMO_FAMILY_ID
+    private val familyId = ServiceLocator.familyId
 
     private val _state = MutableStateFlow(ReviewSaveUiState())
     val state: StateFlow<ReviewSaveUiState> = _state.asStateFlow()
@@ -66,11 +95,33 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
     val people: StateFlow<List<Person>> = repo.observePeople(familyId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * Ancestors this person could scope a memory to. Empty until the tree knows a parent,
+     * and the BRANCH option stays hidden while it is empty.
+     */
+    val branchChoices: StateFlow<List<Person>> =
+        flow { emit(repo.branchChoicesFor(familyId, ServiceLocator.userId)) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun onBranchRoot(personId: String) {
+        _state.value = _state.value.copy(
+            visibility = Visibility.BRANCH,
+            branchRootPersonId = personId
+        )
+    }
+
     fun onTitle(v: String) { _state.value = _state.value.copy(title = v) }
     fun onEra(v: String) { _state.value = _state.value.copy(eraText = v, eraUnknown = false) }
     fun onPlace(v: String) { _state.value = _state.value.copy(place = v) }
     fun onTags(v: String) { _state.value = _state.value.copy(tagText = v) }
-    fun onVisibility(v: Visibility) { _state.value = _state.value.copy(visibility = v) }
+    fun onVisibility(v: Visibility) {
+        // Changing away from BRANCH forgets the line, so a story cannot keep a scope its
+        // owner backed out of.
+        _state.value = _state.value.copy(
+            visibility = v,
+            branchRootPersonId = if (v == Visibility.BRANCH) _state.value.branchRootPersonId else null
+        )
+    }
     fun onAiUsePolicy(v: AiUsePolicy) { _state.value = _state.value.copy(aiUsePolicy = v) }
 
     fun toggleEraUnknown() {
@@ -108,27 +159,48 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
             if (s.eraUnknown) Triple(null, null, EraPrecision.UNKNOWN) else parseEra(s.eraText)
 
         viewModelScope.launch {
-            val id = repo.saveRecording(
-                familyId = familyId,
-                createdByUserId = ServiceLocator.DEMO_USER_ID,
-                localAudioPath = localAudioPath,
-                durationMs = durationMs,
-                title = s.title,
-                narratorIds = s.narratorIds,
-                eraStart = start,
-                eraEnd = end,
-                eraPrecision = precision,
-                placeLabel = s.place,
-                tags = s.tagText.split(",").map { it.trim() }.filter { it.isNotEmpty() },
-                visibility = s.visibility,
-                aiUsePolicy = s.aiUsePolicy,
-                area = s.area,
-                now = nowMillis
-            )
-            // Navigate immediately; transcription catches up on its own and the story
-            // page flips from Transcribing to Ready when it lands.
+            val id = try {
+                repo.saveRecording(
+                    familyId = familyId,
+                    createdByUserId = ServiceLocator.userId,
+                    localAudioPath = localAudioPath,
+                    durationMs = durationMs,
+                    title = s.title,
+                    narratorIds = s.narratorIds,
+                    eraStart = start,
+                    eraEnd = end,
+                    eraPrecision = precision,
+                    placeLabel = s.place,
+                    tags = s.tagText.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+                    visibility = s.visibility,
+                    aiUsePolicy = s.aiUsePolicy,
+                    area = s.area,
+                    branchRootPersonId = s.branchRootPersonId,
+                    now = nowMillis
+                )
+            } catch (t: Throwable) {
+                // Without this the coroutine dies, saving stays true, and the button is
+                // dead for good while someone is holding an unsaved interview. The audio
+                // file is untouched on disk, so say that and let them try again.
+                _state.value = _state.value.copy(
+                    saving = false,
+                    error = "Could not save this story. The recording is still on this phone. Try again."
+                )
+                return@launch
+            }
+
+            // Transcription is started on a scope that outlives this screen, and started
+            // BEFORE the navigation trigger below. Setting savedStoryId fires the
+            // LaunchedEffect that navigates, which pops this back stack entry and cancels
+            // viewModelScope; anything launched there would be killed within milliseconds
+            // of starting, leaving every saved story on "Transcribing" forever.
+            ServiceLocator.appScope.launch {
+                runCatching {
+                    repo.transcribeStory(id, ServiceLocator.transcriptionService(getApplication()))
+                }
+            }
+
             _state.value = _state.value.copy(saving = false, savedStoryId = id)
-            repo.transcribeStory(id, ServiceLocator.transcriptionService)
         }
     }
 }
@@ -149,9 +221,16 @@ fun ReviewSaveScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val people by viewModel.people.collectAsStateWithLifecycle()
+    val branchChoices by viewModel.branchChoices.collectAsStateWithLifecycle()
 
     state.savedStoryId?.let { id ->
         androidx.compose.runtime.LaunchedEffect(id) { onSaved(id) }
+    }
+
+    // Belongs to the screen, not to a list item. Inside the LazyColumn this disposed
+    // whenever the player card scrolled out of view, which stopped playback mid-sentence.
+    DisposableEffect(Unit) {
+        onDispose { ServiceLocator.playback.stop() }
     }
 
     LazyColumn(
@@ -164,19 +243,89 @@ fun ReviewSaveScreen(
         }
 
         item {
+            // Nobody decides whether to keep a recording of someone by reading its length.
+            // Hearing it back before saving is the point of this screen, and it was the one
+            // thing missing from it.
+            val playback by ServiceLocator.playback.state.collectAsStateWithLifecycle()
+            val isThisDraft = playback.storyId == DRAFT_PLAYBACK_KEY
+            val playable = ServiceLocator.playback.canPlay(localAudioPath)
+            val positionMs = if (isThisDraft) playback.positionMs else 0L
+            val totalMs =
+                if (isThisDraft && playback.durationMs > 0L) playback.durationMs else durationMs
+
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             ) {
-                Row(
+                Column(
                     Modifier
                         .fillMaxWidth()
                         .padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text("Recorded just now", style = MaterialTheme.typography.bodyMedium)
-                    Text(formatElapsed(durationMs), style = MaterialTheme.typography.bodyMedium)
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Recorded just now", style = MaterialTheme.typography.bodyMedium)
+                        Text(formatElapsed(totalMs), style = MaterialTheme.typography.bodyMedium)
+                    }
+
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        IconButton(
+                            onClick = {
+                                ServiceLocator.playback.toggle(DRAFT_PLAYBACK_KEY, localAudioPath)
+                            },
+                            enabled = playable,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            val playing = isThisDraft && playback.isPlaying
+                            Icon(
+                                if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                contentDescription =
+                                    if (playing) "Pause" else "Play what you just recorded"
+                            )
+                        }
+
+                        // Seeking happens on release, not on every touch sample. Seeking
+                        // while dragging starts audible playback the moment you touch the
+                        // bar to check the length, and each seek on an inactive draft
+                        // builds a MediaPlayer and calls prepare() on the main thread,
+                        // so the thumb also fights the position ticker.
+                        var scrub by remember { mutableStateOf<Float?>(null) }
+                        Slider(
+                            value = scrub
+                                ?: if (totalMs > 0L) positionMs.toFloat() / totalMs else 0f,
+                            onValueChange = { scrub = it },
+                            onValueChangeFinished = {
+                                scrub?.let { fraction ->
+                                    ServiceLocator.playback.seekTo(
+                                        DRAFT_PLAYBACK_KEY,
+                                        localAudioPath,
+                                        (fraction * totalMs).toLong()
+                                    )
+                                }
+                                scrub = null
+                            },
+                            enabled = playable,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        Text(formatElapsed(positionMs), style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    if (!playable) {
+                        Text(
+                            "The audio file is missing, so there is nothing to play back.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
         }
@@ -253,8 +402,59 @@ fun ReviewSaveScreen(
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 VisibilityChip(state, viewModel, Visibility.FAMILY, "Whole family")
-                VisibilityChip(state, viewModel, Visibility.BRANCH, "My branch")
+                if (branchChoices.isNotEmpty()) {
+                    VisibilityChip(state, viewModel, Visibility.BRANCH, "One side")
+                }
+                // "My branch" is deliberately absent until branch roots actually exist.
+                //
+                // Visibility.BRANCH is real and MemoryAccess handles it correctly, but a
+                // story carries no branch root yet (Story.branchRootPersonIdOrNull is a
+                // stub returning null) and no Viewer has one either, so canRead's BRANCH
+                // arm is false for everyone. Unlike PRIVATE and SELECTED that arm has no
+                // creator escape, which means choosing this chip would hide a recording
+                // from the whole family AND from the person who just made it, silently
+                // and permanently. Offering an option that can only lose someone's
+                // interview is worse than offering fewer options.
+                //
+                // Restore this the same commit the branch root column lands, not before.
                 VisibilityChip(state, viewModel, Visibility.PRIVATE, "Only me")
+            }
+        }
+
+        if (state.visibility == Visibility.BRANCH) {
+            item {
+                Text(
+                    "Whose line?",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    branchChoices.forEach { ancestor ->
+                        FilterChip(
+                            selected = state.branchRootPersonId == ancestor.personId,
+                            onClick = { viewModel.onBranchRoot(ancestor.personId) },
+                            label = { Text(ancestor.displayName) }
+                        )
+                    }
+                }
+            }
+            item {
+                Text(
+                    if (state.branchRootPersonId == null) {
+                        // Saving now would store a branch nobody can resolve, and BRANCH
+                        // fails closed, so the recording would be readable by no one.
+                        "Pick whose line this belongs to, or it will not be readable."
+                    } else {
+                        "Anyone descended from them can hear this. Nobody else in the family can."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (state.branchRootPersonId == null) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
             }
         }
 
@@ -296,13 +496,23 @@ fun ReviewSaveScreen(
             }
         }
 
+        state.error?.let { message ->
+            item {
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+
         item {
             Button(
                 onClick = { viewModel.save(localAudioPath, durationMs, nowMillis) },
-                enabled = !state.saving,
+                enabled = state.canSave,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
+                    .heightIn(min = 56.dp)
             ) {
                 Text(if (state.saving) "Saving" else "Save story")
             }

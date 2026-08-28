@@ -75,7 +75,7 @@ class LocalLibrarianServiceTest {
         )
     )
 
-    private val owner = Viewer(userId = "u_dana", role = MemberRole.OWNER, branchRootPersonId = null)
+    private val owner = Viewer(userId = "u_dana", role = MemberRole.OWNER)
 
     private fun service(
         stories: List<Story>,

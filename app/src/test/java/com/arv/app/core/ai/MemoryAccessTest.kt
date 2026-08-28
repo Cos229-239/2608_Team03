@@ -19,10 +19,14 @@ import org.junit.Test
  */
 class MemoryAccessTest {
 
-    private val dana = Viewer("u_dana", MemberRole.OWNER, branchRootPersonId = "p_ruth")
-    private val theo = Viewer("u_theo", MemberRole.CONTRIBUTOR, branchRootPersonId = "p_ruth")
-    private val marcus = Viewer("u_marcus", MemberRole.VIEWER, branchRootPersonId = null)
-    private val keeper = Viewer("u_keeper", MemberRole.KEEPER, branchRootPersonId = "p_ruth")
+    private val FAMILY = "fam_1"
+
+    // Dana, Theo and the keeper all descend from Ruth. Marcus is family by marriage and
+    // reaches no shared ancestor, which is exactly the case BRANCH exists to separate.
+    private val dana = Viewer("u_dana", MemberRole.OWNER, familyId = FAMILY, ancestorIds = setOf("p_dana", "p_ruth"))
+    private val theo = Viewer("u_theo", MemberRole.CONTRIBUTOR, familyId = FAMILY, ancestorIds = setOf("p_theo", "p_ruth"))
+    private val marcus = Viewer("u_marcus", MemberRole.VIEWER, familyId = FAMILY, ancestorIds = setOf("p_marcus"))
+    private val keeper = Viewer("u_keeper", MemberRole.KEEPER, familyId = FAMILY, ancestorIds = setOf("p_kim", "p_ruth"))
 
     private fun story(
         id: String = "s1",
@@ -32,13 +36,16 @@ class MemoryAccessTest {
         sharedWith: List<String> = emptyList(),
         restricted: Boolean = false,
         area: ArchiveArea = ArchiveArea.STORIES,
-        subjects: List<String> = emptyList()
+        subjects: List<String> = emptyList(),
+        branchRootPersonId: String? = null
     ) = Story(
         storyId = id,
+        familyId = FAMILY,
         title = "A story",
         kind = StoryKind.AUDIO,
         area = area,
         visibility = visibility,
+        branchRootPersonId = branchRootPersonId,
         aiUsePolicy = aiUsePolicy,
         sharedWithUserIds = sharedWith,
         subjectPersonIds = subjects,
@@ -88,12 +95,35 @@ class MemoryAccessTest {
     }
 
     @Test
-    fun `branch fails closed while branch scoping is unimplemented`() {
-        // DAT-7 will store branchRootPersonId on the story. Until then BRANCH must deny
-        // everyone rather than accidentally behaving like FAMILY.
-        val s = story(visibility = Visibility.BRANCH)
+    fun `branch is readable by everyone descended from the named ancestor`() {
+        val s = story(visibility = Visibility.BRANCH, branchRootPersonId = "p_ruth")
+        assertTrue(MemoryAccess.canRead(s, dana))
+        assertTrue(MemoryAccess.canRead(s, theo))
+        assertTrue(MemoryAccess.canRead(s, keeper))
+    }
+
+    @Test
+    fun `branch is not readable by relatives outside that line`() {
+        val s = story(visibility = Visibility.BRANCH, branchRootPersonId = "p_ruth")
+        assertFalse(MemoryAccess.canRead(s, marcus))
+    }
+
+    @Test
+    fun `branch with no ancestor named fails closed`() {
+        // An unanswered "which side of the family" must never resolve to everyone.
+        val s = story(visibility = Visibility.BRANCH, branchRootPersonId = null)
         assertFalse(MemoryAccess.canRead(s, dana))
         assertFalse(MemoryAccess.canRead(s, keeper))
+        assertFalse(MemoryAccess.canRead(s, marcus))
+    }
+
+    @Test
+    fun `a branch named after you is yours to read`() {
+        // The old shape lost this: someone could file a memory under their own line and
+        // then be unable to open it.
+        val s = story(visibility = Visibility.BRANCH, branchRootPersonId = "p_dana")
+        assertTrue(MemoryAccess.canRead(s, dana))
+        assertFalse(MemoryAccess.canRead(s, theo))
     }
 
     @Test
@@ -144,7 +174,7 @@ class MemoryAccessTest {
      */
     @Test
     fun `a health record can be edited by its subject, not only its author`() {
-        val ruth = Viewer("u_ruth", MemberRole.VIEWER, null, personIds = setOf("p_ruth"))
+        val ruth = Viewer("u_ruth", MemberRole.VIEWER, familyId = FAMILY, personIds = setOf("p_ruth"))
         val s = story(
             area = ArchiveArea.HEALTH,
             createdBy = "u_theo",
@@ -202,5 +232,22 @@ class MemoryAccessTest {
         // The withheld stories themselves are not returned, so there is no path by which
         // a title or narrator could leak into a "we found more" message.
         assertFalse(result.usable.any { it.storyId == "private" })
+    }
+
+    @Test
+    fun `a story from another family is refused however public it is`() {
+        // FAMILY visibility used to return true unconditionally, so the only thing keeping
+        // one family out of another was that every query happened to filter first.
+        val theirs = story(visibility = Visibility.FAMILY).copy(familyId = "fam_2")
+        assertFalse(MemoryAccess.canRead(theirs, dana))
+        assertFalse(MemoryAccess.canRead(theirs, keeper))
+    }
+
+    @Test
+    fun `sharing an ancestor does not reach across families`() {
+        // The case that matters once cousins can link their archives.
+        val theirs = story(visibility = Visibility.BRANCH, branchRootPersonId = "p_ruth")
+            .copy(familyId = "fam_2")
+        assertFalse(MemoryAccess.canRead(theirs, dana))
     }
 }

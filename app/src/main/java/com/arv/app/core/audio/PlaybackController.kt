@@ -1,6 +1,12 @@
 package com.arv.app.core.audio
 
+import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaPlayer
+import android.os.Build
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,11 +39,65 @@ data class PlaybackState(
  * out honestly instead of throwing. A play button that cannot play should say why, not
  * pretend.
  */
+private const val TAG = "ArvPlayback"
+
 class PlaybackController {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var player: MediaPlayer? = null
     private var ticker: Job? = null
+
+    private var audioManager: AudioManager? = null
+    private var focusRequest: AudioFocusRequest? = null
+
+    /**
+     * Speech, not music. The distinction is not cosmetic: it tells the system to route
+     * this to the media output rather than a notification stream, and it is what lets a
+     * car stereo or a hearing aid treat a grandmother's voice as something to be
+     * understood rather than something playing in the background.
+     */
+    private val attributes: AudioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_MEDIA)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
+
+    /** Called once from the Application so playback can take audio focus. */
+    fun attach(context: Context) {
+        audioManager = context.applicationContext
+            .getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    }
+
+    /**
+     * Take the floor before a voice plays, and give it back after. Without this, music
+     * from another app keeps playing over the top of the recording, which is the exact
+     * situation this app exists to prevent.
+     */
+    private fun requestFocus(): Boolean {
+        val am = audioManager ?: return true
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(attributes)
+                .setOnAudioFocusChangeListener { change ->
+                    when (change) {
+                        AudioManager.AUDIOFOCUS_LOSS -> stop()
+                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> pause()
+                    }
+                }
+                .build()
+            focusRequest = req
+            am.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        } else {
+            true
+        }
+    }
+
+    private fun abandonFocus() {
+        val am = audioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            focusRequest?.let { am.abandonAudioFocusRequest(it) }
+            focusRequest = null
+        }
+    }
 
     private val _state = MutableStateFlow(PlaybackState())
     val state: StateFlow<PlaybackState> = _state.asStateFlow()
@@ -72,8 +132,15 @@ class PlaybackController {
     }
 
     fun pause() {
-        player?.takeIf { it.isPlaying }?.pause()
+        val mp = player
         ticker?.cancel()
+        if (mp == null) {
+            // No player behind the state. Say so rather than sit on a paused-looking
+            // control that will never resume.
+            _state.value = PlaybackState()
+            return
+        }
+        if (mp.isPlaying) mp.pause()
         _state.value = _state.value.copy(isPlaying = false)
     }
 
@@ -81,11 +148,20 @@ class PlaybackController {
         ticker?.cancel()
         player?.release()
         player = null
+        abandonFocus()
         _state.value = PlaybackState()
     }
 
     private fun resume() {
-        player?.start()
+        val mp = player
+        if (mp == null) {
+            // This is the bug that makes a play button lie: without the null check the
+            // state flips to isPlaying with nothing behind it, and the UI shows Pause
+            // over silence.
+            _state.value = PlaybackState()
+            return
+        }
+        mp.start()
         _state.value = _state.value.copy(isPlaying = true)
         startTicker()
     }
@@ -96,8 +172,18 @@ class PlaybackController {
         val mp = MediaPlayer()
         player = mp
         runCatching {
+            // Attributes must be set before prepare(), or the player keeps whatever
+            // default routing it was constructed with. setVolume, by contrast, is only
+            // legal once the player is prepared; calling it in Idle throws.
+            mp.setAudioAttributes(attributes)
+            mp.setOnErrorListener { _, what, extra ->
+                Log.e(TAG, "MediaPlayer error what=$what extra=$extra path=$localPath")
+                false
+            }
+            requestFocus()
             mp.setDataSource(localPath)
             mp.prepare()
+            mp.setVolume(1f, 1f)
             if (startAtMs > 0) mp.seekTo(startAtMs.toInt())
             mp.setOnCompletionListener {
                 ticker?.cancel()
@@ -114,8 +200,11 @@ class PlaybackController {
                 durationMs = mp.duration.toLong()
             )
             startTicker()
-        }.onFailure {
-            // A broken file must not take the screen down with it.
+        }.onFailure { t ->
+            // A broken file must not take the screen down with it, but swallowing the
+            // reason silently is how a play button ends up looking fine and playing
+            // nothing. Say what happened.
+            Log.e(TAG, "playback failed for $localPath", t)
             stop()
         }
     }

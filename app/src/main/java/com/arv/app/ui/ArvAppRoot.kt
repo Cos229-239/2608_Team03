@@ -41,19 +41,40 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.arv.app.R
+import com.arv.app.core.session.ActiveSession
+import com.arv.app.feature.documents.AddDocumentScreen
 import com.arv.app.feature.documents.DocumentsScreen
 import com.arv.app.feature.feed.FeedScreen
 import com.arv.app.feature.librarian.LibrarianScreen
+import com.arv.app.feature.onboarding.OnboardingScreen
+import com.arv.app.feature.people.AddPersonScreen
 import com.arv.app.feature.people.PeopleScreen
+import com.arv.app.feature.people.PlacePeopleScreen
 import com.arv.app.feature.people.PersonDetailScreen
 import com.arv.app.feature.record.RecordScreen
 import com.arv.app.feature.record.RecordingBus
 import com.arv.app.feature.record.ReviewSaveScreen
 import com.arv.app.feature.search.SearchScreen
+import com.arv.app.feature.settings.SettingsScreen
 import com.arv.app.feature.story.StoryDetailScreen
 import com.arv.app.feature.timeline.TimelineScreen
 
 sealed class Destination(val route: String) {
+    /** Screen 01. Only reachable before an archive exists on this phone. */
+    data object Onboarding : Destination("onboarding")
+
+    /** Adding a relative by hand, reached from the Tree tab. */
+    data object AddPerson : Destination("addPerson")
+
+    /** Filing a certificate, photograph or letter, reached from Documents. */
+    data object AddDocument : Destination("addDocument")
+
+    /** Speech-model setup and the way out of an archive. */
+    data object Settings : Destination("settings")
+
+    /** The imported people the archive cannot yet place in the tree. */
+    data object PlacePeople : Destination("placePeople")
+
     /** The private family feed. TODO(UX-3): the feed itself; today this shows the archive. */
     data object Family : Destination("family")
     data object Timeline : Destination("timeline")
@@ -115,7 +136,9 @@ fun ArvAppRoot() {
             // Every screen off the tabs gets a visible way back. The system gesture is
             // invisible, and a 78-year-old storyteller will never find it. Screen 04's
             // full-attention layout earns its own top bar; everything else shares this.
-            if (!onATab) {
+            val onOnboarding =
+                currentDestination?.route == Destination.Onboarding.route
+            if (!onATab && !onOnboarding) {
                 TopAppBar(
                     title = {},
                     navigationIcon = {
@@ -185,13 +208,36 @@ fun ArvAppRoot() {
         Box(Modifier.padding(innerPadding)) {
             NavHost(
                 navController = navController,
-                startDestination = Destination.Family.route
+                startDestination = if (ActiveSession.isSignedIn) {
+                    Destination.Family.route
+                } else {
+                    Destination.Onboarding.route
+                }
             ) {
+                composable(Destination.Onboarding.route) {
+                    OnboardingScreen(
+                        onReady = {
+                            navController.navigate(Destination.Family.route) {
+                                popUpTo(Destination.Onboarding.route) { inclusive = true }
+                            }
+                        }
+                    )
+                }
+                composable(Destination.AddPerson.route) {
+                    AddPersonScreen(
+                        onSaved = { personId ->
+                            navController.navigate(Destination.PersonDetail.of(personId)) {
+                                popUpTo(Destination.AddPerson.route) { inclusive = true }
+                            }
+                        }
+                    )
+                }
                 composable(Destination.Family.route) {
                     FeedScreen(
                         onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) },
                         onOpenPerson = { navController.navigate(Destination.PersonDetail.of(it)) },
                         onRecord = { navController.navigate(Destination.Record.route) },
+                        onOpenSettings = { navController.navigate(Destination.Settings.route) },
                         onViewAll = {
                             navController.navigate(Destination.Timeline.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
@@ -212,7 +258,9 @@ fun ArvAppRoot() {
                 composable(Destination.Tree.route) {
                     PeopleScreen(
                         onOpenDocuments = { navController.navigate(Destination.Documents.route) },
-                        onOpenPerson = { navController.navigate(Destination.PersonDetail.of(it)) }
+                        onOpenPerson = { navController.navigate(Destination.PersonDetail.of(it)) },
+                        onAddPerson = { navController.navigate(Destination.AddPerson.route) },
+                        onPlacePeople = { navController.navigate(Destination.PlacePeople.route) }
                     )
                 }
                 composable(
@@ -220,12 +268,38 @@ fun ArvAppRoot() {
                     arguments = listOf(navArgument("personId") { type = NavType.StringType })
                 ) {
                     PersonDetailScreen(
-                        onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) }
+                        onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) },
+                        onOpenPerson = { navController.navigate(Destination.PersonDetail.of(it)) }
                     )
                 }
                 composable(Destination.Documents.route) {
                     DocumentsScreen(
-                        onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) }
+                        onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) },
+                        onAddDocument = { navController.navigate(Destination.AddDocument.route) }
+                    )
+                }
+                composable(Destination.PlacePeople.route) {
+                    PlacePeopleScreen()
+                }
+                composable(Destination.Settings.route) {
+                    SettingsScreen(
+                        onSignedOut = {
+                            // Back to the first screen with nothing behind it. Leaving an
+                            // archive must not leave its screens on the back stack for a
+                            // gesture to walk back into.
+                            navController.navigate(Destination.Onboarding.route) {
+                                popUpTo(navController.graph.id) { inclusive = true }
+                            }
+                        }
+                    )
+                }
+                composable(Destination.AddDocument.route) {
+                    AddDocumentScreen(
+                        onSaved = { storyId ->
+                            navController.navigate(Destination.StoryDetail.of(storyId)) {
+                                popUpTo(Destination.AddDocument.route) { inclusive = true }
+                            }
+                        }
                     )
                 }
                 composable(Destination.Librarian.route) {

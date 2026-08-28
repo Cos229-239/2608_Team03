@@ -22,18 +22,20 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.PersonAddAlt
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -56,6 +58,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.ai.Viewer
 import com.arv.app.core.di.ServiceLocator
+import com.arv.app.core.session.ActiveSession
 import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.Story
@@ -78,7 +81,9 @@ data class FeedUiState(
     val posts: List<Story> = emptyList(),
     val people: List<Person> = emptyList(),
     val pendingSyncCount: Int = 0,
-    val loading: Boolean = true
+    val loading: Boolean = true,
+    /** storyId to its audio file, present only for stories that can actually be played. */
+    val audioPaths: Map<String, String> = emptyMap()
 ) {
     val isEmpty: Boolean get() = !loading && posts.isEmpty()
 
@@ -90,14 +95,17 @@ data class FeedUiState(
 class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = ServiceLocator.storyRepository(app)
-    private val familyId = ServiceLocator.DEMO_FAMILY_ID
+    private val familyId = ServiceLocator.familyId
 
-    // TODO(DAT-1): the real signed-in member.
-    private val viewer = Viewer(
-        userId = ServiceLocator.DEMO_USER_ID,
-        role = MemberRole.OWNER,
-        branchRootPersonId = null
-    )
+    // One definition, in ServiceLocator. Four screens each building their own
+    // Viewer is four chances to disagree about what someone may read.
+    private val viewer = ServiceLocator.viewer
+
+    /** Home plays through the same controller as every other screen. One voice at a time. */
+    val playback = ServiceLocator.playback
+
+    /** Whose archive this is, so the header can say so instead of guessing. */
+    val familyName: String get() = ActiveSession.familyName ?: "Our Family"
 
     val uiState: StateFlow<FeedUiState> =
         combine(
@@ -107,14 +115,26 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 stories.filter { MemoryAccess.canRead(it, viewer) }
             },
             repo.observePeople(familyId),
-            repo.observePendingSyncCount()
-        ) { posts, people, pending ->
-            FeedUiState(posts = posts, people = people, pendingSyncCount = pending, loading = false)
+            repo.observePendingSyncCount(),
+            repo.observeAudioPaths(familyId)
+        ) { posts, people, pending, paths ->
+            FeedUiState(
+                posts = posts,
+                people = people,
+                pendingSyncCount = pending,
+                loading = false,
+                audioPaths = paths
+            )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FeedUiState())
 
     init {
+        // Only the sample family gets sample data. A real family's archive starts empty
+        // and stays that way until someone in it records something, because an archive
+        // that invents relatives is not an archive.
         // TODO(DAT-2): remove once real sync populates the local database.
-        viewModelScope.launch { repo.seedDemoDataIfEmpty(familyId) }
+        if (familyId == ServiceLocator.DEMO_FAMILY_ID) {
+            viewModelScope.launch { repo.seedDemoDataIfEmpty(familyId) }
+        }
     }
 }
 
@@ -132,10 +152,12 @@ fun FeedScreen(
     onRecord: () -> Unit,
     onOpenPerson: (String) -> Unit = {},
     onViewAll: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: FeedViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val playState by viewModel.playback.state.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -144,9 +166,11 @@ fun FeedScreen(
     ) {
         item {
             HomeHeader(
+                familyName = viewModel.familyName,
                 people = state.people,
                 pendingSyncCount = state.pendingSyncCount,
-                onOpenPerson = onOpenPerson
+                onOpenPerson = onOpenPerson,
+                onOpenSettings = onOpenSettings
             )
         }
 
@@ -155,8 +179,14 @@ fun FeedScreen(
         } else {
             state.featured?.let { story ->
                 item {
+                    val path = state.audioPaths[story.storyId]
                     FeaturedStoryCard(
                         story = story,
+                        audioPath = path,
+                        isPlaying = playState.isPlaying && playState.storyId == story.storyId,
+                        onTogglePlay = {
+                            path?.let { viewModel.playback.toggle(story.storyId, it) }
+                        },
                         modifier = Modifier.padding(horizontal = 16.dp),
                         onClick = { onOpenStory(story.storyId) }
                     )
@@ -214,7 +244,17 @@ fun FeedScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         items(state.recent, key = { it.storyId }) { post ->
-                            RecentMemoryCard(post = post, onClick = { onOpenStory(post.storyId) })
+                            val path = state.audioPaths[post.storyId]
+                            RecentMemoryCard(
+                                post = post,
+                                audioPath = path,
+                                isPlaying = playState.isPlaying &&
+                                    playState.storyId == post.storyId,
+                                onTogglePlay = {
+                                    path?.let { viewModel.playback.toggle(post.storyId, it) }
+                                },
+                                onClick = { onOpenStory(post.storyId) }
+                            )
                         }
                     }
                 }
@@ -230,8 +270,10 @@ fun FeedScreen(
 @Composable
 private fun HomeHeader(
     people: List<Person>,
+    familyName: String,
     pendingSyncCount: Int,
-    onOpenPerson: (String) -> Unit
+    onOpenPerson: (String) -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     Column(
         Modifier
@@ -246,16 +288,27 @@ private fun HomeHeader(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                "Our Family",
+                // The archive says whose it is. ActiveSession has carried familyName since
+                // onboarding and it was rendered nowhere, while every family saw the same
+                // hardcoded words on the first screen of their own archive.
+                familyName,
                 style = MaterialTheme.typography.displaySmall,
-                color = PaperLight
+                color = PaperLight,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
             )
             Spacer(Modifier.weight(1f))
-            Icon(
-                Icons.Outlined.PersonAddAlt,
-                contentDescription = "Invite family",
-                tint = PaperLight
-            )
+            // Was a painted "Invite family" icon with no onClick. Inviting is not built,
+            // and a control that does nothing is worse than one fewer control, so the
+            // space now goes to something that works.
+            IconButton(onClick = onOpenSettings) {
+                Icon(
+                    Icons.Outlined.Settings,
+                    contentDescription = "Settings",
+                    tint = PaperLight
+                )
+            }
         }
 
         Spacer(Modifier.height(4.dp))
@@ -342,11 +395,23 @@ private fun HomeHeader(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Icon(Icons.Outlined.CloudOff, contentDescription = null, tint = PaperLight)
+                    Icon(
+                        Icons.Outlined.CloudOff,
+                        contentDescription = null,
+                        tint = PaperLight
+                    )
                     Column(Modifier.weight(1f)) {
+                        // Says what is true today. Nothing drains the outbox yet, so
+                        // "waiting to upload" promised a queue that is moving toward
+                        // somewhere, and after ten recordings the home screen claimed
+                        // twenty memories were pending on a phone with no upload path.
+                        // This screen exists to build trust; the old wording spent it.
+                        //
+                        // TODO(DAT-2): once a sync worker exists, this goes back to
+                        // counting genuinely pending uploads.
                         val label =
-                            if (pendingSyncCount == 1) "1 memory waiting to upload"
-                            else "$pendingSyncCount memories waiting to upload"
+                            if (pendingSyncCount == 1) "1 memory saved on this phone"
+                            else "$pendingSyncCount memories saved on this phone"
                         Text(
                             label,
                             style = MaterialTheme.typography.bodyMedium,
@@ -359,11 +424,6 @@ private fun HomeHeader(
                             color = PaperLight.copy(alpha = 0.8f)
                         )
                     }
-                    Icon(
-                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = PaperLight
-                    )
                 }
             }
         }
@@ -372,7 +432,14 @@ private fun HomeHeader(
 
 /** The big story card: serif title over deep green, play row, star ribbon. */
 @Composable
-private fun FeaturedStoryCard(story: Story, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun FeaturedStoryCard(
+    story: Story,
+    audioPath: String?,
+    isPlaying: Boolean,
+    onTogglePlay: () -> Unit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Card(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
@@ -431,16 +498,25 @@ private fun FeaturedStoryCard(story: Story, onClick: () -> Unit, modifier: Modif
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // A play button on the card people see first has to actually play.
+                    // Dimmed rather than hidden when there is no file, so the card keeps
+                    // its shape and the reason is legible instead of mysterious.
+                    val playable = audioPath != null
                     Box(
                         Modifier
                             .size(40.dp)
                             .clip(CircleShape)
-                            .background(PaperLight),
+                            .background(if (playable) PaperLight else PaperLight.copy(alpha = 0.4f))
+                            .clickable(enabled = playable, onClick = onTogglePlay),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            Icons.Filled.PlayArrow,
-                            contentDescription = "Play",
+                            if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = when {
+                                !playable -> "No audio for this story"
+                                isPlaying -> "Pause"
+                                else -> "Play"
+                            },
                             tint = InkLight
                         )
                     }
@@ -550,7 +626,13 @@ private fun PromptCard(
 
 /** One shelf card under Recent memories. */
 @Composable
-private fun RecentMemoryCard(post: Story, onClick: () -> Unit) {
+private fun RecentMemoryCard(
+    post: Story,
+    audioPath: String?,
+    isPlaying: Boolean,
+    onTogglePlay: () -> Unit,
+    onClick: () -> Unit
+) {
     Card(
         onClick = onClick,
         modifier = Modifier.width(190.dp),
@@ -588,18 +670,24 @@ private fun RecentMemoryCard(post: Story, onClick: () -> Unit) {
                     )
                 }
                 if (post.kind == StoryKind.AUDIO) {
+                    val playable = audioPath != null
                     Box(
                         Modifier
                             .align(Alignment.BottomEnd)
                             .padding(8.dp)
                             .size(28.dp)
                             .clip(CircleShape)
-                            .background(InkLight.copy(alpha = 0.75f)),
+                            .background(InkLight.copy(alpha = if (playable) 0.75f else 0.35f))
+                            .clickable(enabled = playable, onClick = onTogglePlay),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            Icons.Filled.PlayArrow,
-                            contentDescription = "Play",
+                            if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = when {
+                                !playable -> "No audio for this story"
+                                isPlaying -> "Pause"
+                                else -> "Play"
+                            },
                             tint = PaperLight,
                             modifier = Modifier.size(18.dp)
                         )

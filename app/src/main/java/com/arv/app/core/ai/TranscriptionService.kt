@@ -36,8 +36,20 @@ data class TranscriptionResult(
 
 /**
  * Deterministic stand-in used by AI-1 so the rest of the team is not blocked on a provider
- * account, and by tests so they never hit the network. Timings are fabricated but
- * well-formed, which is exactly what the transcript UI needs to be built against.
+ * account, and by tests so they never hit the network.
+ *
+ * It deliberately does NOT invent family speech. It used to emit four lines of plausible
+ * dialogue ("My father never ate before grace. Not once.") at 0.92 confidence, written to
+ * the same table and rendered in the same type as a real transcript, with nothing in the
+ * data marking them as machine-authored fiction. In an archive whose entire claim is that
+ * a voice is never synthesized, a stranger's invented sentences sitting under someone's
+ * recording of their grandmother is the worst thing this app could do, and it would have
+ * been the first thing a reviewer saw after recording themselves.
+ *
+ * It also no longer fabricates timings. The old version emitted fixed twelve-second steps
+ * regardless of the audio, so a four second recording produced lines at 0s, 12s, 24s and
+ * 36s, every one of them past the end of the file, and tapping a timestamp seeked into
+ * nothing. One segment, no invented clock.
  */
 class FakeTranscriptionService(
     private val latencyMs: Long = 1200L
@@ -54,33 +66,28 @@ class FakeTranscriptionService(
             onProgress((i + 1) / steps.toFloat())
         }
 
-        val assetId = audio.nameWithoutExtension
-        val segments = SAMPLE_LINES.mapIndexed { index, line ->
-            TranscriptSegment(
-                assetId = assetId,
-                startMs = index * 12_000L,
-                endMs = (index + 1) * 12_000L,
-                text = line,
-                confidence = 0.92f
-            )
-        }
-
         return Result.success(
             TranscriptionResult(
-                segments = segments,
+                segments = listOf(
+                    TranscriptSegment(
+                        assetId = audio.nameWithoutExtension,
+                        startMs = 0L,
+                        endMs = 0L,
+                        text = PLACEHOLDER,
+                        // Zero, not 0.92. A confidence score is a measurement, and
+                        // nothing here measured anything.
+                        confidence = 0f
+                    )
+                ),
                 language = languageHint ?: "en-US",
-                provider = "fake",
+                provider = "placeholder",
                 modelVersion = "0"
             )
         )
     }
 
     private companion object {
-        val SAMPLE_LINES = listOf(
-            "She'd start the roast before church so the whole house smelled like it by the time we got back.",
-            "My father never ate before grace. Not once. Not even the year he was sick.",
-            "And there was a song she hummed. I couldn't tell you the words, it was her mother's, from back home.",
-            "You want me to try it? I'll butcher it."
-        )
+        const val PLACEHOLDER =
+            "This recording has not been transcribed yet. The words are still only in the audio."
     }
 }
