@@ -33,8 +33,28 @@ data class RecordingState(
     /** Normalized 0..1, sampled ~20x/sec for the waveform. */
     val amplitudes: List<Float> = emptyList(),
     val outputPath: String? = null,
-    val error: String? = null
-)
+    val error: String? = null,
+    /**
+     * [elapsedMs] the last time the input hit the ceiling, or null if it never has.
+     *
+     * Clipping is destructive and it is destructive at capture: once a peak is flattened
+     * the shape of that sound is gone, and no amount of care afterwards brings it back. It
+     * is heard on playback as a crackle or a tear. The only moment anyone can do anything
+     * about it is while the recording is still running, which is why this is surfaced live
+     * instead of discovered later.
+     */
+    val lastClippedAtMs: Long? = null
+) {
+    /** True for a few seconds after the input last hit the ceiling. */
+    val isClipping: Boolean
+        get() = lastClippedAtMs != null && elapsedMs - lastClippedAtMs <= CLIP_WARNING_MS
+
+    /** True if any part of this recording clipped, however long ago. */
+    val hasClipped: Boolean get() = lastClippedAtMs != null
+}
+
+/** How long the "too loud" warning stays up after the last peak. */
+private const val CLIP_WARNING_MS = 2_500L
 
 /**
  * Process-wide recording state.
@@ -67,9 +87,16 @@ object RecordingBus {
      */
     fun discard(): Boolean {
         val path = _state.value.outputPath
-        val erased = path == null || runCatching { File(path) }
-            .map { !it.exists() || it.delete() }
-            .getOrDefault(false)
+        // The whole delete has to be inside runCatching. File(path) alone cannot throw,
+        // and Result.map does not catch, so a SecurityException from delete() used to
+        // propagate out of a function whose entire job is to report success honestly.
+        val erased = path == null || runCatching {
+            val f = File(path)
+            !f.exists() || f.delete()
+        }.getOrDefault(false)
+
+        // State clears either way. Leaving a pointer to a file we failed to delete would
+        // offer Save on a take the person just said they did not want kept.
         _state.value = RecordingState()
         return erased
     }
@@ -122,6 +149,15 @@ class RecordingService : LifecycleService() {
             MediaRecorder()
         }
 
+        // Foreground FIRST, before anything that can throw.
+        //
+        // send() starts us with startForegroundService, which hands the process a short
+        // deadline to call startForeground or be killed. prepare()/start() throw on the
+        // ordinary case of the microphone being busy, which is exactly "someone rang while
+        // she was about to start talking", and the old order took the catch branch to
+        // stopSelf() having never gone foreground.
+        startForegroundCompat()
+
         try {
             rec.apply {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
@@ -136,7 +172,14 @@ class RecordingService : LifecycleService() {
             }
         } catch (e: Exception) {
             rec.runCatching { release() }
-            RecordingBus.update { it.copy(error = e.message ?: "Could not start recording") }
+            // prepare() creates the file before it throws, so a failed start leaves a
+            // zero byte .m4a behind. Nothing will ever reference it; take it with us.
+            runCatching { if (file.length() == 0L) file.delete() }
+            outputFile = null
+            RecordingBus.update {
+                RecordingState(error = e.message ?: "Could not start recording")
+            }
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
             return
         }
@@ -145,7 +188,6 @@ class RecordingService : LifecycleService() {
         accumulatedMs = 0L
         startedAtElapsed = SystemClock.elapsedRealtime()
 
-        startForegroundCompat()
         RecordingBus.update {
             RecordingState(isRecording = true, outputPath = file.absolutePath)
         }
@@ -177,14 +219,20 @@ class RecordingService : LifecycleService() {
     }
 
     private fun stop() {
+        // Nothing to stop. Without this guard a second Stop tap adds another elapsed
+        // delta on top of the first, so a 5 minute interview saves as 10; and an
+        // ACTION_STOP delivered to a fresh service instance measures from
+        // startedAtElapsed = 0, producing a duration of "milliseconds since the phone
+        // booted" and overwriting outputPath with null, which strands the finished .m4a
+        // on disk with no way back to it from the UI.
+        val rec = recorder ?: return
         tickJob?.cancel()
-        val rec = recorder
         recorder = null
 
         // stop() throws if the recording was too short to produce a valid file. Release
         // either way so the mic is never left held, and keep whatever bytes landed.
-        rec?.runCatching { stop() }
-        rec?.runCatching { release() }
+        rec.runCatching { stop() }
+        rec.runCatching { release() }
 
         if (!RecordingBus.state.value.isPaused) {
             accumulatedMs += SystemClock.elapsedRealtime() - startedAtElapsed
@@ -213,10 +261,15 @@ class RecordingService : LifecycleService() {
                 val amplitude = runCatching { rec.maxAmplitude }.getOrDefault(0)
                 val normalized = (amplitude / MAX_AMPLITUDE).coerceIn(0f, 1f)
                 val elapsed = accumulatedMs + (SystemClock.elapsedRealtime() - startedAtElapsed)
+                // maxAmplitude returns the loudest sample since the last read, so a peak
+                // at or near full scale means the input has run out of headroom and is
+                // being flattened. Nothing later can undo that, so it is reported now.
+                val clipped = normalized >= CLIP_LEVEL
                 RecordingBus.update { state ->
                     state.copy(
                         elapsedMs = elapsed,
-                        amplitudes = (state.amplitudes + normalized).takeLast(WAVEFORM_WINDOW)
+                        amplitudes = (state.amplitudes + normalized).takeLast(WAVEFORM_WINDOW),
+                        lastClippedAtMs = if (clipped) elapsed else state.lastClippedAtMs
                     )
                 }
             }
@@ -251,9 +304,30 @@ class RecordingService : LifecycleService() {
 
     override fun onDestroy() {
         tickJob?.cancel()
-        recorder?.runCatching { stop() }
-        recorder?.runCatching { release() }
+        val rec = recorder
         recorder = null
+
+        if (rec != null) {
+            // We are being torn down mid-recording: the OS reclaimed us, or the mic was
+            // taken. Finalize the file and tell the UI, because the alternative is a
+            // screen that still says "Recording. The screen can turn off." over a frozen
+            // clock, whose Stop button reaches a fresh instance and orphans the take.
+            rec.runCatching { stop() }
+            rec.runCatching { release() }
+
+            if (!RecordingBus.state.value.isPaused) {
+                accumulatedMs += SystemClock.elapsedRealtime() - startedAtElapsed
+            }
+            RecordingBus.update {
+                it.copy(
+                    isRecording = false,
+                    isPaused = false,
+                    elapsedMs = accumulatedMs,
+                    outputPath = outputFile?.absolutePath,
+                    error = "Recording stopped early. What was recorded up to that point is saved."
+                )
+            }
+        }
         super.onDestroy()
     }
 
@@ -267,6 +341,14 @@ class RecordingService : LifecycleService() {
         private const val TICK_MS = 50L
         private const val WAVEFORM_WINDOW = 96
         private const val MAX_AMPLITUDE = 32_767f
+
+        /**
+         * Peak fraction at which the input is treated as out of headroom.
+         *
+         * Not 1.0. An ADC that is being driven too hard rounds its peaks down slightly, so
+         * waiting for a literal full-scale sample misses most real clipping.
+         */
+        private const val CLIP_LEVEL = 0.98f
 
         fun send(context: Context, action: String) {
             val intent = Intent(context, RecordingService::class.java).setAction(action)

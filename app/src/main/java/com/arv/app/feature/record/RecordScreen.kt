@@ -30,6 +30,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +64,30 @@ fun RecordScreen(
 
     // Erasing someone's voice is not a mistap away. Confirm first.
     var confirmDiscard by remember { mutableStateOf(false) }
+    var discardFailed by remember { mutableStateOf(false) }
+
+    // Playback started here has to end here. The draft player uses DRAFT_PLAYBACK_KEY,
+    // which no play button elsewhere in the app matches, so audio that escapes this
+    // screen has no stop control anywhere and just keeps talking over the next one.
+    DisposableEffect(Unit) {
+        onDispose { ServiceLocator.playback.stop() }
+    }
+
+    if (discardFailed) {
+        AlertDialog(
+            onDismissRequest = { discardFailed = false },
+            title = { Text("Could not delete it") },
+            text = {
+                Text(
+                    "The recording is still on this phone. Try again, and if it keeps " +
+                        "failing the file can be removed from Settings."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { discardFailed = false }) { Text("OK") }
+            }
+        )
+    }
 
     if (confirmDiscard) {
         AlertDialog(
@@ -78,7 +103,12 @@ fun RecordScreen(
                 TextButton(
                     onClick = {
                         ServiceLocator.playback.stop()
-                        RecordingBus.discard()
+                        // discard() returns false when the file is still on disk. Saying
+                        // "deleted" over a file that survived is the one thing this
+                        // button must never do.
+                        if (!RecordingBus.discard()) {
+                            discardFailed = true
+                        }
                         confirmDiscard = false
                     }
                 ) { Text("Delete", color = MaterialTheme.colorScheme.error) }
@@ -144,12 +174,16 @@ fun RecordScreen(
             Text(
                 when {
                     state.error != null -> state.error!!
+                    // Ranked above "Recording" on purpose. This is the only moment the
+                    // damage can still be prevented, so it takes the line.
+                    state.isClipping -> "Too loud. Move the phone back a little."
                     state.isPaused -> "Paused"
                     state.isRecording -> "Recording. The screen can turn off."
+                    state.hasClipped -> "Some of that was too loud to record cleanly."
                     else -> "Ready"
                 },
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (state.error != null) {
+                color = if (state.error != null || state.isClipping || state.hasClipped) {
                     MaterialTheme.colorScheme.error
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
@@ -270,14 +304,24 @@ fun RecordScreen(
                             )
                         }
 
+                        // Seek on release. Seeking per touch sample starts the voice
+                        // playing out loud the instant you touch the bar to check the
+                        // length, and every seek on an inactive draft builds a
+                        // MediaPlayer and calls prepare() on the main thread.
+                        var scrub by remember { mutableStateOf<Float?>(null) }
                         Slider(
-                            value = if (totalMs > 0L) positionMs.toFloat() / totalMs else 0f,
-                            onValueChange = { fraction ->
-                                ServiceLocator.playback.seekTo(
-                                    DRAFT_PLAYBACK_KEY,
-                                    finishedPath,
-                                    (fraction * totalMs).toLong()
-                                )
+                            value = scrub
+                                ?: if (totalMs > 0L) positionMs.toFloat() / totalMs else 0f,
+                            onValueChange = { scrub = it },
+                            onValueChangeFinished = {
+                                scrub?.let { fraction ->
+                                    ServiceLocator.playback.seekTo(
+                                        DRAFT_PLAYBACK_KEY,
+                                        finishedPath,
+                                        (fraction * totalMs).toLong()
+                                    )
+                                }
+                                scrub = null
                             },
                             enabled = playable,
                             modifier = Modifier.weight(1f)
