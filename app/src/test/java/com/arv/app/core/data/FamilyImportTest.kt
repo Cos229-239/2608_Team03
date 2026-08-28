@@ -72,7 +72,7 @@ class FamilyImportTest {
     fun `a vague label links nothing rather than guessing a generation`() {
         // "3x great-grandmother" says how far up somebody is and never through whom, so
         // there is no honest edge to draw from it.
-        assertNull(one("""{"displayName":"Jane Harbour","relationLabel":"3x great-grandmother"}""").linkToImporter)
+        assertNull(one("""{"displayName":"Jane Delaney","relationLabel":"3x great-grandmother"}""").linkToImporter)
     }
 
     @Test
