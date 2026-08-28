@@ -8,9 +8,16 @@ import com.arv.app.core.ai.GroundingEnforcer
 import com.arv.app.core.ai.LibrarianHive
 import com.arv.app.core.ai.LibrarianService
 import com.arv.app.core.ai.TranscriptionService
+import com.arv.app.core.ai.VoskModelStore
+import com.arv.app.core.ai.VoskTranscriptionService
+import com.arv.app.core.ai.Viewer
 import com.arv.app.core.data.StoryRepository
 import com.arv.app.core.data.local.ArvDatabase
+import com.arv.app.core.model.MemberRole
 import com.arv.app.core.session.ActiveSession
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * Deliberately not Hilt.
@@ -44,6 +51,37 @@ object ServiceLocator {
 
     val userId: String get() = ActiveSession.userId ?: DEMO_USER_ID
 
+    /**
+     * Who is asking, for the permission filter. Defined once on purpose: a screen that
+     * builds its own [Viewer] is a screen that can quietly disagree with the others about
+     * what someone is allowed to read, and this app's whole claim is that they never do.
+     *
+     * TODO(DAT-1): role and branch root belong to the family membership record. Until that
+     * exists this is OWNER, which is true of the only member a device currently has.
+     */
+    val viewer: Viewer
+        get() = Viewer(
+            userId = userId,
+            familyId = familyId,
+            role = MemberRole.OWNER,
+            ancestorIds = ActiveSession.ancestorIds,
+            personIds = ActiveSession.personIds
+        )
+
+    /**
+     * Work that has to outlive the screen that started it.
+     *
+     * Transcription is the case this exists for. Review saves a story and navigates away
+     * in the same breath, which pops the back stack entry and cancels its ViewModel scope,
+     * so anything launched there dies within milliseconds of starting. A recording is the
+     * one thing in this app that cannot be asked to happen again, and the work that turns
+     * it into searchable text should not be tied to whether someone stayed on a screen.
+     *
+     * TODO(DAT-2): a WorkManager job survives process death as well; this survives only
+     * navigation. WorkManager is already a declared dependency for that step.
+     */
+    val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     fun storyRepository(context: Context): StoryRepository =
         repository ?: synchronized(this) {
             repository ?: StoryRepository(ArvDatabase.get(context)).also { repository = it }
@@ -74,12 +112,26 @@ object ServiceLocator {
             }
         }
 
+    @Volatile private var models: VoskModelStore? = null
+
+    /** The on-device speech model, and the one-time setup that puts it there. */
+    fun voskModelStore(context: Context): VoskModelStore =
+        models ?: synchronized(this) {
+            models ?: VoskModelStore(context.applicationContext).also { models = it }
+        }
+
     /**
-     * AI-1 ships the fake so the other three roles are never blocked on a provider account.
-     * AI-2 swaps in the real implementation here and nowhere else.
+     * AI-2. Real recognition when the model is on the phone, an honest placeholder before.
+     *
+     * The fallback is deliberate rather than a stub left behind. Until someone has run the
+     * one-time setup there is nothing that can read the audio, and the placeholder says
+     * exactly that. What it must never do is invent plausible sentences and file them next
+     * to a real recording, which is what the old fake did.
      */
-    var transcriptionService: TranscriptionService = FakeTranscriptionService()
-        internal set
+    fun transcriptionService(context: Context): TranscriptionService {
+        val store = voskModelStore(context)
+        return if (store.isReady) VoskTranscriptionService(store) else FakeTranscriptionService()
+    }
 
     /** One voice at a time, app-wide. Every play button goes through here. */
     val playback: PlaybackController by lazy { PlaybackController() }

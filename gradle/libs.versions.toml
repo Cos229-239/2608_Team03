@@ -15,6 +15,7 @@ googleServices = "4.4.2"
 mlkitTextRecognition = "16.0.1"
 coil = "2.7.0"
 okhttp = "4.12.0"
+vosk = "0.3.47"
 junit = "4.13.2"
 androidxJunit = "1.2.1"
 espresso = "3.6.1"
@@ -40,6 +41,7 @@ androidx-navigation-compose = { group = "androidx.navigation", name = "navigatio
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
 
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
 
@@ -55,6 +57,7 @@ firebase-functions = { group = "com.google.firebase", name = "firebase-functions
 mlkit-text-recognition = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkitTextRecognition" }
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+vosk-android = { group = "com.alphacephei", name = "vosk-android", version.ref = "vosk" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxJunit" }

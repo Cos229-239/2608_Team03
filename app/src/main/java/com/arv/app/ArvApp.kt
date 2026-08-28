@@ -7,6 +7,7 @@ import android.os.Build
 import androidx.core.content.getSystemService
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.session.ActiveSession
+import kotlinx.coroutines.launch
 
 class ArvApp : Application() {
 
@@ -18,6 +19,19 @@ class ArvApp : Application() {
         ActiveSession.restore(this)
         ServiceLocator.playback.attach(this)
         createRecordingChannel()
+
+        // Work out who this person is in the family and who they descend from. BRANCH
+        // visibility reads the result, and it starts empty, so until this finishes
+        // branch-scoped material is hidden rather than shown. That is the right way round:
+        // a moment of showing too little is a delay, a moment of showing too much is a
+        // family reading something that was never meant for them.
+        val familyId = ActiveSession.familyId
+        val userId = ActiveSession.userId
+        if (familyId != null && userId != null) {
+            ServiceLocator.appScope.launch {
+                runCatching { ServiceLocator.storyRepository(this@ArvApp).refreshLineage(familyId, userId) }
+            }
+        }
     }
 
     /**
