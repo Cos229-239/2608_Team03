@@ -215,4 +215,32 @@ class TreeFrameTest {
         val beside = TreeFrame.frameFor("f_dana", stated).generation(0).map { it.personId }
         assertTrue("f_kit" in beside)
     }
+
+    @Test
+    fun `an uncle stated with no parents on file is still shown`() {
+        // What a compiled history gives you: "Uncle" against a name, and nothing to walk.
+        // Deriving aunts and uncles only by climbing to the grandparents and back down
+        // dropped him from every page.
+        val stated = blended + Relationship("f_gus", "f_dana", RelationshipKind.AUNT_UNCLE)
+        val f = TreeFrame.frameFor("f_dana", stated)
+        val gus = f.nodes.first { it.personId == "f_gus" }
+        assertEquals(-1, gus.generation)
+        assertTrue("beside the line, not on it", gus.sideways)
+    }
+
+    @Test
+    fun `a stated uncle does not displace one the parents already prove`() {
+        // f_theo is reachable as f_ray's child. A stated edge must not overwrite the
+        // placement the graph already worked out.
+        val stated = blended + Relationship("f_theo", "f_dana", RelationshipKind.AUNT_UNCLE)
+        assertEquals(0, TreeFrame.frameFor("f_dana", stated)
+            .nodes.first { it.personId == "f_theo" }.generation)
+    }
+
+    @Test
+    fun `the same stated edge reads as a niece from the other end`() {
+        val stated = blended + Relationship("f_gus", "f_dana", RelationshipKind.AUNT_UNCLE)
+        assertEquals(1, TreeFrame.frameFor("f_gus", stated)
+            .nodes.first { it.personId == "f_dana" }.generation)
+    }
 }

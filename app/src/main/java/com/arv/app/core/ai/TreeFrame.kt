@@ -121,6 +121,23 @@ object TreeFrame {
             .distinct()
         cousins.filter { it !in placed }.forEach { placed[it] = 0; sideways += it }
 
+        // Aunts and uncles stated outright, with no parents on file to reach them through.
+        // The derivation above walks up to the grandparents and back down, so somebody
+        // recorded only as an uncle never appeared at all. Which side of the family they
+        // are on cannot be worked out without those parents, so they group under the plain
+        // heading rather than being guessed onto one.
+        for (r in relationships.filter { it.kind == RelationshipKind.AUNT_UNCLE }) {
+            val (other, generation) = when (centrePersonId) {
+                r.toPersonId -> r.fromPersonId to -1
+                r.fromPersonId -> r.toPersonId to 1
+                else -> continue
+            }
+            if (other !in placed) {
+                placed[other] = generation
+                sideways += other
+            }
+        }
+
         // Siblings' children.
         placed.filter { it.value == 0 && it.key != centrePersonId && it.key !in sideways }.keys
             .flatMap { sib -> links[sib].orEmpty().filter { it.delta == 1 }.map { it.otherId } }
