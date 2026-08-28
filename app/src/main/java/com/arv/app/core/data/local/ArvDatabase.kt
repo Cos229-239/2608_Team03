@@ -5,6 +5,8 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -15,7 +17,7 @@ import androidx.room.TypeConverters
         TranscriptSegmentEntity::class,
         OutboxEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -31,6 +33,27 @@ abstract class ArvDatabase : RoomDatabase() {
     companion object {
         @Volatile private var instance: ArvDatabase? = null
 
+        /**
+         * Adds provenance to people, and a branch root to stories.
+         *
+         * Purely additive: new nullable columns and one with a default, so every existing
+         * row survives untouched. Nothing is rewritten and nothing is dropped, which is the
+         * only kind of migration this database should ever get lightly. `confidence`
+         * backfills to FAMILY_TOLD because anyone already in an archive was put there by a
+         * relative, and that is a real claim, distinct from a document and distinct from
+         * unchecked research.
+         */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE people ADD COLUMN confidence TEXT NOT NULL DEFAULT 'FAMILY_TOLD'"
+                )
+                db.execSQL("ALTER TABLE people ADD COLUMN source TEXT")
+                db.execSQL("ALTER TABLE people ADD COLUMN verifiedAt INTEGER")
+                db.execSQL("ALTER TABLE stories ADD COLUMN branchRootPersonId TEXT")
+            }
+        }
+
         fun get(context: Context): ArvDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -41,6 +64,7 @@ abstract class ArvDatabase : RoomDatabase() {
                     // No destructive migration. This database holds recordings that may be
                     // the only copy of someone's voice; losing it to a schema bump is not
                     // an acceptable failure mode. Write real migrations.
+                    .addMigrations(MIGRATION_1_2)
                     .build()
                     .also { instance = it }
             }
