@@ -18,11 +18,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.session.ActiveSession
@@ -32,13 +32,41 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = ServiceLocator.storyRepository(app)
 
-    suspend fun createArchive(familyName: String, yourName: String) {
-        val created = repo.createFamily(
-            familyName = familyName,
-            ownerDisplayName = yourName,
-            nowMillis = System.currentTimeMillis()
-        )
-        ActiveSession.set(created.familyId, created.userId, created.familyName)
+    var working by mutableStateOf(false)
+        private set
+
+    var error by mutableStateOf<String?>(null)
+        private set
+
+    /**
+     * Creates the archive and opens it. Runs in [viewModelScope], not in a composition
+     * scope: rotating the phone mid-write used to kill the coroutine after the person row
+     * had been written but before the session was set, leaving an orphan family behind and
+     * the first screen of the app with a permanently disabled button and no explanation.
+     */
+    fun createArchive(familyName: String, yourName: String, onReady: () -> Unit) {
+        if (working) return
+        working = true
+        error = null
+        viewModelScope.launch {
+            try {
+                val created = repo.createFamily(
+                    familyName = familyName,
+                    ownerDisplayName = yourName,
+                    nowMillis = System.currentTimeMillis()
+                )
+                ActiveSession.set(created.familyId, created.userId, created.familyName)
+                // The archive now has exactly one person in it, and that person is the
+                // viewer. Without this their own ancestor set stays empty until the next
+                // launch, and BRANCH would deny them their own line.
+                repo.refreshLineage(created.familyId, created.userId)
+                onReady()
+            } catch (t: Throwable) {
+                error = "Could not create the archive. Nothing was saved. Try again."
+            } finally {
+                working = false
+            }
+        }
     }
 
     /**
@@ -70,9 +98,8 @@ fun OnboardingScreen(
 ) {
     var familyName by remember { mutableStateOf("") }
     var yourName by remember { mutableStateOf("") }
-    var working by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
 
+    val working = viewModel.working
     val canCreate = familyName.isNotBlank() && yourName.isNotBlank() && !working
 
     Column(
@@ -111,20 +138,22 @@ fun OnboardingScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
+        viewModel.error?.let { message ->
+            Text(
+                message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+
         Button(
-            onClick = {
-                working = true
-                scope.launch {
-                    viewModel.createArchive(familyName, yourName)
-                    onReady()
-                }
-            },
+            onClick = { viewModel.createArchive(familyName, yourName, onReady) },
             enabled = canCreate,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 48.dp)
         ) {
-            Text("Create the archive")
+            Text(if (working) "Creating" else "Create the archive")
         }
 
         TextButton(

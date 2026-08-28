@@ -36,6 +36,32 @@ object ActiveSession {
     var familyName: String? = null
         private set
 
+    /**
+     * Everyone the signed-in person descends from, plus themselves.
+     *
+     * Held in memory rather than persisted because it is derived: the family graph is the
+     * truth and this is a cache of one walk over it, recomputed on launch and whenever the
+     * tree changes. Empty until that walk runs, which makes BRANCH visibility fail closed
+     * during startup rather than briefly showing one side of a family to the other.
+     */
+    @Volatile
+    var ancestorIds: Set<String> = emptySet()
+        private set
+
+    fun setLineage(ids: Set<String>) { ancestorIds = ids }
+
+    /**
+     * The person this user IS, plus anyone they are memory steward for.
+     *
+     * Was always empty, which made the rule that health records follow their subject
+     * unreachable outside unit tests.
+     */
+    @Volatile
+    var personIds: Set<String> = emptySet()
+        private set
+
+    fun setPersonIds(ids: Set<String>) { personIds = ids }
+
     /** False on a fresh install, which is the only trigger for onboarding. */
     val isSignedIn: Boolean get() = familyId != null
 
@@ -68,6 +94,8 @@ object ActiveSession {
         familyId = null
         userId = null
         familyName = null
+        ancestorIds = emptySet()
+        personIds = emptySet()
         prefs?.edit()?.clear()?.apply()
     }
 }
