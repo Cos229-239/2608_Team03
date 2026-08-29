@@ -361,12 +361,22 @@ fun ReviewSaveScreen(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // Free text on purpose: "summer 1953" is how a family answers. But the
+                // parse happens silently at save, so a typo like "-953" or "!!!" quietly
+                // became an undated story with nobody told. The field now says what it
+                // will actually do while there is still time to fix it.
+                val noYear = state.eraText.isNotBlank() &&
+                    !Regex("\\d{4}").containsMatchIn(state.eraText)
                 OutlinedTextField(
                     value = state.eraText,
                     onValueChange = viewModel::onEra,
                     enabled = !state.eraUnknown,
+                    isError = noYear,
                     label = { Text("Year or range") },
                     placeholder = { Text("1958 to 1964") },
+                    supportingText = if (noYear) {
+                        { Text("No year found here. It will save as undated unless one is added, like 1958.") }
+                    } else null,
                     modifier = Modifier.weight(1f)
                 )
             }
