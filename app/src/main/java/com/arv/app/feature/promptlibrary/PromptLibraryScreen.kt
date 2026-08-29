@@ -19,7 +19,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-
+import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.foundation.layout.size
 
 @Composable
 fun PromptLibraryScreen(
@@ -159,10 +160,12 @@ fun PromptLibraryScreen(
                         text = "Food • often opens into migration stories"
                     )
                 }
-                Button(
+                OutlinedIconButton(
                     onClick = { },
+                    modifier = Modifier.size(36.dp)
                 ) {
                     Text("+")
+
                 }
             }
         }
@@ -179,7 +182,9 @@ fun PromptLibraryScreen(
                .padding(16.dp),
            horizontalArrangement = Arrangement.SpaceBetween
        ) {
-           Column{
+           Column(
+               modifier = Modifier.weight(1f)
+           ){
                Text(
                    text = "What did your street sound like at night?"
                )
@@ -188,8 +193,9 @@ fun PromptLibraryScreen(
                    text = "Childhood • Sounds can unlock vivid memories"
                )
            }
-           Button(
-               onClick = { }
+           OutlinedIconButton(
+               onClick = { },
+               modifier = Modifier.size(36.dp)
            ){
                Text("+")
            }
@@ -206,7 +212,9 @@ fun PromptLibraryScreen(
                .padding(16.dp),
            horizontalArrangement = Arrangement.SpaceBetween
        ) {
-         Column{
+         Column(
+             modifier = Modifier.weight(1f)
+         ){
              Text(
                  text = "What's a word your family used that nobody else did?"
              )
@@ -215,8 +223,9 @@ fun PromptLibraryScreen(
                  text = "Childhood • Family language holds unique memories"
              )
          }
-           Button(
-               onClick = { }
+           OutlinedIconButton(
+               onClick = { },
+               modifier = Modifier.size(36.dp)
            ){
                Text("+")
            }
@@ -242,8 +251,9 @@ fun PromptLibraryScreen(
                    text = "Reflection • Revisit a memory worth reliving"
                )
            }
-            Button(
-                onClick = { }
+            OutlinedIconButton(
+                onClick = { },
+                modifier = Modifier.size(36.dp)
             ){
                 Text("+")
             }
