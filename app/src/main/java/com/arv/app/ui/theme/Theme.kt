@@ -1,6 +1,7 @@
 package com.arv.app.ui.theme
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -101,10 +102,15 @@ fun ArvTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    // A chosen Kalos theme overrides the system light/dark split: they are dark by
-    // design, and the choice is the point. Heirloom keeps following the system.
-    val kalos = ThemeController.current.scheme()
-    val target = kalos ?: if (darkTheme) DarkColors else LightColors
+    // One mode control, every theme obeying it: Auto follows the phone, Light and Dark
+    // hold. The same seven names cover both sides of day, so the picker never grows.
+    val dark = when (ThemeController.mode) {
+        ThemeMode.AUTO -> darkTheme
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+    val kalos = ThemeController.current.scheme(dark)
+    val target = kalos ?: if (dark) DarkColors else LightColors
     MaterialTheme(
         colorScheme = target.eased(),
         typography = ArvTypography,
@@ -155,6 +161,28 @@ private fun androidx.compose.material3.ColorScheme.eased(): androidx.compose.mat
 fun ArvBackground(content: @Composable () -> Unit) {
     val halos = ThemeController.current.halos()
     val bg = MaterialTheme.colorScheme.background
+
+    // The glow breathes. Two very slow phases drift the pools a few percent of the
+    // screen and swell them slightly, far below anything that reads as motion; the page
+    // feels lit rather than animated. Skipped entirely for Heirloom.
+    val drift = androidx.compose.animation.core.rememberInfiniteTransition(label = "halo")
+    val t1 by drift.animateFloat(
+        0f, 1f,
+        androidx.compose.animation.core.infiniteRepeatable(
+            tween(38_000, easing = androidx.compose.animation.core.LinearEasing),
+            androidx.compose.animation.core.RepeatMode.Reverse
+        ),
+        label = "halo1"
+    )
+    val t2 by drift.animateFloat(
+        0f, 1f,
+        androidx.compose.animation.core.infiniteRepeatable(
+            tween(53_000, easing = androidx.compose.animation.core.LinearEasing),
+            androidx.compose.animation.core.RepeatMode.Reverse
+        ),
+        label = "halo2"
+    )
+
     Box(Modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize()) {
             drawRect(bg)
@@ -164,21 +192,30 @@ fun ArvBackground(content: @Composable () -> Unit) {
                 drawRect(
                     Brush.radialGradient(
                         listOf(h1, Color.Transparent),
-                        center = Offset(size.width * 0.85f, size.height * 0.10f),
-                        radius = r * 0.55f
+                        center = Offset(
+                            size.width * (0.85f - 0.10f * t1),
+                            size.height * (0.10f + 0.08f * t2)
+                        ),
+                        radius = r * (0.55f + 0.08f * t2)
                     )
                 )
                 drawRect(
                     Brush.radialGradient(
                         listOf(h2, Color.Transparent),
-                        center = Offset(size.width * 0.10f, size.height * 0.85f),
-                        radius = r * 0.50f
+                        center = Offset(
+                            size.width * (0.10f + 0.09f * t2),
+                            size.height * (0.85f - 0.07f * t1)
+                        ),
+                        radius = r * (0.50f + 0.07f * t1)
                     )
                 )
                 drawRect(
                     Brush.radialGradient(
                         listOf(h3, Color.Transparent),
-                        center = Offset(size.width * 0.50f, size.height * 0.45f),
+                        center = Offset(
+                            size.width * (0.50f + 0.06f * (t1 - 0.5f)),
+                            size.height * (0.45f + 0.06f * (t2 - 0.5f))
+                        ),
                         radius = r * 0.60f
                     )
                 )

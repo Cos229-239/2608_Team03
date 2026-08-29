@@ -34,6 +34,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.FilterChip
 import androidx.compose.ui.platform.LocalContext
 import com.arv.app.ui.theme.ThemeController
@@ -263,6 +264,25 @@ fun SettingsScreen(
         item { HorizontalDivider() }
 
         item { SectionLabel("How it looks") }
+
+        item {
+            // One row decides light or dark, the themes keep their names either way, so
+            // fourteen looks cost eight chips and a toggle instead of doubling the list.
+            val context = LocalContext.current
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    com.arv.app.ui.theme.ThemeMode.AUTO to "Auto",
+                    com.arv.app.ui.theme.ThemeMode.LIGHT to "Light",
+                    com.arv.app.ui.theme.ThemeMode.DARK to "Dark"
+                ).forEach { (value, label) ->
+                    FilterChip(
+                        selected = ThemeController.mode == value,
+                        onClick = { ThemeController.chooseMode(value, context) },
+                        label = { Text(label) }
+                    )
+                }
+            }
+        }
 
         item {
             // The Kalos family, plus the archive's own Heirloom default. Restyles

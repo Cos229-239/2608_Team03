@@ -17,6 +17,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -135,6 +136,9 @@ fun ArvAppRoot() {
         // Transparent so the themed glow painted behind the app shows through.
         // Heirloom's ground is opaque paper, so it looks exactly as it always has.
         containerColor = androidx.compose.ui.graphics.Color.Transparent,
+        // Stated because a transparent container cannot imply one, and the fallback is
+        // black: every headline without an explicit color vanished on the dark themes.
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             // Every screen off the tabs gets a visible way back. The system gesture is
             // invisible, and a 78-year-old storyteller will never find it. Screen 04's

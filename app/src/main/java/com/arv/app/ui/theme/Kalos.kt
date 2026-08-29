@@ -42,9 +42,10 @@ enum class ThemeOption(
         0xFFFBF6F7, 0xFFFFB87A, 0xFFFFD9A0, 0xFFFF9988, 0xFFFFD66B, 0xFFFF9988));
 
     /** Null means Heirloom: use the hand-built light/dark schemes in Theme.kt. */
-    fun scheme(): ColorScheme? = palette?.toScheme()
+    fun scheme(dark: Boolean): ColorScheme? =
+        palette?.let { if (dark) it.toScheme() else it.toLightScheme() }
 
-    /** The accent pair at whisper strength, for the page's atmospheric glow. */
+    /** The accent pair at low strength, for the page's atmospheric glow. */
     fun halos(): List<Color> = palette?.halos() ?: emptyList()
 }
 
@@ -59,10 +60,63 @@ class Kalos(
      * which is enough to give the dark ground depth and never enough to cost contrast.
      */
     fun halos(): List<Color> = listOf(
-        Color(ac).copy(alpha = 0.08f),
-        Color(acB).copy(alpha = 0.06f),
-        Color(cy).copy(alpha = 0.05f)
+        Color(ac).copy(alpha = 0.11f),
+        Color(acB).copy(alpha = 0.08f),
+        Color(cy).copy(alpha = 0.07f)
     )
+
+    /**
+     * The same theme in daylight.
+     *
+     * The design system ships only dark palettes, so the light ones are derived rather
+     * than copied: the ground is white with the accent breathed into it, the ink is the
+     * theme's own night sky, and any accent too pale to read on white is deepened until
+     * it can. Every theme keeps its temperature either way, which is what makes one name
+     * cover both.
+     */
+    fun toLightScheme(): ColorScheme {
+        val inkC = Color(bg)
+        fun tint(f: Float): Color {
+            val a = Color(ac)
+            return Color(
+                1f + (a.red - 1f) * f,
+                1f + (a.green - 1f) * f,
+                1f + (a.blue - 1f) * f
+            )
+        }
+        val bgL = tint(0.045f)
+        return androidx.compose.material3.lightColorScheme(
+            primary = Color(ac).deepEnough(),
+            onPrimary = bgL,
+            primaryContainer = tint(0.12f),
+            onPrimaryContainer = inkC,
+
+            secondary = Color(cy).deepEnough(),
+            onSecondary = bgL,
+            secondaryContainer = tint(0.07f),
+            onSecondaryContainer = inkC,
+
+            tertiary = Color(acB).deepEnough(),
+            onTertiary = bgL,
+            tertiaryContainer = tint(0.10f),
+            onTertiaryContainer = inkC,
+
+            background = bgL,
+            onBackground = inkC,
+            surface = tint(0.02f),
+            onSurface = inkC,
+            surfaceVariant = tint(0.07f),
+            onSurfaceVariant = inkC.copy(alpha = 0.72f),
+            surfaceContainerLowest = Color.White,
+            surfaceContainerLow = tint(0.03f),
+            surfaceContainer = tint(0.05f),
+            surfaceContainerHigh = tint(0.08f),
+            surfaceContainerHighest = tint(0.10f),
+            outline = inkC.copy(alpha = 0.25f),
+            error = Color(priv).deepEnough(),
+            onError = bgL
+        )
+    }
 
     fun toScheme(): ColorScheme {
         val bgC = Color(bg)
@@ -108,19 +162,29 @@ class Kalos(
  * Compose state so a choice made in Settings restyles every screen immediately; its own
  * prefs file so the session store stays about identity, not appearance.
  */
+/** Follow the phone, or hold the page to one side of day. */
+enum class ThemeMode { AUTO, LIGHT, DARK }
+
 object ThemeController {
 
     private const val PREFS = "arv.theme"
     private const val KEY = "option"
+    private const val KEY_MODE = "mode"
 
     var current by mutableStateOf(ThemeOption.HEIRLOOM)
         private set
 
+    var mode by mutableStateOf(ThemeMode.AUTO)
+        private set
+
     fun restore(context: Context) {
-        val name = context.applicationContext
-            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY, null) ?: return
-        current = ThemeOption.entries.firstOrNull { it.name == name } ?: ThemeOption.HEIRLOOM
+        val p = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        p.getString(KEY, null)?.let { name ->
+            current = ThemeOption.entries.firstOrNull { it.name == name } ?: ThemeOption.HEIRLOOM
+        }
+        p.getString(KEY_MODE, null)?.let { name ->
+            mode = ThemeMode.entries.firstOrNull { it.name == name } ?: ThemeMode.AUTO
+        }
     }
 
     fun choose(option: ThemeOption, context: Context) {
@@ -129,4 +193,22 @@ object ThemeController {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putString(KEY, option.name).apply()
     }
+
+    fun chooseMode(choice: ThemeMode, context: Context) {
+        mode = choice
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_MODE, choice.name).apply()
+    }
+}
+
+/**
+ * An accent that reads on white. Mono's accent is nearly white itself, and half the
+ * palettes sit too bright for light ground, so anything above the threshold is deepened
+ * and everything already dark passes through untouched.
+ */
+private fun Color.deepEnough(): Color {
+    val luminance = 0.299f * red + 0.587f * green + 0.114f * blue
+    if (luminance <= 0.55f) return this
+    return Color(red * 0.52f, green * 0.52f, blue * 0.56f, 1f)
 }
