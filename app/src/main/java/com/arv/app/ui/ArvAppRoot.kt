@@ -102,6 +102,11 @@ sealed class Destination(val route: String) {
         fun of(storyId: String) = "story/$storyId"
     }
 
+    /** Fixing what was typed, never what was said. Reached from a story's page. */
+    data object EditStory : Destination("editStory/{storyId}") {
+        fun of(storyId: String) = "editStory/$storyId"
+    }
+
     /** Screen 19. One person, their voice meter, and everything they touch in the archive. */
     data object PersonDetail : Destination("person/{personId}") {
         fun of(personId: String) = "person/$personId"
@@ -385,7 +390,17 @@ fun ArvAppRoot() {
                     route = Destination.StoryDetail.route,
                     arguments = listOf(navArgument("storyId") { type = NavType.StringType })
                 ) {
-                    StoryDetailScreen()
+                    StoryDetailScreen(
+                        onEdit = { navController.navigate(Destination.EditStory.of(it)) }
+                    )
+                }
+                composable(
+                    route = Destination.EditStory.route,
+                    arguments = listOf(navArgument("storyId") { type = NavType.StringType })
+                ) {
+                    com.arv.app.feature.story.EditStoryScreen(
+                        onDone = { navController.popBackStack() }
+                    )
                 }
             }
         }

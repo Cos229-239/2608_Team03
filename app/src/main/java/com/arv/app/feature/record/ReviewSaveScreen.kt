@@ -136,18 +136,11 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    /**
-     * Accepts "1958-1964", "1958 to 1964", or "1953". Anything it cannot read becomes
-     * UNKNOWN rather than a guess, because a wrong year in an archive outlives the
-     * person who could have corrected it.
-     */
+    // One parser for save and edit both, so the same text can never mean different
+    // years depending on which screen it was typed into.
     private fun parseEra(text: String): Triple<Int?, Int?, EraPrecision> {
-        val years = Regex("\\d{4}").findAll(text).map { it.value.toInt() }.toList()
-        return when {
-            years.isEmpty() -> Triple(null, null, EraPrecision.UNKNOWN)
-            years.size == 1 -> Triple(years[0], years[0], EraPrecision.EXACT)
-            else -> Triple(years.min(), years.max(), EraPrecision.RANGE)
-        }
+        val era = com.arv.app.core.data.EraText.parse(text)
+        return Triple(era.start, era.end, era.precision)
     }
 
     fun save(localAudioPath: String, durationMs: Long, nowMillis: Long) {
