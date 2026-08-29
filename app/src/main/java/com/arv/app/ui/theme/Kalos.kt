@@ -27,19 +27,19 @@ enum class ThemeOption(
 ) {
     HEIRLOOM("Heirloom", null),
     MERIDIAN("Meridian", Kalos(0xFF04040A, 0xFF0A0A14, 0xFF10101E, 0xFF16162A,
-        0xFFFFFFFF, 0xFF4570FF, 0xFF8080F7, 0xFF6464B5, 0xFFFFB87A, 0xFFFF9988)),
+        0xFFFFFFFF, 0xFF4570FF, 0xFF8080F7, 0xFF6464B5, 0xFF4D4BCA, 0xFFFFB87A, 0xFFFF9988)),
     CYBER("Cyber", Kalos(0xFF04060B, 0xFF070A12, 0xFF0C1120, 0xFF131A2A,
-        0xFFF0F4FF, 0xFF7DD3FC, 0xFFB8E8FF, 0xFFB49AFF, 0xFFFFC97A, 0xFFFF82B4)),
+        0xFFF0F4FF, 0xFF7DD3FC, 0xFFB8E8FF, 0xFFB49AFF, 0xFFFF7DD3, 0xFFFFC97A, 0xFFFF82B4)),
     MONO("Mono", Kalos(0xFF08080A, 0xFF0E0E12, 0xFF16161B, 0xFF1F1F26,
-        0xFFFFFFFF, 0xFFFAFAFA, 0xFFD4D4D8, 0xFFA1A1AA, 0xFFFFB87A, 0xFFFF9988)),
+        0xFFFFFFFF, 0xFFFAFAFA, 0xFFD4D4D8, 0xFFA1A1AA, 0xFF71717A, 0xFFFFB87A, 0xFFFF9988)),
     SAGE("Sage", Kalos(0xFF060A08, 0xFF0A1210, 0xFF121C18, 0xFF1A2820,
-        0xFFF4FFF8, 0xFF84CC95, 0xFFBBE8C0, 0xFFD9E8B7, 0xFFF4D49C, 0xFFE8B589)),
+        0xFFF4FFF8, 0xFF84CC95, 0xFFBBE8C0, 0xFFD9E8B7, 0xFFA8C09A, 0xFFF4D49C, 0xFFE8B589)),
     CRIMSON("Crimson", Kalos(0xFF0A0404, 0xFF14080A, 0xFF1F0E12, 0xFF2E141A,
-        0xFFFFF5F5, 0xFFDC2626, 0xFFF87171, 0xFFD97706, 0xFFF59E0B, 0xFFFB7185)),
+        0xFFFFF5F5, 0xFFDC2626, 0xFFF87171, 0xFFD97706, 0xFFBE185D, 0xFFF59E0B, 0xFFFB7185)),
     GALAXY("Galaxy", Kalos(0xFF08041A, 0xFF0E0826, 0xFF160E36, 0xFF1E144A,
-        0xFFF8F4FF, 0xFFD946EF, 0xFFF0ABFC, 0xFF22D3EE, 0xFFFBBF24, 0xFFFF82B4)),
+        0xFFF8F4FF, 0xFFD946EF, 0xFFF0ABFC, 0xFF22D3EE, 0xFFA78BFA, 0xFFFBBF24, 0xFFFF82B4)),
     AURORA("Aurora", Kalos(0xFF0A0712, 0xFF110A1B, 0xFF1A1028, 0xFF25173A,
-        0xFFFBF6F7, 0xFFFFB87A, 0xFFFFD9A0, 0xFFFF9988, 0xFFFFD66B, 0xFFFF9988));
+        0xFFFBF6F7, 0xFFFFB87A, 0xFFFFD9A0, 0xFFFF9988, 0xFFC89AFF, 0xFFFFD66B, 0xFFFF9988));
 
     /** Null means Heirloom: use the hand-built light/dark schemes in Theme.kt. */
     fun scheme(dark: Boolean): ColorScheme? =
@@ -53,16 +53,25 @@ enum class ThemeOption(
 class Kalos(
     private val bg: Long, private val bg1: Long, private val bg2: Long, private val bg3: Long,
     private val ink: Long, private val ac: Long, private val acB: Long, private val cy: Long,
-    private val warn: Long, private val priv: Long
+    private val counter: Long, private val warn: Long, private val priv: Long
 ) {
+    /** Two colors leaned together. Depth in these palettes is temperature contrast. */
+    private fun blend(base: Color, into: Color, amount: Float) = Color(
+        base.red + (into.red - base.red) * amount,
+        base.green + (into.green - base.green) * amount,
+        base.blue + (into.blue - base.blue) * amount
+    )
+
     /**
      * The glow the design system pools behind a page: the accents at 6 to 8 percent,
      * which is enough to give the dark ground depth and never enough to cost contrast.
      */
     fun halos(): List<Color> = listOf(
         Color(ac).copy(alpha = 0.11f),
-        Color(acB).copy(alpha = 0.08f),
-        Color(cy).copy(alpha = 0.07f)
+        // The counter-temperature pool is what Aurora's depth is made of: a cool lavender
+        // under a warm theme, a warm note under a cool one. Every theme gets its own.
+        Color(counter).copy(alpha = 0.09f),
+        Color(acB).copy(alpha = 0.07f)
     )
 
     /**
@@ -96,9 +105,9 @@ class Kalos(
             secondaryContainer = tint(0.07f),
             onSecondaryContainer = inkC,
 
-            tertiary = Color(acB).deepEnough(),
+            tertiary = Color(counter).deepEnough(),
             onTertiary = bgL,
-            tertiaryContainer = tint(0.10f),
+            tertiaryContainer = blend(Color.White, Color(counter), 0.12f),
             onTertiaryContainer = inkC,
 
             background = bgL,
@@ -124,31 +133,34 @@ class Kalos(
         return darkColorScheme(
             primary = Color(ac),
             onPrimary = bgC,
-            primaryContainer = Color(bg3),
+            primaryContainer = blend(Color(bg3), Color(ac), 0.18f),
             onPrimaryContainer = inkC,
 
             secondary = Color(cy),
             onSecondary = bgC,
-            secondaryContainer = Color(bg2),
+            secondaryContainer = blend(Color(bg2), Color(cy), 0.14f),
             onSecondaryContainer = inkC,
 
-            tertiary = Color(acB),
+            // The counter color, not a second helping of the accent. Aurora runs warm
+            // over a cool violet ground and that argument between temperatures is the
+            // depth; each theme now has its own version of it.
+            tertiary = Color(counter),
             onTertiary = bgC,
-            tertiaryContainer = Color(bg3),
+            tertiaryContainer = blend(Color(bg3), Color(counter), 0.20f),
             onTertiaryContainer = inkC,
 
             background = bgC,
             onBackground = inkC,
             surface = Color(bg1),
             onSurface = inkC,
-            surfaceVariant = Color(bg2),
+            surfaceVariant = blend(Color(bg2), Color(ac), 0.07f),
             // The 72% ink step from the CSS tokens, as alpha so it sits on any depth.
             onSurfaceVariant = inkC.copy(alpha = 0.72f),
             surfaceContainerLowest = bgC,
-            surfaceContainerLow = Color(bg1),
-            surfaceContainer = Color(bg2),
-            surfaceContainerHigh = Color(bg3),
-            surfaceContainerHighest = Color(bg3),
+            surfaceContainerLow = blend(Color(bg1), Color(ac), 0.03f),
+            surfaceContainer = blend(Color(bg2), Color(ac), 0.05f),
+            surfaceContainerHigh = blend(Color(bg3), Color(ac), 0.07f),
+            surfaceContainerHighest = blend(Color(bg3), Color(counter), 0.08f),
             outline = inkC.copy(alpha = 0.22f),
             error = Color(priv),
             onError = bgC
