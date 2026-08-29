@@ -123,4 +123,89 @@ class FamilyImportTest {
             one("""{"displayName":"C","note":"Predeceased his parents. No dates in the source."}""").note
         )
     }
+
+    // --- planning: names must resolve across the same file ---
+
+    private fun planOf(body: String, existing: Map<String, String> = emptyMap()) =
+        FamilyImport.plan(
+            parsed = parse(body),
+            existingIdsByName = existing,
+            meId = "p_me",
+            meName = "Dana Delaney",
+            newId = run { var n = 0; { "p_new${n++}" } }
+        )
+
+    @Test
+    fun `people defined in the same file can name each other`() {
+        // The exact first-import shape that used to produce zero edges: an empty archive
+        // and a file whose people only reference one another. One-pass resolution looked
+        // names up in a snapshot taken before anybody was created.
+        val plan = planOf(
+            """{"displayName":"Opal Delaney","spouse":"Walter Delaney"},
+               {"displayName":"Walter Delaney"},
+               {"displayName":"Ray Delaney","parents":["Opal Delaney","Walter Delaney"]}"""
+        )
+        val kinds = plan.edges.map { it.kind.name }.sorted()
+        assertEquals(listOf("PARENT", "PARENT", "SPOUSE"), kinds)
+    }
+
+    @Test
+    fun `file order does not decide whether a parent links`() {
+        // The child appears before the parent is defined. Two passes make this identical
+        // to the other order.
+        val plan = planOf(
+            """{"displayName":"Ray Delaney","parents":["Opal Delaney"]},
+               {"displayName":"Opal Delaney"}"""
+        )
+        assertEquals(1, plan.edges.count { it.kind == RelationshipKind.PARENT })
+    }
+
+    @Test
+    fun `the importer's own row is not replanned but their parents still link`() {
+        // Skipping the whole row also skipped its edges, so nobody could state their own
+        // parents in their own file.
+        val plan = planOf(
+            """{"displayName":"Dana Delaney","parents":["Ray Delaney"]},
+               {"displayName":"Ray Delaney"}"""
+        )
+        assertTrue(plan.people.none { it.imported.displayName == "Dana Delaney" })
+        assertTrue(plan.edges.any {
+            it.kind == RelationshipKind.PARENT && it.toId == "p_me"
+        })
+    }
+
+    @Test
+    fun `an existing person keeps their id instead of forking`() {
+        val plan = planOf(
+            """{"displayName":"Ray Delaney","relationLabel":"Father"}""",
+            existing = mapOf("Ray Delaney" to "p_ray")
+        )
+        assertEquals("p_ray", plan.people.single().personId)
+    }
+
+    @Test
+    fun `parents and the relation label both become edges`() {
+        val plan = planOf(
+            """{"displayName":"Ray Delaney","relationLabel":"Father","parents":["Opal Delaney"]},
+               {"displayName":"Opal Delaney"}"""
+        )
+        assertTrue(plan.edges.any { it.kind == RelationshipKind.PARENT && it.toId != "p_me" })
+        assertTrue(plan.edges.any { it.kind == RelationshipKind.PARENT && it.toId == "p_me" })
+    }
+
+    @Test
+    fun `nobody is planned as their own parent or spouse`() {
+        val plan = planOf(
+            """{"displayName":"Ray Delaney","parents":["Ray Delaney"],"spouse":"Ray Delaney"}"""
+        )
+        assertTrue(plan.edges.isEmpty())
+    }
+
+    @Test
+    fun `an unverified relation label arrives marked uncertain`() {
+        val plan = planOf(
+            """{"displayName":"Gus Delaney","relationLabel":"Uncle","confidence":"unverified"}"""
+        )
+        assertTrue(plan.edges.single().uncertain)
+    }
 }

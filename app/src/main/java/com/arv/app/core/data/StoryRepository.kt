@@ -2,6 +2,8 @@ package com.arv.app.core.data
 
 import com.arv.app.core.ai.Lineage
 import com.arv.app.core.ai.TranscriptionService
+import com.arv.app.core.ai.MemoryAccess
+import com.arv.app.core.ai.Viewer
 import com.arv.app.core.data.local.ArvDatabase
 import com.arv.app.core.data.local.AssetEntity
 import com.arv.app.core.data.local.OutboxEntity
@@ -115,18 +117,22 @@ class StoryRepository(
     ): Int {
         val existing = db.personDao().all(familyId)
         val me = existing.firstOrNull { it.linkedUserId == userId }
-        val byName = existing.associateBy { it.displayName.trim().lowercase() }
-        var written = 0
 
-        for (person in parsed.people) {
-            val key = person.displayName.trim().lowercase()
-            // Never overwrite the importer's own row with a row about themselves.
-            if (me != null && key == me.displayName.trim().lowercase()) continue
+        // All name resolution happens in FamilyImport.plan, in two passes, so people
+        // defined by this same file can name each other. This function only writes.
+        val plan = FamilyImport.plan(
+            parsed = parsed,
+            existingIdsByName = existing.associate { it.displayName to it.personId },
+            meId = me?.personId,
+            meName = me?.displayName,
+            newId = { "p_" + UUID.randomUUID().toString().take(8) }
+        )
 
-            val id = byName[key]?.personId ?: ("p_" + UUID.randomUUID().toString().take(8))
+        for (planned in plan.people) {
+            val person = planned.imported
             db.personDao().upsert(
                 PersonEntity(
-                    personId = id,
+                    personId = planned.personId,
                     familyId = familyId,
                     displayName = person.displayName,
                     alsoKnownAs = person.alsoKnownAs,
@@ -146,67 +152,24 @@ class StoryRepository(
                     updatedAt = nowMillis
                 )
             )
-            written++
+        }
 
-            person.spouseName?.let { spouseName ->
-                byName[spouseName.trim().lowercase()]?.personId?.let { spouseId ->
-                    db.relationshipDao().upsert(
-                        RelationshipEntity(
-                            familyId = familyId,
-                            fromPersonId = id,
-                            toPersonId = spouseId,
-                            kind = RelationshipKind.SPOUSE,
-                            updatedAt = nowMillis
-                        )
-                    )
-                }
-            }
-
-            // Named parents win over a relation label. A label describes the writer's
-            // relationship to someone; parents describe the person themselves, and only
-            // parents can tell a half sibling from a step sibling.
-            for (parentName in person.parentNames) {
-                val parentId = byName[parentName.trim().lowercase()]?.personId
-                    ?: me?.takeIf { it.displayName.trim().lowercase() == parentName.trim().lowercase() }?.personId
-                if (parentId != null) {
-                    db.relationshipDao().upsert(
-                        RelationshipEntity(
-                            familyId = familyId,
-                            fromPersonId = parentId,
-                            toPersonId = id,
-                            kind = RelationshipKind.PARENT,
-                            updatedAt = nowMillis
-                        )
-                    )
-                }
-            }
-
-            // Both, not either. "parents" says who this person's parents are;
-            // relationLabel says how they stand to whoever compiled the file. Making them
-            // exclusive meant that naming someone's parents silently cut their own link to
-            // the importer, so naming someone's mother deleted their own link to the
-            // importer and every tree below them emptied out.
-            val kind = person.linkToImporter
-            if (kind != null && me != null) {
-                db.relationshipDao().upsert(
-                    RelationshipEntity(
-                        familyId = familyId,
-                        fromPersonId = id,
-                        toPersonId = me.personId,
-                        kind = kind,
-                        // Everything the file was not certain about stays marked uncertain,
-                        // so a disputed link is visible rather than quietly authoritative.
-                        uncertain = person.confidence == Confidence.UNVERIFIED ||
-                            person.confidence == Confidence.CONFLICTED,
-                        updatedAt = nowMillis
-                    )
+        for (edge in plan.edges) {
+            db.relationshipDao().upsert(
+                RelationshipEntity(
+                    familyId = familyId,
+                    fromPersonId = edge.fromId,
+                    toPersonId = edge.toId,
+                    kind = edge.kind,
+                    uncertain = edge.uncertain,
+                    updatedAt = nowMillis
                 )
-            }
+            )
         }
 
         // The graph just changed, so the viewer's own lineage is stale.
         refreshLineage(familyId, userId)
-        return written
+        return plan.people.size
     }
 
     /**
@@ -316,11 +279,23 @@ class StoryRepository(
             result
         }
 
-    suspend fun searchKeyword(familyId: String, query: String): List<Story> =
+    /**
+     * The permission filter sits here, not on the screen. Search matches transcript text,
+     * so an unfiltered result lets anyone probe a private story word by word, and the one
+     * screen that forgot the filter was the search screen. Below the UI it cannot be
+     * forgotten again.
+     */
+    suspend fun searchKeyword(familyId: String, query: String, viewer: Viewer): List<Story> =
         if (query.isBlank()) {
             emptyList()
         } else {
-            db.storyDao().searchKeyword(familyId, query.trim()).map { it.toDomain() }
+            // % and _ are LIKE wildcards. Typed by a person they are just characters,
+            // and unescaped they let a query match everything.
+            val safe = query.trim()
+                .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            db.storyDao().searchKeyword(familyId, safe)
+                .map { it.toDomain() }
+                .filter { MemoryAccess.canRead(it, viewer) }
         }
 
     /**
@@ -441,6 +416,21 @@ class StoryRepository(
      * PENDING -> RUNNING -> READY, or FAILED with the recording untouched. The recording
      * is never at risk from this path: transcription failing loses text, not voice.
      */
+    /**
+     * Every recording saved before the model existed, transcribed now that it does.
+     *
+     * A story saved with no model stays PENDING on purpose: writing a placeholder and
+     * calling it READY made the gap permanent, because nothing ever revisits a READY
+     * story. This is the revisit.
+     */
+    suspend fun transcribeAwaiting(familyId: String, transcription: TranscriptionService): Int {
+        val waiting = db.storyDao().awaitingTranscription(familyId)
+        for (story in waiting) {
+            transcribeStory(story.storyId, transcription)
+        }
+        return waiting.size
+    }
+
     suspend fun transcribeStory(storyId: String, transcription: TranscriptionService) {
         val story = db.storyDao().observeById(storyId).first() ?: return
         val asset = primaryAsset(storyId) ?: return

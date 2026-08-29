@@ -70,6 +70,90 @@ object FamilyImport {
         }
     }
 
+    data class PlannedPerson(val personId: String, val imported: ImportedPerson)
+    data class PlannedEdge(
+        val fromId: String,
+        val toId: String,
+        val kind: RelationshipKind,
+        val uncertain: Boolean
+    )
+    data class Plan(val people: List<PlannedPerson>, val edges: List<PlannedEdge>)
+
+    /**
+     * Resolves every name in the file before a single edge is drawn.
+     *
+     * One pass did both at once, looking names up in a snapshot taken before the import
+     * started. On a first import into an empty archive nobody in the file could find
+     * anybody else in the file, so every parent and spouse stated between them was
+     * silently skipped: 34 people would arrive and zero of the links the file spelled
+     * out. Importing the identical file a second time healed it, which nobody would know
+     * to do. Two passes make the order of rows in the file irrelevant.
+     *
+     * The importer's own row is never replanned as a person, but its parents and spouse
+     * still become edges: skipping the whole row also skipped them, so nobody could state
+     * their own parents in their own file.
+     *
+     * Pure so it can be tested without a database, which the one-pass version never was.
+     */
+    fun plan(
+        parsed: Parsed,
+        existingIdsByName: Map<String, String>,
+        meId: String?,
+        meName: String?,
+        newId: () -> String
+    ): Plan {
+        fun norm(name: String) = name.trim().lowercase()
+
+        val ids = existingIdsByName.mapKeys { (k, _) -> norm(k) }.toMutableMap()
+        if (meId != null && meName != null) ids[norm(meName)] = meId
+
+        val people = mutableListOf<PlannedPerson>()
+        for (person in parsed.people) {
+            val key = norm(person.displayName)
+            if (meId != null && key == meName?.let(::norm)) continue
+            val id = ids.getOrPut(key) { newId() }
+            people += PlannedPerson(id, person)
+        }
+
+        val edges = mutableListOf<PlannedEdge>()
+        for (person in parsed.people) {
+            val id = ids[norm(person.displayName)] ?: continue
+
+            person.spouseName?.let { spouse ->
+                ids[norm(spouse)]?.let { spouseId ->
+                    if (spouseId != id) {
+                        edges += PlannedEdge(id, spouseId, RelationshipKind.SPOUSE, false)
+                    }
+                }
+            }
+
+            // Named parents win over a relation label. A label describes the writer's
+            // relationship to someone; parents describe the person themselves, and only
+            // parents can tell a half sibling from a step sibling.
+            for (parentName in person.parentNames) {
+                ids[norm(parentName)]?.let { parentId ->
+                    if (parentId != id) {
+                        edges += PlannedEdge(parentId, id, RelationshipKind.PARENT, false)
+                    }
+                }
+            }
+
+            // Both, not either: naming someone's parents must not delete their own link
+            // to the importer. And never a link from the importer to themselves.
+            val kind = person.linkToImporter
+            if (kind != null && meId != null && id != meId) {
+                edges += PlannedEdge(
+                    id, meId, kind,
+                    // Everything the file was not certain about stays marked uncertain,
+                    // so a disputed link is visible rather than quietly authoritative.
+                    uncertain = person.confidence == Confidence.UNVERIFIED ||
+                        person.confidence == Confidence.CONFLICTED
+                )
+            }
+        }
+        return Plan(people, edges.distinct())
+    }
+
     fun parse(json: String): Result<Parsed> = runCatching {
         val root = JSONObject(json)
         val arr = root.optJSONArray("people") ?: error("No people array in that file")
