@@ -364,4 +364,44 @@ class LineageTest {
     fun `a parent is their own side`() {
         assertEquals(setOf("p_ray"), Lineage.sideOf("p_ray", "p_dana", bothSides))
     }
+
+    // --- who somebody built a family with ---
+
+    @Test
+    fun `a stated marriage shows from both ends`() {
+        val edges = bothSides + Relationship("p_opal", "p_walter", RelationshipKind.SPOUSE)
+        assertEquals(listOf("p_walter"), Lineage.partnersOf("p_opal", edges).married)
+        assertEquals(listOf("p_opal"), Lineage.partnersOf("p_walter", edges).married)
+    }
+
+    @Test
+    fun `sharing children derives a co-parent when nothing is stated`() {
+        // Opal and Walter share Ray and Sheila and have no stated edge. The archive knows
+        // they raised children together; it does not know they married, and says so.
+        val p = Lineage.partnersOf("p_opal", bothSides)
+        assertEquals(listOf("p_walter"), p.coParents)
+        assertTrue(p.married.isEmpty())
+    }
+
+    @Test
+    fun `a stated spouse is not repeated as a co-parent`() {
+        val edges = bothSides + Relationship("p_opal", "p_walter", RelationshipKind.SPOUSE)
+        val p = Lineage.partnersOf("p_opal", edges)
+        assertEquals(listOf("p_walter"), p.married)
+        assertTrue(p.coParents.isEmpty())
+    }
+
+    @Test
+    fun `two marriages both show`() {
+        val edges = bothSides +
+            Relationship("p_opal", "p_walter", RelationshipKind.SPOUSE) +
+            Relationship("p_second", "p_opal", RelationshipKind.SPOUSE)
+        assertEquals(setOf("p_walter", "p_second"), Lineage.partnersOf("p_opal", edges).married.toSet())
+    }
+
+    @Test
+    fun `somebody with no partners has none invented`() {
+        val p = Lineage.partnersOf("p_dana", bothSides)
+        assertTrue(p.married.isEmpty() && p.partnered.isEmpty() && p.coParents.isEmpty())
+    }
 }

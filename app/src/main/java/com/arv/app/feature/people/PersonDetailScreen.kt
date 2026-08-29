@@ -405,7 +405,50 @@ private fun FamilyAround(
         // Read once per drawing so every age on the page counts from the same year.
         val thisYear = remember { java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) }
 
-        frame.generations.forEach { g ->
+        // Marriages and partnerships, drawn where a family expects them: with the person,
+        // not on a line of descent, because they are not one. Derived co-parents get a
+        // label that says what the archive actually knows.
+        val partners = Lineage.partnersOf(frame.centrePersonId, edges)
+        listOf(
+            "Married to" to partners.married,
+            "Partner" to partners.partnered,
+            "Children together" to partners.coParents
+        ).forEach { (label, ids) ->
+            if (ids.isEmpty()) return@forEach
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ids.forEach { id ->
+                    AssistChip(
+                        onClick = { onOpenPerson(id) },
+                        label = {
+                            val who = everyone.firstOrNull { it.personId == id }
+                            Text(
+                                buildString {
+                                    append(nameOf(id))
+                                    lifespan(who, thisYear)?.let { append("  ").append(it) }
+                                },
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    )
+                }
+            }
+        }
+
+        // Everyone has parents, so an empty Parents row is always missing data and gets
+        // said out loud. -1 and 0 are forced in because a person with nothing recorded
+        // upward has no -1 generation in the frame at all, and the gap most worth naming
+        // is exactly the one the data cannot draw.
+        (frame.generations + listOf(-1)).distinct().sorted().forEach { g ->
             // The direct line and the branches off it share a row but are not the same
             // relationship, so each gets its own heading rather than one mixed list.
             listOf(false, true).forEach { off ->
@@ -414,6 +457,19 @@ private fun FamilyAround(
                 // recorded; everyone else was listed as their own sibling.
                 val row = (if (off) frame.sideways(g) else frame.direct(g))
                     .filter { it.personId != frame.centrePersonId }
+                if (row.isEmpty() && g == -1 && !off) {
+                    Text(
+                        "Parents",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "Nobody recorded yet",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    return@forEach
+                }
                 if (row.isEmpty()) return@forEach
 
                 // Split by side of the family, worked out from whoever the page is centred
