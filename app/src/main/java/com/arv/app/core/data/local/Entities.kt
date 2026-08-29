@@ -230,6 +230,10 @@ class Converters {
 
 fun StoryEntity.toDomain() = Story(
     storyId = storyId,
+    // Every field crosses, and this one is load-bearing: canRead checks the family
+    // boundary first and fails closed, so a Story that lost its familyId here was
+    // rejected by every screen and the whole archive rendered empty.
+    familyId = familyId,
     title = title,
     kind = kind,
     area = area,
