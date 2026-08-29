@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.TypeConverter
+import com.arv.app.core.model.Confidence
 import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.ArchiveArea
 import com.arv.app.core.model.AssetType
@@ -29,6 +30,14 @@ data class PersonEntity(
     val alsoKnownAs: List<String> = emptyList(),
     val birthYear: Int? = null,
     val deathYear: Int? = null,
+    /**
+     * The later end of a death nobody can date exactly.
+     *
+     * "2021 or 2022" is how a family actually remembers a death, and picking one of the two
+     * would turn somebody's honest uncertainty into a fact the archive appears to vouch
+     * for. Null means the year in [deathYear] is the whole answer.
+     */
+    val deathYearEnd: Int? = null,
     val birthPlace: String? = null,
     val relationLabel: String? = null,
     val linkedUserId: String? = null,
@@ -36,6 +45,23 @@ data class PersonEntity(
     val memoryStewardUserId: String? = null,
     val consentGranted: Boolean = false,
     val postMortemOk: Boolean = false,
+    /**
+     * How well established this person is. Defaults to FAMILY_TOLD because somebody in the
+     * family typed them in, which is a real claim and should not masquerade as a document.
+     */
+    val confidence: Confidence = Confidence.FAMILY_TOLD,
+    /** Where the claim came from: an obituary, a census page, a relative's name. */
+    val source: String? = null,
+    /** Set when a person has been checked against a record, so the work is not redone. */
+    val verifiedAt: Long? = null,
+    /**
+     * What the record says in the words of whoever wrote it down.
+     *
+     * The importer read these and dropped them on the floor, so every caveat a compiled
+     * history carried, every "predeceased his parents" and every disputed date, was lost on
+     * the way in while the confident parts survived.
+     */
+    val note: String? = null,
     val updatedAt: Long = 0L
 )
 
@@ -78,6 +104,18 @@ data class StoryEntity(
     val provenance: Provenance = Provenance.AUTHENTIC_RECORDING,
     val sharedWithUserIds: List<String> = emptyList(),
     val restricted: Boolean = false,
+    /**
+     * For [com.arv.app.core.model.Visibility.BRANCH]: the ancestor whose line this belongs
+     * to. Readable by anyone descended from that person.
+     *
+     * A branch is named by an ancestor rather than stored as a group, because a family is a
+     * web of trees and not one tree. Every person is the centre of their own view and a
+     * node in everyone else's, so nobody sits in exactly one branch: you are in your
+     * father's line and your mother's line and your grandmother's at the same time. Naming
+     * the ancestor and walking up from the reader is the only version of "my branch" that
+     * survives that.
+     */
+    val branchRootPersonId: String? = null,
     val durationMs: Long = 0L,
     val assetCount: Int = 0,
     val transcriptStatus: TranscriptStatus = TranscriptStatus.NONE,
@@ -147,6 +185,9 @@ class Converters {
     @TypeConverter fun stringToList(value: String?): List<String> =
         if (value.isNullOrEmpty()) emptyList() else value.split(SEP)
 
+    @TypeConverter fun confidenceToString(v: Confidence): String = v.name
+    @TypeConverter fun stringToConfidence(v: String): Confidence = Confidence.valueOf(v)
+
     @TypeConverter fun storyKindToString(v: StoryKind): String = v.name
     @TypeConverter fun stringToStoryKind(v: String): StoryKind = StoryKind.valueOf(v)
 
@@ -189,6 +230,10 @@ class Converters {
 
 fun StoryEntity.toDomain() = Story(
     storyId = storyId,
+    // Every field crosses, and this one is load-bearing: canRead checks the family
+    // boundary first and fails closed, so a Story that lost its familyId here was
+    // rejected by every screen and the whole archive rendered empty.
+    familyId = familyId,
     title = title,
     kind = kind,
     area = area,
@@ -204,6 +249,7 @@ fun StoryEntity.toDomain() = Story(
     provenance = provenance,
     sharedWithUserIds = sharedWithUserIds,
     restricted = restricted,
+    branchRootPersonId = branchRootPersonId,
     durationMs = durationMs,
     assetCount = assetCount,
     transcriptStatus = transcriptStatus,
@@ -224,7 +270,12 @@ fun PersonEntity.toDomain() = Person(
     state = state,
     memoryStewardUserId = memoryStewardUserId,
     consentGranted = consentGranted,
-    postMortemOk = postMortemOk
+    postMortemOk = postMortemOk,
+    confidence = confidence,
+    source = source,
+    verifiedAt = verifiedAt,
+    deathYearEnd = deathYearEnd,
+    note = note
 )
 
 fun RelationshipEntity.toDomain() = Relationship(

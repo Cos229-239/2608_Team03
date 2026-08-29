@@ -37,11 +37,15 @@ interface StoryDao {
      * Sorted so the ones nobody has found yet (assetCount = 0) sit at the top. A family
      * archive that only shows what has already been scanned hides the work still to do,
      * and the work still to do is how the box in the attic eventually gets opened.
+     *
+     * PHOTO_SET belongs here alongside DOCUMENT. The postcard of the ship someone's mother
+     * came over on is a record in every sense a family means it, and filtering on DOCUMENT
+     * alone meant every photograph anyone added saved correctly and then appeared nowhere.
      */
     @Query(
         """
         SELECT * FROM stories
-        WHERE familyId = :familyId AND kind = 'DOCUMENT'
+        WHERE familyId = :familyId AND kind IN ('DOCUMENT', 'PHOTO_SET')
         ORDER BY (assetCount > 0) ASC, eraStart ASC, title ASC
         """
     )
@@ -49,6 +53,18 @@ interface StoryDao {
 
     @Query("SELECT COUNT(*) FROM stories WHERE familyId = :familyId")
     suspend fun count(familyId: String): Int
+
+    /** Recordings whose words are still only in the audio: saved before the speech model
+     *  existed, or failed. What gets retried the moment the model is installed. */
+    @Query(
+        """
+        SELECT * FROM stories
+        WHERE familyId = :familyId AND kind = 'AUDIO'
+          AND transcriptStatus IN ('PENDING', 'FAILED')
+        ORDER BY createdAt ASC
+        """
+    )
+    suspend fun awaitingTranscription(familyId: String): List<StoryEntity>
 
     /**
      * Unfiltered. Callers MUST run [com.arv.app.core.ai.MemoryAccess]
@@ -67,10 +83,10 @@ interface StoryDao {
         LEFT JOIN assets a ON a.storyId = s.storyId
         LEFT JOIN transcript_segments t ON t.assetId = a.assetId
         WHERE s.familyId = :familyId
-          AND (s.title LIKE '%' || :query || '%'
-               OR s.tags LIKE '%' || :query || '%'
-               OR t.text LIKE '%' || :query || '%'
-               OR a.ocrText LIKE '%' || :query || '%')
+          AND (s.title LIKE '%' || :query || '%' ESCAPE ''
+               OR s.tags LIKE '%' || :query || '%' ESCAPE ''
+               OR t.text LIKE '%' || :query || '%' ESCAPE ''
+               OR a.ocrText LIKE '%' || :query || '%' ESCAPE '')
         ORDER BY s.createdAt DESC
         """
     )
@@ -121,6 +137,10 @@ interface RelationshipDao {
     @Query("SELECT * FROM relationships WHERE familyId = :familyId")
     fun observeAll(familyId: String): Flow<List<RelationshipEntity>>
 
+    /** One-shot read, for writing the whole archive out to a file. */
+    @Query("SELECT * FROM relationships WHERE familyId = :familyId")
+    suspend fun observeAllOnce(familyId: String): List<RelationshipEntity>
+
     /** Both directions, because a tree is walked from whichever person you are looking at. */
     @Query(
         """
@@ -147,6 +167,17 @@ interface AssetDao {
     @Query("SELECT * FROM assets WHERE storyId = :storyId ORDER BY createdAt ASC")
     fun observeForStory(storyId: String): Flow<List<AssetEntity>>
 
+    /**
+     * Every asset in the family, so a list screen can offer a working play button on each
+     * row from one query instead of one query per card.
+     */
+    @Query("SELECT * FROM assets WHERE familyId = :familyId ORDER BY createdAt ASC")
+    fun observeForFamily(familyId: String): Flow<List<AssetEntity>>
+
+    /** One-shot read, for writing the whole archive out to a file. */
+    @Query("SELECT * FROM assets WHERE familyId = :familyId ORDER BY createdAt ASC")
+    suspend fun forFamily(familyId: String): List<AssetEntity>
+
     @Query("SELECT * FROM assets WHERE uploadState IN (:states) ORDER BY createdAt ASC")
     fun observeByUploadState(states: List<UploadState>): Flow<List<AssetEntity>>
 
@@ -165,6 +196,10 @@ interface TranscriptDao {
 
     @Query("SELECT * FROM transcript_segments WHERE assetId = :assetId ORDER BY startMs ASC")
     fun observeForAsset(assetId: String): Flow<List<TranscriptSegmentEntity>>
+
+    /** One-shot read, for writing the whole archive out to a file. */
+    @Query("SELECT * FROM transcript_segments WHERE assetId = :assetId ORDER BY startMs ASC")
+    suspend fun forAssetOnce(assetId: String): List<TranscriptSegmentEntity>
 
     /** Every transcript line for a story, across its assets. The librarian reads these. */
     @Query(

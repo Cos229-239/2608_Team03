@@ -35,7 +35,7 @@ import kotlinx.coroutines.flow.stateIn
 class SearchViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = ServiceLocator.storyRepository(app)
-    private val familyId = ServiceLocator.DEMO_FAMILY_ID
+    private val familyId = ServiceLocator.familyId
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query
@@ -46,7 +46,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
      */
     val results: StateFlow<List<Story>> = _query
         .debounce(250)
-        .mapLatest { q -> repo.searchKeyword(familyId, q) }
+        .mapLatest { q -> repo.searchKeyword(familyId, q, ServiceLocator.viewer) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun onQueryChange(value: String) {

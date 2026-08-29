@@ -1,6 +1,9 @@
 package com.arv.app.core.data
 
+import com.arv.app.core.ai.Lineage
 import com.arv.app.core.ai.TranscriptionService
+import com.arv.app.core.ai.MemoryAccess
+import com.arv.app.core.ai.Viewer
 import com.arv.app.core.data.local.ArvDatabase
 import com.arv.app.core.data.local.AssetEntity
 import com.arv.app.core.data.local.OutboxEntity
@@ -9,8 +12,10 @@ import com.arv.app.core.data.local.RelationshipEntity
 import com.arv.app.core.data.local.StoryEntity
 import com.arv.app.core.data.local.TranscriptSegmentEntity
 import com.arv.app.core.model.RelationshipKind
+import com.arv.app.core.session.ActiveSession
 import com.arv.app.core.data.local.toDomain
 import com.arv.app.core.model.ArchiveArea
+import com.arv.app.core.model.Confidence
 import com.arv.app.core.model.AssetType
 import com.arv.app.core.model.OutboxOp
 import java.io.File
@@ -18,15 +23,18 @@ import java.util.UUID
 import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.EraPrecision
 import com.arv.app.core.model.Person
+import com.arv.app.core.model.ProfileState
 import com.arv.app.core.model.Provenance
 import com.arv.app.core.model.Story
 import com.arv.app.core.model.StoryKind
 import com.arv.app.core.model.TranscriptStatus
 import com.arv.app.core.model.UploadState
 import com.arv.app.core.model.Visibility
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 
 /**
@@ -51,6 +59,247 @@ class StoryRepository(
 
     fun observeDocuments(familyId: String): Flow<List<Story>> =
         db.storyDao().observeDocuments(familyId).map { rows -> rows.map { it.toDomain() } }
+
+    /**
+     * Recomputes who the signed-in user is and who they descend from, and caches it on
+     * the session.
+     *
+     * BRANCH visibility reads that cache, so this has to run before any screen filters,
+     * and again whenever the tree changes. It fails to an empty set rather than throwing:
+     * an archive whose owner is not yet linked to a person should show nothing
+     * branch-scoped, not everything.
+     */
+    suspend fun refreshLineage(familyId: String, userId: String) {
+        val people = db.personDao().all(familyId)
+        val me = people.firstOrNull { it.linkedUserId == userId }
+
+        val steward = people.filter { it.memoryStewardUserId == userId }.map { it.personId }
+        ActiveSession.setPersonIds((listOfNotNull(me?.personId) + steward).toSet())
+
+        if (me == null) {
+            ActiveSession.setLineage(emptySet())
+            return
+        }
+        val edges = db.relationshipDao().observeAll(familyId).first().map { it.toDomain() }
+        ActiveSession.setLineage(Lineage.ancestorsOf(me.personId, edges))
+    }
+
+    /**
+     * The ancestors this user could name a branch after, nearest generation first.
+     *
+     * Empty for someone with no recorded parents, which is the honest answer: you cannot
+     * scope a memory to a line the archive does not know about yet. The recorder hides the
+     * option rather than offering a choice that would make a recording unreadable.
+     */
+    suspend fun branchChoicesFor(familyId: String, userId: String): List<Person> {
+        val people = db.personDao().all(familyId)
+        val me = people.firstOrNull { it.linkedUserId == userId } ?: return emptyList()
+        val edges = db.relationshipDao().observeAll(familyId).first().map { it.toDomain() }
+        val ids = Lineage.branchChoicesFor(me.personId, edges).toSet()
+        return people.filter { it.personId in ids }.map { it.toDomain() }
+    }
+
+    /**
+     * Writes a parsed family history into the archive.
+     *
+     * Idempotent by name: importing the same file twice updates people rather than
+     * creating a second copy of everyone, because the realistic use is importing, fixing
+     * something in the source, and importing again.
+     *
+     * Links are attached to the importing user's own person. That is the only viewpoint the
+     * file describes, since every label in it was written relative to whoever compiled it.
+     */
+    suspend fun importFamily(
+        familyId: String,
+        userId: String,
+        parsed: FamilyImport.Parsed,
+        nowMillis: Long
+    ): Int {
+        val existing = db.personDao().all(familyId)
+        val me = existing.firstOrNull { it.linkedUserId == userId }
+
+        // All name resolution happens in FamilyImport.plan, in two passes, so people
+        // defined by this same file can name each other. This function only writes.
+        val plan = FamilyImport.plan(
+            parsed = parsed,
+            existingIdsByName = existing.associate { it.displayName to it.personId },
+            meId = me?.personId,
+            meName = me?.displayName,
+            newId = { "p_" + UUID.randomUUID().toString().take(8) }
+        )
+
+        for (planned in plan.people) {
+            val person = planned.imported
+            db.personDao().upsert(
+                PersonEntity(
+                    personId = planned.personId,
+                    familyId = familyId,
+                    displayName = person.displayName,
+                    alsoKnownAs = person.alsoKnownAs,
+                    birthYear = person.birthYear,
+                    deathYear = person.deathYear,
+                    deathYearEnd = person.deathYearEnd,
+                    note = person.note,
+                    birthPlace = person.birthPlace,
+                    relationLabel = person.relationLabel,
+                    // A stated death counts as much as a dated one. Requiring a year meant
+                    // somebody known to have died, with no year anybody recorded, imported
+                    // as living.
+                    state = if (person.deceased) ProfileState.MEMORIAL
+                    else ProfileState.LIVING,
+                    confidence = person.confidence,
+                    source = person.source,
+                    updatedAt = nowMillis
+                )
+            )
+        }
+
+        for (edge in plan.edges) {
+            db.relationshipDao().upsert(
+                RelationshipEntity(
+                    familyId = familyId,
+                    fromPersonId = edge.fromId,
+                    toPersonId = edge.toId,
+                    kind = edge.kind,
+                    uncertain = edge.uncertain,
+                    updatedAt = nowMillis
+                )
+            )
+        }
+
+        // The graph just changed, so the viewer's own lineage is stale.
+        refreshLineage(familyId, userId)
+        return plan.people.size
+    }
+
+    /**
+     * People the archive holds but cannot place: no chain of parents connects them to the
+     * person using the app, so which side of the family they are on is genuinely unknown.
+     *
+     * This is the worklist. An imported history arrives full of these, because a label like
+     * "3x great-grandmother" says how far up somebody sits and never says through whom, and
+     * the app refuses to guess. Every one of them is a question with an answer somebody
+     * alive probably still has.
+     */
+    fun observeUnplaced(familyId: String, userId: String): Flow<List<Person>> =
+        combine(
+            db.personDao().observeAll(familyId),
+            db.relationshipDao().observeAll(familyId)
+        ) { people, edges ->
+            val me = people.firstOrNull { it.linkedUserId == userId }
+                ?: return@combine emptyList()
+            val rels = edges.map { it.toDomain() }
+            people
+                .filter { it.personId != me.personId }
+                .filter { Lineage.isUnplaced(it.personId, me.personId, rels) }
+                .map { it.toDomain() }
+        }
+
+    /**
+     * Records that one person is another's parent, and recomputes what that changed.
+     *
+     * Placing a single person can place a whole line behind them, which is the point: name
+     * one link and everyone standing behind it falls into place.
+     */
+    suspend fun connectParent(
+        familyId: String,
+        parentPersonId: String,
+        childPersonId: String,
+        userId: String,
+        nowMillis: Long
+    ) {
+        if (parentPersonId == childPersonId) return
+        db.relationshipDao().upsert(
+            RelationshipEntity(
+                familyId = familyId,
+                fromPersonId = parentPersonId,
+                toPersonId = childPersonId,
+                kind = RelationshipKind.PARENT,
+                updatedAt = nowMillis
+            )
+        )
+        refreshLineage(familyId, userId)
+    }
+
+    /** People the archive is holding on somebody's word alone, for the verify list. */
+    fun observeNeedingVerification(familyId: String): Flow<List<Person>> =
+        db.personDao().observeAll(familyId).map { rows ->
+            rows.filter {
+                it.confidence == Confidence.UNVERIFIED || it.confidence == Confidence.CONFLICTED
+            }.map { it.toDomain() }
+        }
+
+    /** Records that somebody checked a person against a real source. */
+    suspend fun markVerified(personId: String, source: String, nowMillis: Long) {
+        val p = db.personDao().byId(personId) ?: return
+        db.personDao().upsert(
+            p.copy(
+                confidence = Confidence.DOCUMENTED,
+                source = source.ifBlank { p.source },
+                verifiedAt = nowMillis,
+                updatedAt = nowMillis
+            )
+        )
+    }
+
+    /**
+     * Somebody looked at an uncertain link and said it is right.
+     *
+     * The question mark on a chip is a question, and until now the app had no way to
+     * hear the answer. Confirming rewrites the same edge with the uncertainty removed;
+     * nothing else about it changes, so a confirmed grandparent is exactly the
+     * grandparent the record claimed, minus the doubt.
+     */
+    suspend fun confirmRelationship(
+        familyId: String,
+        fromPersonId: String,
+        toPersonId: String,
+        kind: RelationshipKind,
+        userId: String,
+        nowMillis: Long
+    ) {
+        db.relationshipDao().upsert(
+            RelationshipEntity(
+                familyId = familyId,
+                fromPersonId = fromPersonId,
+                toPersonId = toPersonId,
+                kind = kind,
+                uncertain = false,
+                updatedAt = nowMillis
+            )
+        )
+        refreshLineage(familyId, userId)
+    }
+
+    /**
+     * Somebody looked at an uncertain link and said it is wrong.
+     *
+     * The edge is deleted, not marked. A link the family has rejected is not a disputed
+     * fact worth preserving, it is somebody else's mistake, and leaving it drawn would
+     * keep seating the wrong person at the table. The person themselves stays in the
+     * archive; only the claim about how they connect goes.
+     */
+    suspend fun removeRelationship(
+        familyId: String,
+        fromPersonId: String,
+        toPersonId: String,
+        kind: RelationshipKind,
+        userId: String,
+        nowMillis: Long
+    ) {
+        db.relationshipDao().delete(
+            RelationshipEntity(
+                familyId = familyId,
+                fromPersonId = fromPersonId,
+                toPersonId = toPersonId,
+                kind = kind
+            )
+        )
+        refreshLineage(familyId, userId)
+    }
+
+    fun observeRelationships(familyId: String) =
+        db.relationshipDao().observeAll(familyId).map { rows -> rows.map { it.toDomain() } }
 
     /** One-shot reads for the librarian pipeline. */
     suspend fun peopleFor(familyId: String) =
@@ -86,11 +335,24 @@ class StoryRepository(
             result
         }
 
-    suspend fun searchKeyword(familyId: String, query: String): List<Story> =
+    /**
+     * The permission filter sits here, not on the screen. Search matches transcript text,
+     * so an unfiltered result lets anyone probe a private story word by word, and the one
+     * screen that forgot the filter was the search screen. Below the UI it cannot be
+     * forgotten again.
+     */
+    suspend fun searchKeyword(familyId: String, query: String, viewer: Viewer): List<Story> =
         if (query.isBlank()) {
             emptyList()
         } else {
-            db.storyDao().searchKeyword(familyId, query.trim()).map { it.toDomain() }
+            // % and _ are LIKE wildcards. Typed by a person they are just characters,
+            // and unescaped they let a query match everything.
+            val safe = query.trim()
+                .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            val people = db.personDao().all(familyId).map { it.toDomain() }
+            db.storyDao().searchKeyword(familyId, safe)
+                .map { it.toDomain() }
+                .filter { MemoryAccess.canRead(it, viewer, people) }
         }
 
     /**
@@ -102,10 +364,104 @@ class StoryRepository(
 
     suspend fun upsert(story: StoryEntity) = db.storyDao().upsert(story)
 
+    // --- Making an archive real (DAT-1 groundwork) ---
+
+    /**
+     * Creates a family and the person who owns it.
+     *
+     * The owner is written as a [PersonEntity] as well as a user id, because in this app
+     * the person keeping the archive is also in it. Their consent is set at creation:
+     * they are the one choosing to record, and asking someone to consent to their own
+     * archive would be theater.
+     */
+    suspend fun createFamily(
+        familyName: String,
+        ownerDisplayName: String,
+        nowMillis: Long
+    ): NewFamily {
+        val familyId = "fam_" + UUID.randomUUID().toString().take(8)
+        val userId = "u_" + UUID.randomUUID().toString().take(8)
+        val personId = "p_" + UUID.randomUUID().toString().take(8)
+
+        db.personDao().upsert(
+            PersonEntity(
+                personId = personId,
+                familyId = familyId,
+                displayName = ownerDisplayName.trim(),
+                relationLabel = "You",
+                linkedUserId = userId,
+                state = ProfileState.LIVING,
+                consentGranted = true,
+                updatedAt = nowMillis
+            )
+        )
+
+        return NewFamily(familyId, userId, personId, familyName.trim())
+    }
+
+    /**
+     * Adds someone to the archive.
+     *
+     * Consent stays false and is never inferred from a relative having typed the name in.
+     * The people list renders that gap in red on purpose; a missing consent record is
+     * information, not an error to hide.
+     *
+     * A death year is what moves a profile to MEMORIAL. Nothing else does, because that
+     * transition changes who may add to the profile and it should never happen by accident.
+     */
+    suspend fun addPerson(
+        familyId: String,
+        displayName: String,
+        relationLabel: String? = null,
+        birthYear: Int? = null,
+        deathYear: Int? = null,
+        birthPlace: String? = null,
+        nowMillis: Long
+    ): String {
+        val personId = "p_" + UUID.randomUUID().toString().take(8)
+        db.personDao().upsert(
+            PersonEntity(
+                personId = personId,
+                familyId = familyId,
+                displayName = displayName.trim(),
+                relationLabel = relationLabel?.trim()?.takeIf { it.isNotEmpty() },
+                birthYear = birthYear,
+                deathYear = deathYear,
+                birthPlace = birthPlace?.trim()?.takeIf { it.isNotEmpty() },
+                state = if (deathYear != null) ProfileState.MEMORIAL else ProfileState.LIVING,
+                updatedAt = nowMillis
+            )
+        )
+        return personId
+    }
+
     fun observeTranscript(assetId: String) = db.transcriptDao().observeForAsset(assetId)
 
     suspend fun primaryAsset(storyId: String): AssetEntity? =
         db.assetDao().observeForStory(storyId).first().firstOrNull()
+
+    /**
+     * storyId to the audio file behind it, for every story in the family that actually has
+     * one on disk. List screens use this to decide whether a play button is real.
+     *
+     * Seed rows carry "seed://" paths and no file, so they are dropped here rather than in
+     * the UI: a play button that cannot play should not be offered in the first place. The
+     * existence check touches the disk, which is why this runs off the main thread.
+     */
+    fun observeAudioPaths(familyId: String): Flow<Map<String, String>> =
+        db.assetDao().observeForFamily(familyId)
+            .map { rows ->
+                rows.filter {
+                    it.type == AssetType.AUDIO &&
+                        !it.localPath.startsWith("seed://") &&
+                        File(it.localPath).exists()
+                }
+                    // Oldest first, matching primaryAsset, so the feed and the story screen
+                    // never disagree about which recording a story means.
+                    .groupBy { it.storyId }
+                    .mapValues { (_, assets) -> assets.first().localPath }
+            }
+            .flowOn(Dispatchers.IO)
 
     suspend fun correctSegment(segmentId: Long, newText: String) =
         db.transcriptDao().correct(segmentId, newText)
@@ -117,6 +473,21 @@ class StoryRepository(
      * PENDING -> RUNNING -> READY, or FAILED with the recording untouched. The recording
      * is never at risk from this path: transcription failing loses text, not voice.
      */
+    /**
+     * Every recording saved before the model existed, transcribed now that it does.
+     *
+     * A story saved with no model stays PENDING on purpose: writing a placeholder and
+     * calling it READY made the gap permanent, because nothing ever revisits a READY
+     * story. This is the revisit.
+     */
+    suspend fun transcribeAwaiting(familyId: String, transcription: TranscriptionService): Int {
+        val waiting = db.storyDao().awaitingTranscription(familyId)
+        for (story in waiting) {
+            transcribeStory(story.storyId, transcription)
+        }
+        return waiting.size
+    }
+
     suspend fun transcribeStory(storyId: String, transcription: TranscriptionService) {
         val story = db.storyDao().observeById(storyId).first() ?: return
         val asset = primaryAsset(storyId) ?: return
@@ -168,6 +539,7 @@ class StoryRepository(
         visibility: Visibility,
         aiUsePolicy: AiUsePolicy,
         area: ArchiveArea,
+        branchRootPersonId: String? = null,
         now: Long
     ): String {
         val storyId = "s_" + UUID.randomUUID().toString().take(12)
@@ -188,6 +560,9 @@ class StoryRepository(
             tags = tags,
             visibility = visibility,
             aiUsePolicy = aiUsePolicy,
+            // Only meaningful for BRANCH, and deliberately dropped otherwise so a story
+            // cannot carry a stale line from a visibility the person changed their mind about.
+            branchRootPersonId = branchRootPersonId.takeIf { visibility == Visibility.BRANCH },
             // It is their actual voice. That is the whole point, and it is recorded here
             // rather than inferred later.
             provenance = Provenance.AUTHENTIC_RECORDING,
@@ -234,6 +609,108 @@ class StoryRepository(
                 docId = assetId,
                 payloadJson = "{\"assetId\":\"$assetId\"}",
                 localFilePath = localAudioPath,
+                createdAt = now
+            )
+        )
+
+        return storyId
+    }
+
+    /**
+     * Files a photograph or a record into the archive.
+     *
+     * The other half of what a family actually has. Not every inheritance is a voice: it is
+     * also the marriage certificate, the ship postcard, the photograph with four people on
+     * the back of it in pencil. Those arrive already made, so unlike a recording there is
+     * nothing to transcribe and nothing to wait for.
+     *
+     * [localPath] must already be inside app storage. The caller copies the picked file in
+     * first, because a content:// URI is a temporary grant that dies with the picker, and
+     * an archive that stores a borrowed pointer is an archive that empties itself the next
+     * time someone tidies their gallery.
+     */
+    suspend fun saveDocument(
+        familyId: String,
+        createdByUserId: String,
+        localPath: String,
+        mimeType: String,
+        title: String,
+        subjectPersonIds: List<String>,
+        eraStart: Int?,
+        eraEnd: Int?,
+        eraPrecision: EraPrecision,
+        placeLabel: String?,
+        tags: List<String>,
+        visibility: Visibility,
+        aiUsePolicy: AiUsePolicy,
+        area: ArchiveArea,
+        now: Long
+    ): String {
+        val storyId = "d_" + UUID.randomUUID().toString().take(12)
+        val assetId = "a_" + UUID.randomUUID().toString().take(12)
+        val isImage = mimeType.startsWith("image/")
+
+        val story = StoryEntity(
+            storyId = storyId,
+            familyId = familyId,
+            title = title.ifBlank { if (isImage) "Untitled photograph" else "Untitled record" },
+            kind = if (isImage) StoryKind.PHOTO_SET else StoryKind.DOCUMENT,
+            area = area,
+            narratorIds = emptyList(),
+            subjectPersonIds = subjectPersonIds,
+            eraStart = eraStart,
+            eraEnd = eraEnd,
+            eraPrecision = eraPrecision,
+            placeLabel = placeLabel?.takeIf { it.isNotBlank() },
+            tags = tags,
+            visibility = visibility,
+            aiUsePolicy = aiUsePolicy,
+            // Their handwriting, their photograph, their document. Not a recording, and
+            // never labelled as one.
+            provenance = Provenance.AUTHENTIC_DOCUMENT,
+            durationMs = 0L,
+            assetCount = 1,
+            // There is no audio here, so there is nothing pending. Marking it PENDING
+            // would leave every document sitting under "Transcribing" forever.
+            transcriptStatus = TranscriptStatus.NONE,
+            uploadState = UploadState.LOCAL_ONLY,
+            primaryAssetId = assetId,
+            createdBy = createdByUserId,
+            createdAt = now,
+            updatedAt = now
+        )
+
+        val asset = AssetEntity(
+            assetId = assetId,
+            storyId = storyId,
+            familyId = familyId,
+            type = if (isImage) AssetType.IMAGE else AssetType.DOCUMENT,
+            localPath = localPath,
+            mimeType = mimeType,
+            bytes = runCatching { File(localPath).length() }.getOrDefault(0L),
+            uploadState = UploadState.LOCAL_ONLY,
+            createdAt = now
+        )
+
+        db.storyDao().upsert(story)
+        db.assetDao().upsert(asset)
+
+        db.outboxDao().enqueue(
+            OutboxEntity(
+                op = OutboxOp.CREATE,
+                collectionPath = "families/$familyId/stories",
+                docId = storyId,
+                payloadJson = "{\"storyId\":\"$storyId\"}",
+                createdAt = now
+            )
+        )
+        db.outboxDao().enqueue(
+            OutboxEntity(
+                op = OutboxOp.UPLOAD,
+                collectionPath = "families/$familyId/assets",
+                docId = assetId,
+                payloadJson = "{\"assetId\":\"$assetId\"}",
+                localFilePath = localPath,
                 createdAt = now
             )
         )
@@ -558,3 +1035,11 @@ class StoryRepository(
         )
     }
 }
+
+/** What [StoryRepository.createFamily] hands back so the session can be opened on it. */
+data class NewFamily(
+    val familyId: String,
+    val userId: String,
+    val ownerPersonId: String,
+    val familyName: String
+)

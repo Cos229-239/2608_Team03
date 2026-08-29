@@ -39,14 +39,18 @@ val LineLight = Color(0xFFD9D1BE)
 val AlertLight = Color(0xFF8C2F1D)
 
 // --- Dark ---
-val PaperDark = Color(0xFF15180F)
-val PaperRaisedDark = Color(0xFF1F241B)
+// The archive by lamplight, not the forest at night. The first dark palette kept the
+// green family and landed within arm's reach of the Sage theme; this one warms the
+// ground to old paper in low light and pulls the green toward olive, so Heirloom dark
+// is unmistakably itself and mint stays Sage's.
+val PaperDark = Color(0xFF1A1512)
+val PaperRaisedDark = Color(0xFF262019)
 val InkDark = Color(0xFFF1EADA)
-val InkMutedDark = Color(0xFFB3BBAC)
-val ForestDark = Color(0xFF9CC7A6)
-val ForestContainerDark = Color(0xFF27402D)
+val InkMutedDark = Color(0xFFBDB2A2)
+val ForestDark = Color(0xFFADBE93)
+val ForestContainerDark = Color(0xFF35392A)
 val TerracottaDark = Color(0xFFE9A183)
 val TerracottaContainerDark = Color(0xFF4A2416)
 val BrassDark = Color(0xFFD8B571)
-val LineDark = Color(0xFF353B30)
+val LineDark = Color(0xFF3E372E)
 val AlertDark = Color(0xFFF0A697)

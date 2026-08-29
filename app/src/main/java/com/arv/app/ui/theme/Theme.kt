@@ -1,10 +1,21 @@
 package com.arv.app.ui.theme
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 
 /**
  * Role assignments, so the accent stays meaningful:
@@ -91,9 +102,164 @@ fun ArvTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
+    // One mode control, every theme obeying it: Auto follows the phone, Light and Dark
+    // hold. The same seven names cover both sides of day, so the picker never grows.
+    val dark = when (ThemeController.mode) {
+        ThemeMode.AUTO -> darkTheme
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+    val kalos = ThemeController.current.scheme(dark)
+    val target = kalos ?: if (dark) DarkColors else LightColors
     MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
+        colorScheme = target.eased(),
         typography = ArvTypography,
         content = content
     )
+}
+
+/**
+ * The same scheme with every major role easing toward its target, so choosing a theme
+ * plays as one slow crossfade instead of a hard cut. 600ms to match the design system's
+ * own transition. Colors only: nothing moves, which keeps it calm on an archive.
+ */
+@Composable
+private fun androidx.compose.material3.ColorScheme.eased(): androidx.compose.material3.ColorScheme {
+    @Composable
+    fun c(target: Color): Color {
+        val v by animateColorAsState(target, tween(600), label = "theme")
+        return v
+    }
+    return copy(
+        primary = c(primary), onPrimary = c(onPrimary),
+        primaryContainer = c(primaryContainer), onPrimaryContainer = c(onPrimaryContainer),
+        secondary = c(secondary), onSecondary = c(onSecondary),
+        secondaryContainer = c(secondaryContainer), onSecondaryContainer = c(onSecondaryContainer),
+        tertiary = c(tertiary), onTertiary = c(onTertiary),
+        tertiaryContainer = c(tertiaryContainer), onTertiaryContainer = c(onTertiaryContainer),
+        background = c(background), onBackground = c(onBackground),
+        surface = c(surface), onSurface = c(onSurface),
+        surfaceVariant = c(surfaceVariant), onSurfaceVariant = c(onSurfaceVariant),
+        surfaceContainerLowest = c(surfaceContainerLowest),
+        surfaceContainerLow = c(surfaceContainerLow),
+        surfaceContainer = c(surfaceContainer),
+        surfaceContainerHigh = c(surfaceContainerHigh),
+        surfaceContainerHighest = c(surfaceContainerHighest),
+        outline = c(outline), error = c(error), onError = c(onError)
+    )
+}
+
+/**
+ * The page's ground: theme background with the Kalos glow pooled into it.
+ *
+ * The design system never paints a flat dark field. The accents pool at low alpha, one
+ * high, one low, one center, which is what gives the dark themes depth instead of
+ * flatness. Drawn once here behind every screen; content sits on transparent surfaces so
+ * the glow reads through. Heirloom paints its plain paper and skips the theatrics.
+ */
+@Composable
+fun ArvBackground(content: @Composable () -> Unit) {
+    val halos = ThemeController.current.halos()
+    val bg = MaterialTheme.colorScheme.background
+
+    // The glow breathes. Two very slow phases drift the pools a few percent of the
+    // screen and swell them slightly, far below anything that reads as motion; the page
+    // feels lit rather than animated. Skipped entirely for Heirloom.
+    val drift = androidx.compose.animation.core.rememberInfiniteTransition(label = "halo")
+    val t1 by drift.animateFloat(
+        0f, 1f,
+        androidx.compose.animation.core.infiniteRepeatable(
+            tween(38_000, easing = androidx.compose.animation.core.LinearEasing),
+            androidx.compose.animation.core.RepeatMode.Reverse
+        ),
+        label = "halo1"
+    )
+    val t2 by drift.animateFloat(
+        0f, 1f,
+        androidx.compose.animation.core.infiniteRepeatable(
+            tween(53_000, easing = androidx.compose.animation.core.LinearEasing),
+            androidx.compose.animation.core.RepeatMode.Reverse
+        ),
+        label = "halo2"
+    )
+
+    Box(Modifier.fillMaxSize()) {
+        Canvas(Modifier.fillMaxSize()) {
+            drawRect(bg)
+            if (halos.isNotEmpty()) {
+                val (h1, h2, h3) = halos
+                val r = size.maxDimension
+                drawRect(
+                    Brush.radialGradient(
+                        listOf(h1, Color.Transparent),
+                        center = Offset(
+                            size.width * (0.85f - 0.10f * t1),
+                            size.height * (0.10f + 0.08f * t2)
+                        ),
+                        radius = r * (0.55f + 0.08f * t2)
+                    )
+                )
+                drawRect(
+                    Brush.radialGradient(
+                        listOf(h2, Color.Transparent),
+                        center = Offset(
+                            size.width * (0.10f + 0.09f * t2),
+                            size.height * (0.85f - 0.07f * t1)
+                        ),
+                        radius = r * (0.50f + 0.07f * t1)
+                    )
+                )
+                drawRect(
+                    Brush.radialGradient(
+                        listOf(h3, Color.Transparent),
+                        center = Offset(
+                            size.width * (0.50f + 0.06f * (t1 - 0.5f)),
+                            size.height * (0.45f + 0.06f * (t2 - 0.5f))
+                        ),
+                        radius = r * 0.60f
+                    )
+                )
+            }
+        }
+        content()
+    }
+}
+
+/**
+ * The hero-panel palette: the dark headed blocks on Home, People and Documents.
+ *
+ * Heirloom keeps its hand-tuned forest-and-paper hero exactly as designed. A Kalos theme
+ * renders the same structure as a raised dark panel with the accent doing the pointing,
+ * which is how that design system uses color. Screens name the role and the theme decides
+ * the value, so switching themes restyles the heroes instead of leaving green islands.
+ */
+object ArvHero {
+    private val kalos: Boolean
+        @Composable get() = ThemeController.current != ThemeOption.HEIRLOOM
+
+    /** The panel itself. */
+    val container: Color
+        @Composable get() =
+            if (kalos) MaterialTheme.colorScheme.surfaceContainerHigh else ForestLight
+
+    /** The lighter end of the panel's gradient. */
+    val containerBright: Color
+        @Composable get() =
+            if (kalos) MaterialTheme.colorScheme.surfaceContainer else Color(0xFF3A5741)
+
+    /** Text and icons standing on the panel. */
+    val on: Color
+        @Composable get() = if (kalos) MaterialTheme.colorScheme.onSurface else PaperLight
+
+    /** Dark foreground for the light chips that sit on the panel. */
+    val ink: Color
+        @Composable get() = if (kalos) MaterialTheme.colorScheme.background else InkLight
+
+    /** Provenance and small accents on the panel. Brass in Heirloom. */
+    val accent: Color
+        @Composable get() = if (kalos) MaterialTheme.colorScheme.tertiary else BrassDark
+
+    /** The one action that matters most. Terracotta in Heirloom. */
+    val cta: Color
+        @Composable get() = if (kalos) MaterialTheme.colorScheme.primary else TerracottaLight
 }

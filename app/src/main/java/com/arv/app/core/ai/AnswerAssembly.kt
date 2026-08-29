@@ -56,7 +56,16 @@ internal object AnswerAssembly {
                 personId = story.narratorIds.firstOrNull(),
                 quote = story.title,
                 startMs = null,
-                provenance = story.provenance,
+                // A title is typed by whoever filed the recording. It is not the
+                // narrator's voice, and it must never be labeled as one.
+                //
+                // Inheriting story.provenance here meant AUTHENTIC_RECORDING, which the
+                // librarian renders as the chip "THEIR VOICE" over a sentence nobody
+                // ever said, with no timestamp behind it. That is the single claim this
+                // project promises it will never make, and it fired on the demo query,
+                // because QuestionParse strips digits so "What happened in 1953" matches
+                // no transcript segment and lands here.
+                provenance = Provenance.HUMAN_WRITTEN,
                 area = story.area
             )
         }

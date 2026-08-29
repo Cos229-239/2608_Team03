@@ -1,0 +1,682 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "c0c20ca05490de55ed4c3af97744076b",
+    "entities": [
+      {
+        "tableName": "stories",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`storyId` TEXT NOT NULL, `familyId` TEXT NOT NULL, `title` TEXT NOT NULL, `kind` TEXT NOT NULL, `area` TEXT NOT NULL, `narratorIds` TEXT NOT NULL, `subjectPersonIds` TEXT NOT NULL, `eraStart` INTEGER, `eraEnd` INTEGER, `eraPrecision` TEXT NOT NULL, `placeLabel` TEXT, `tags` TEXT NOT NULL, `visibility` TEXT NOT NULL, `aiUsePolicy` TEXT NOT NULL, `provenance` TEXT NOT NULL, `sharedWithUserIds` TEXT NOT NULL, `restricted` INTEGER NOT NULL, `branchRootPersonId` TEXT, `durationMs` INTEGER NOT NULL, `assetCount` INTEGER NOT NULL, `transcriptStatus` TEXT NOT NULL, `uploadState` TEXT NOT NULL, `primaryAssetId` TEXT, `createdBy` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`storyId`))",
+        "fields": [
+          {
+            "fieldPath": "storyId",
+            "columnName": "storyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "familyId",
+            "columnName": "familyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "area",
+            "columnName": "area",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "narratorIds",
+            "columnName": "narratorIds",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subjectPersonIds",
+            "columnName": "subjectPersonIds",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eraStart",
+            "columnName": "eraStart",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "eraEnd",
+            "columnName": "eraEnd",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "eraPrecision",
+            "columnName": "eraPrecision",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "placeLabel",
+            "columnName": "placeLabel",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "tags",
+            "columnName": "tags",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "visibility",
+            "columnName": "visibility",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "aiUsePolicy",
+            "columnName": "aiUsePolicy",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "provenance",
+            "columnName": "provenance",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sharedWithUserIds",
+            "columnName": "sharedWithUserIds",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "restricted",
+            "columnName": "restricted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "branchRootPersonId",
+            "columnName": "branchRootPersonId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "durationMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assetCount",
+            "columnName": "assetCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transcriptStatus",
+            "columnName": "transcriptStatus",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uploadState",
+            "columnName": "uploadState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "primaryAssetId",
+            "columnName": "primaryAssetId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "createdBy",
+            "columnName": "createdBy",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "storyId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_stories_familyId",
+            "unique": false,
+            "columnNames": [
+              "familyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_stories_familyId` ON `${TABLE_NAME}` (`familyId`)"
+          },
+          {
+            "name": "index_stories_eraStart",
+            "unique": false,
+            "columnNames": [
+              "eraStart"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_stories_eraStart` ON `${TABLE_NAME}` (`eraStart`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "people",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`personId` TEXT NOT NULL, `familyId` TEXT NOT NULL, `displayName` TEXT NOT NULL, `alsoKnownAs` TEXT NOT NULL, `birthYear` INTEGER, `deathYear` INTEGER, `deathYearEnd` INTEGER, `birthPlace` TEXT, `relationLabel` TEXT, `linkedUserId` TEXT, `state` TEXT NOT NULL, `memoryStewardUserId` TEXT, `consentGranted` INTEGER NOT NULL, `postMortemOk` INTEGER NOT NULL, `confidence` TEXT NOT NULL, `source` TEXT, `verifiedAt` INTEGER, `note` TEXT, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`personId`))",
+        "fields": [
+          {
+            "fieldPath": "personId",
+            "columnName": "personId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "familyId",
+            "columnName": "familyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "alsoKnownAs",
+            "columnName": "alsoKnownAs",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "birthYear",
+            "columnName": "birthYear",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "deathYear",
+            "columnName": "deathYear",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "deathYearEnd",
+            "columnName": "deathYearEnd",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "birthPlace",
+            "columnName": "birthPlace",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "relationLabel",
+            "columnName": "relationLabel",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "linkedUserId",
+            "columnName": "linkedUserId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "memoryStewardUserId",
+            "columnName": "memoryStewardUserId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "consentGranted",
+            "columnName": "consentGranted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "postMortemOk",
+            "columnName": "postMortemOk",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "verifiedAt",
+            "columnName": "verifiedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "personId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_people_familyId",
+            "unique": false,
+            "columnNames": [
+              "familyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_people_familyId` ON `${TABLE_NAME}` (`familyId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "relationships",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`familyId` TEXT NOT NULL, `fromPersonId` TEXT NOT NULL, `toPersonId` TEXT NOT NULL, `kind` TEXT NOT NULL, `uncertain` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`fromPersonId`, `toPersonId`, `kind`))",
+        "fields": [
+          {
+            "fieldPath": "familyId",
+            "columnName": "familyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fromPersonId",
+            "columnName": "fromPersonId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "toPersonId",
+            "columnName": "toPersonId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uncertain",
+            "columnName": "uncertain",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "fromPersonId",
+            "toPersonId",
+            "kind"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_relationships_familyId",
+            "unique": false,
+            "columnNames": [
+              "familyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_relationships_familyId` ON `${TABLE_NAME}` (`familyId`)"
+          },
+          {
+            "name": "index_relationships_fromPersonId",
+            "unique": false,
+            "columnNames": [
+              "fromPersonId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_relationships_fromPersonId` ON `${TABLE_NAME}` (`fromPersonId`)"
+          },
+          {
+            "name": "index_relationships_toPersonId",
+            "unique": false,
+            "columnNames": [
+              "toPersonId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_relationships_toPersonId` ON `${TABLE_NAME}` (`toPersonId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "assets",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`assetId` TEXT NOT NULL, `storyId` TEXT NOT NULL, `familyId` TEXT NOT NULL, `type` TEXT NOT NULL, `localPath` TEXT NOT NULL, `remotePath` TEXT, `mimeType` TEXT NOT NULL, `bytes` INTEGER NOT NULL, `durationMs` INTEGER, `sha256` TEXT, `ocrText` TEXT, `uploadState` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`assetId`))",
+        "fields": [
+          {
+            "fieldPath": "assetId",
+            "columnName": "assetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "storyId",
+            "columnName": "storyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "familyId",
+            "columnName": "familyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localPath",
+            "columnName": "localPath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "remotePath",
+            "columnName": "remotePath",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mimeType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bytes",
+            "columnName": "bytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "durationMs",
+            "columnName": "durationMs",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "ocrText",
+            "columnName": "ocrText",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "uploadState",
+            "columnName": "uploadState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "assetId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_assets_storyId",
+            "unique": false,
+            "columnNames": [
+              "storyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_assets_storyId` ON `${TABLE_NAME}` (`storyId`)"
+          },
+          {
+            "name": "index_assets_uploadState",
+            "unique": false,
+            "columnNames": [
+              "uploadState"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_assets_uploadState` ON `${TABLE_NAME}` (`uploadState`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "transcript_segments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `assetId` TEXT NOT NULL, `startMs` INTEGER NOT NULL, `endMs` INTEGER NOT NULL, `text` TEXT NOT NULL, `confidence` REAL NOT NULL, `humanVerified` INTEGER NOT NULL, `originalText` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assetId",
+            "columnName": "assetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startMs",
+            "columnName": "startMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endMs",
+            "columnName": "endMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "text",
+            "columnName": "text",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "humanVerified",
+            "columnName": "humanVerified",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originalText",
+            "columnName": "originalText",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_transcript_segments_assetId",
+            "unique": false,
+            "columnNames": [
+              "assetId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_transcript_segments_assetId` ON `${TABLE_NAME}` (`assetId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "outbox",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `op` TEXT NOT NULL, `collectionPath` TEXT NOT NULL, `docId` TEXT NOT NULL, `payloadJson` TEXT NOT NULL, `localFilePath` TEXT, `attempts` INTEGER NOT NULL, `lastError` TEXT, `createdAt` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "op",
+            "columnName": "op",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "collectionPath",
+            "columnName": "collectionPath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "docId",
+            "columnName": "docId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadJson",
+            "columnName": "payloadJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localFilePath",
+            "columnName": "localFilePath",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "attempts",
+            "columnName": "attempts",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastError",
+            "columnName": "lastError",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_outbox_createdAt",
+            "unique": false,
+            "columnNames": [
+              "createdAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_outbox_createdAt` ON `${TABLE_NAME}` (`createdAt`)"
+          }
+        ],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c0c20ca05490de55ed4c3af97744076b')"
+    ]
+  }
+}
