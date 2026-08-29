@@ -46,13 +46,11 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.ai.Viewer
+import com.arv.app.ui.theme.ArvHero
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.Story
-import com.arv.app.ui.theme.BrassDark
-import com.arv.app.ui.theme.ForestLight
-import com.arv.app.ui.theme.PaperLight
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -84,13 +82,12 @@ class DocumentsViewModel(app: Application) : AndroidViewModel(app) {
 
     val uiState: StateFlow<DocumentsUiState> =
         combine(
+            repo.observeDocuments(familyId),
+            repo.observePeople(familyId)
+        ) { all, people ->
             // Documents run through the same permission filter as everything else. A
             // death record is not automatically public just because it is paperwork.
-            repo.observeDocuments(familyId).map { docs ->
-                docs.filter { MemoryAccess.canRead(it, viewer) }
-            },
-            repo.observePeople(familyId)
-        ) { docs, people ->
+            val docs = all.filter { MemoryAccess.canRead(it, viewer, people) }
             DocumentsUiState(documents = docs, people = people)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DocumentsUiState())
 }
@@ -129,18 +126,18 @@ fun DocumentsScreen(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .background(ForestLight)
+                    .background(ArvHero.container)
                     .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp)
             ) {
                 Text(
                     "Documents",
                     style = MaterialTheme.typography.displaySmall,
-                    color = PaperLight
+                    color = ArvHero.on
                 )
                 Text(
                     "Records, certificates, and papers, linked to the people they belong to.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = PaperLight.copy(alpha = 0.85f)
+                    color = ArvHero.on.copy(alpha = 0.85f)
                 )
             }
         }
@@ -266,7 +263,7 @@ private fun DocumentCard(story: Story, people: String, onClick: () -> Unit) {
                 Icon(
                     if (found) Icons.Outlined.Description else Icons.Outlined.HelpOutline,
                     contentDescription = null,
-                    tint = if (found) BrassDark else MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = if (found) ArvHero.accent else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 

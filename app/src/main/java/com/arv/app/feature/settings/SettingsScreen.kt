@@ -32,6 +32,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.FilterChip
+import androidx.compose.ui.platform.LocalContext
+import com.arv.app.ui.theme.ThemeController
+import com.arv.app.ui.theme.ThemeOption
 import com.arv.app.core.data.ArchiveExport
 import com.arv.app.core.data.FamilyImport
 import com.arv.app.core.di.ServiceLocator
@@ -71,7 +78,19 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                 store.ensure { p -> _model.value = SpeechModelState.Downloading(p) }
             }
             _model.value = result.fold(
-                onSuccess = { SpeechModelState.Ready },
+                onSuccess = {
+                    // The recordings made while there was no model have been waiting for
+                    // this exact moment. Fire and forget on the app scope: leaving
+                    // Settings must not cancel their transcription.
+                    ServiceLocator.transcriptionService(getApplication())?.let { service ->
+                        ServiceLocator.appScope.launch {
+                            runCatching {
+                                repo.transcribeAwaiting(ServiceLocator.familyId, service)
+                            }
+                        }
+                    }
+                    SpeechModelState.Ready
+                },
                 onFailure = {
                     SpeechModelState.Failed(
                         "Could not download the speech model. Check the connection and try again."
@@ -143,7 +162,8 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                             db = com.arv.app.core.data.local.ArvDatabase.get(app),
                             familyId = ServiceLocator.familyId,
                             familyName = familyName,
-                            filesDir = app.filesDir
+                            filesDir = app.filesDir,
+                            viewer = ServiceLocator.viewer
                         )
                     } ?: error("Could not write there")
                 }
@@ -239,6 +259,48 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+
+        item { HorizontalDivider() }
+
+        item { SectionLabel("How it looks") }
+
+        item {
+            // One row decides light or dark, the themes keep their names either way, so
+            // fourteen looks cost eight chips and a toggle instead of doubling the list.
+            val context = LocalContext.current
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    com.arv.app.ui.theme.ThemeMode.AUTO to "Auto",
+                    com.arv.app.ui.theme.ThemeMode.LIGHT to "Light",
+                    com.arv.app.ui.theme.ThemeMode.DARK to "Dark"
+                ).forEach { (value, label) ->
+                    FilterChip(
+                        selected = ThemeController.mode == value,
+                        onClick = { ThemeController.chooseMode(value, context) },
+                        label = { Text(label) }
+                    )
+                }
+            }
+        }
+
+        item {
+            // The Kalos family, plus the archive's own Heirloom default. Restyles
+            // immediately and survives restart.
+            val context = LocalContext.current
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ThemeOption.entries.forEach { option ->
+                    FilterChip(
+                        selected = ThemeController.current == option,
+                        onClick = { ThemeController.choose(option, context) },
+                        label = { Text(option.label) }
+                    )
+                }
+            }
         }
 
         item { HorizontalDivider() }
@@ -426,6 +488,6 @@ private fun SectionLabel(text: String) {
     Text(
         text.uppercase(),
         style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        color = MaterialTheme.colorScheme.primary
     )
 }

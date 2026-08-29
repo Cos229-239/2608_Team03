@@ -41,22 +41,21 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.ai.Viewer
 import com.arv.app.core.ai.Lineage
 import com.arv.app.core.ai.TreeFrame
+import com.arv.app.ui.theme.ArvHero
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.Story
 import com.arv.app.core.model.StoryKind
-import com.arv.app.ui.theme.BrassDark
-import com.arv.app.ui.theme.ForestLight
-import com.arv.app.ui.theme.PaperLight
-import com.arv.app.ui.theme.TerracottaLight
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
@@ -106,13 +105,46 @@ class PersonDetailViewModel(
      */
     val stories: StateFlow<List<Story>> =
         repo.observeRecent(familyId)
-            .map { stories ->
+            .combine(repo.observePeople(familyId)) { stories, people ->
                 stories.filter { story ->
                     (personId in story.narratorIds || personId in story.subjectPersonIds) &&
-                        MemoryAccess.canRead(story, viewer)
+                        MemoryAccess.canRead(story, viewer, people)
                 }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * The uncertain links touching this person: every question mark on the page, as a
+     * list somebody can actually answer. Imported research arrives full of these, and
+     * verifying them is meant to be a feature, not a chore the app never offers.
+     */
+    val unconfirmed: StateFlow<List<com.arv.app.core.model.Relationship>> =
+        repo.observeRelationships(familyId)
+            .map { edges ->
+                edges.filter {
+                    it.uncertain &&
+                        (it.fromPersonId == personId || it.toPersonId == personId)
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun confirm(edge: com.arv.app.core.model.Relationship) {
+        viewModelScope.launch {
+            repo.confirmRelationship(
+                familyId, edge.fromPersonId, edge.toPersonId, edge.kind,
+                ServiceLocator.viewer.userId, System.currentTimeMillis()
+            )
+        }
+    }
+
+    fun reject(edge: com.arv.app.core.model.Relationship) {
+        viewModelScope.launch {
+            repo.removeRelationship(
+                familyId, edge.fromPersonId, edge.toPersonId, edge.kind,
+                ServiceLocator.viewer.userId, System.currentTimeMillis()
+            )
+        }
+    }
 }
 
 /**
@@ -133,6 +165,7 @@ fun PersonDetailScreen(
     val frame by viewModel.frame.collectAsStateWithLifecycle()
     val everyone by viewModel.everyone.collectAsStateWithLifecycle()
     val edges by viewModel.edges.collectAsStateWithLifecycle()
+    val unconfirmed by viewModel.unconfirmed.collectAsStateWithLifecycle()
 
     val p = person ?: return
 
@@ -145,7 +178,7 @@ fun PersonDetailScreen(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .background(ForestLight)
+                    .background(ArvHero.container)
                     .padding(horizontal = 16.dp, vertical = 20.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -153,8 +186,8 @@ fun PersonDetailScreen(
                         Modifier
                             .size(72.dp)
                             .clip(CircleShape)
-                            .background(PaperLight.copy(alpha = 0.12f))
-                            .border(2.dp, BrassDark, CircleShape),
+                            .background(ArvHero.on.copy(alpha = 0.12f))
+                            .border(2.dp, ArvHero.accent, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -162,7 +195,7 @@ fun PersonDetailScreen(
                                 .mapNotNull { it.firstOrNull()?.uppercase() }
                                 .take(2).joinToString(""),
                             style = MaterialTheme.typography.titleLarge,
-                            color = PaperLight
+                            color = ArvHero.on
                         )
                     }
                     Spacer(Modifier.size(16.dp))
@@ -170,7 +203,7 @@ fun PersonDetailScreen(
                         Text(
                             p.displayName,
                             style = MaterialTheme.typography.headlineMedium,
-                            color = PaperLight
+                            color = ArvHero.on
                         )
                         val line = buildString {
                             p.birthYear?.let { append(it) }
@@ -188,19 +221,19 @@ fun PersonDetailScreen(
                             Text(
                                 line,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = PaperLight.copy(alpha = 0.85f)
+                                color = ArvHero.on.copy(alpha = 0.85f)
                             )
                         }
                         if (p.isDeceased) {
                             Spacer(Modifier.height(6.dp))
                             Surface(
                                 shape = RoundedCornerShape(4.dp),
-                                color = TerracottaLight
+                                color = ArvHero.cta
                             ) {
                                 Text(
                                     "MEMORIAL",
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = PaperLight,
+                                    color = ArvHero.on,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
@@ -214,7 +247,7 @@ fun PersonDetailScreen(
                         shape = RoundedCornerShape(12.dp),
                         color = Color.Transparent,
                         border = androidx.compose.foundation.BorderStroke(
-                            1.dp, PaperLight.copy(alpha = 0.35f)
+                            1.dp, ArvHero.on.copy(alpha = 0.35f)
                         ),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -223,18 +256,18 @@ fun PersonDetailScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Surface(shape = RoundedCornerShape(4.dp), color = BrassDark) {
+                            Surface(shape = RoundedCornerShape(4.dp), color = ArvHero.accent) {
                                 Text(
                                     "THEIR VOICE",
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = ForestLight,
+                                    color = ArvHero.container,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
                             Text(
                                 "${formatPreserved(recordedMs)} preserved",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = PaperLight
+                                color = ArvHero.on
                             )
                         }
                     }
@@ -277,6 +310,19 @@ fun PersonDetailScreen(
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+        }
+
+        if (unconfirmed.isNotEmpty()) {
+            item {
+                UnconfirmedLinks(
+                    person = p,
+                    edges = unconfirmed,
+                    everyone = everyone,
+                    onConfirm = viewModel::confirm,
+                    onReject = viewModel::reject,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
@@ -329,13 +375,13 @@ private fun PersonStoryCard(
                     Modifier
                         .size(36.dp)
                         .clip(CircleShape)
-                        .background(ForestLight),
+                        .background(ArvHero.container),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Filled.PlayArrow,
                         contentDescription = "Play",
-                        tint = PaperLight,
+                        tint = ArvHero.on,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -357,7 +403,7 @@ private fun PersonStoryCard(
             Text(
                 if (personId in story.narratorIds) "their voice" else "about them",
                 style = MaterialTheme.typography.labelMedium,
-                color = if (personId in story.narratorIds) BrassDark
+                color = if (personId in story.narratorIds) ArvHero.accent
                 else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -404,7 +450,56 @@ private fun FamilyAround(
         // Read once per drawing so every age on the page counts from the same year.
         val thisYear = remember { java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) }
 
-        frame.generations.forEach { g ->
+        // Marriages and partnerships, drawn where a family expects them: with the person,
+        // not on a line of descent, because they are not one. Derived co-parents get a
+        // label that says what the archive actually knows.
+        val partners = Lineage.partnersOf(frame.centrePersonId, edges)
+        listOf(
+            "Married to" to partners.married,
+            "Partner" to partners.partnered,
+            "Children together" to partners.coParents
+        ).forEach { (label, ids) ->
+            if (ids.isEmpty()) return@forEach
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                // The accent does the wayfinding. Small text, full strength: this is
+                // where Aurora's pop lives without ever touching a whole surface.
+                color = MaterialTheme.colorScheme.primary
+            )
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ids.forEach { id ->
+                    AssistChip(
+                        onClick = { onOpenPerson(id) },
+                        border = androidx.compose.material3.AssistChipDefaults.assistChipBorder(
+                            enabled = true,
+                            borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                        ),
+                        label = {
+                            val who = everyone.firstOrNull { it.personId == id }
+                            Text(
+                                buildString {
+                                    append(nameOf(id))
+                                    lifespan(who, thisYear)?.let { append("  ").append(it) }
+                                },
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    )
+                }
+            }
+        }
+
+        // Everyone has parents, so an empty Parents row is always missing data and gets
+        // said out loud. -1 and 0 are forced in because a person with nothing recorded
+        // upward has no -1 generation in the frame at all, and the gap most worth naming
+        // is exactly the one the data cannot draw.
+        (frame.generations + listOf(-1)).distinct().sorted().forEach { g ->
             // The direct line and the branches off it share a row but are not the same
             // relationship, so each gets its own heading rather than one mixed list.
             listOf(false, true).forEach { off ->
@@ -413,6 +508,19 @@ private fun FamilyAround(
                 // recorded; everyone else was listed as their own sibling.
                 val row = (if (off) frame.sideways(g) else frame.direct(g))
                     .filter { it.personId != frame.centrePersonId }
+                if (row.isEmpty() && g == -1 && !off) {
+                    Text(
+                        "Parents",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        "Nobody recorded yet",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    return@forEach
+                }
                 if (row.isEmpty()) return@forEach
 
                 // Split by side of the family, worked out from whoever the page is centred
@@ -464,7 +572,7 @@ private fun FamilyAround(
                         side?.let { append(", ").append(it).append("'s side") }
                     },
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.primary
                 )
                 if (people.isEmpty()) {
                     // Names the gap rather than dropping the heading.
@@ -486,6 +594,15 @@ private fun FamilyAround(
                         val isCentre = node.personId == frame.centrePersonId
                         AssistChip(
                             onClick = { if (!isCentre) onOpenPerson(node.personId) },
+                            // A whisper of the theme on every edge, and the counter color
+                            // on anything still carrying a question mark, so the unproven
+                            // links are findable across a whole tree at a glance.
+                            border = androidx.compose.material3.AssistChipDefaults.assistChipBorder(
+                                enabled = true,
+                                borderColor = if (node.viaUncertain)
+                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.65f)
+                                else MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                            ),
                             label = {
                                 val who = everyone.firstOrNull { it.personId == node.personId }
                                 Text(
@@ -563,3 +680,82 @@ private fun lifespan(person: Person?, thisYear: Int): String? {
 }
 
 private const val MAX_BELIEVABLE_AGE = 110
+
+/**
+ * Every question mark on the page, asked as a question somebody can answer.
+ *
+ * The sentence reads the same from either end of the edge, so it is correct on both
+ * people's pages. Confirming keeps the link and drops the doubt; "Not right" removes the
+ * claim entirely, because a link the family has rejected is somebody else's mistake, not
+ * a disputed fact worth drawing.
+ */
+@Composable
+private fun UnconfirmedLinks(
+    person: Person,
+    edges: List<com.arv.app.core.model.Relationship>,
+    everyone: List<Person>,
+    onConfirm: (com.arv.app.core.model.Relationship) -> Unit,
+    onReject: (com.arv.app.core.model.Relationship) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    fun name(id: String) =
+        everyone.firstOrNull { it.personId == id }?.displayName ?: "Somebody"
+
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Worth confirming", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "These came from records nobody has checked yet. If you know, say so.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        edges.forEach { edge ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        claimSentence(edge, ::name),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AssistChip(
+                            onClick = { onConfirm(edge) },
+                            border = androidx.compose.material3.AssistChipDefaults.assistChipBorder(
+                                enabled = true,
+                                borderColor = MaterialTheme.colorScheme.primary
+                            ),
+                            label = {
+                                Text("That's right", color = MaterialTheme.colorScheme.primary)
+                            }
+                        )
+                        AssistChip(
+                            onClick = { onReject(edge) },
+                            label = { Text("Not right") }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The claim in plain words. Edge direction reads "from is the kind of to". */
+private fun claimSentence(
+    edge: com.arv.app.core.model.Relationship,
+    name: (String) -> String
+): String {
+    val from = name(edge.fromPersonId)
+    val to = name(edge.toPersonId)
+    return when (edge.kind) {
+        com.arv.app.core.model.RelationshipKind.PARENT -> "$from is $to's parent?"
+        com.arv.app.core.model.RelationshipKind.CHILD -> "$to is $from's parent?"
+        com.arv.app.core.model.RelationshipKind.GRANDPARENT -> "$from is $to's grandparent?"
+        com.arv.app.core.model.RelationshipKind.GRANDCHILD -> "$to is $from's grandparent?"
+        com.arv.app.core.model.RelationshipKind.SIBLING -> "$from and $to are siblings?"
+        com.arv.app.core.model.RelationshipKind.AUNT_UNCLE -> "$from is $to's aunt or uncle?"
+        com.arv.app.core.model.RelationshipKind.NIECE_NEPHEW -> "$from is $to's niece or nephew?"
+        com.arv.app.core.model.RelationshipKind.COUSIN -> "$from and $to are cousins?"
+        com.arv.app.core.model.RelationshipKind.SPOUSE -> "$from and $to are married?"
+        com.arv.app.core.model.RelationshipKind.PARTNER -> "$from and $to are partners?"
+        com.arv.app.core.model.RelationshipKind.CHOSEN -> "$from is chosen family to $to?"
+        com.arv.app.core.model.RelationshipKind.OTHER -> "$from and $to are connected?"
+    }
+}

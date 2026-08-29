@@ -46,7 +46,7 @@ class SearchViewModel(app: Application) : AndroidViewModel(app) {
      */
     val results: StateFlow<List<Story>> = _query
         .debounce(250)
-        .mapLatest { q -> repo.searchKeyword(familyId, q) }
+        .mapLatest { q -> repo.searchKeyword(familyId, q, ServiceLocator.viewer) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun onQueryChange(value: String) {

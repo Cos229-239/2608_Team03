@@ -138,6 +138,67 @@ object Lineage {
         }.toSet()
     }
 
+    /** The other ends of somebody's stated SPOUSE and PARTNER edges, and the people they
+     *  share a child with. */
+    data class Partners(
+        /** Stated married. */
+        val married: List<String>,
+        /** Stated partners who are not also stated married. */
+        val partnered: List<String>,
+        /** Share a child, with no stated edge. Derived, so labelled by the fact itself:
+         *  the archive knows they raised children together and does not know they married. */
+        val coParents: List<String>
+    )
+
+    /**
+     * Who somebody built a family with.
+     *
+     * Spouses were never drawn anywhere: the frame walks lines of descent and a marriage
+     * is not one, so a grandfather's page showed his children and grandchildren and not
+     * the woman he was married to for fifty years, who stood in the archive four rows
+     * away as those children's mother. Co-parents are derived from shared children
+     * exactly so that gap cannot happen; what stays honest is the label, because sharing
+     * a child proves the children and does not prove a wedding.
+     */
+    fun partnersOf(personId: String, relationships: List<Relationship>): Partners {
+        val married = mutableListOf<String>()
+        val partnered = mutableListOf<String>()
+        for (r in relationships) {
+            val other = when (personId) {
+                r.fromPersonId -> r.toPersonId
+                r.toPersonId -> r.fromPersonId
+                else -> null
+            } ?: continue
+            when (r.kind) {
+                RelationshipKind.SPOUSE -> married += other
+                RelationshipKind.PARTNER -> partnered += other
+                else -> Unit
+            }
+        }
+        val stated = (married + partnered).toSet()
+        val coParents = childrenOf(personId, relationships)
+            .flatMap { child -> immediateParents(child, relationships) }
+            .distinct()
+            .filter { it != personId && it !in stated }
+        return Partners(
+            married = married.distinct(),
+            partnered = partnered.distinct().filter { it !in married },
+            coParents = coParents
+        )
+    }
+
+    /** Strictly the people recorded as somebody's child. The inverse of [immediateParents]. */
+    private fun childrenOf(
+        personId: String,
+        relationships: List<Relationship>
+    ): List<String> = relationships.mapNotNull { r ->
+        when (r.kind) {
+            RelationshipKind.PARENT -> r.toPersonId.takeIf { r.fromPersonId == personId }
+            RelationshipKind.CHILD -> r.fromPersonId.takeIf { r.toPersonId == personId }
+            else -> null
+        }
+    }.distinct()
+
     /**
      * Strictly the people recorded as somebody's parent. No grandparent shortcuts.
      *

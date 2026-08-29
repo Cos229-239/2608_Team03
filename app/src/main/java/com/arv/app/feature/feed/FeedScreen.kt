@@ -40,7 +40,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,8 +60,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.arv.app.core.ai.Lineage
 import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.ai.Viewer
+import com.arv.app.ui.theme.ArvHero
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.session.ActiveSession
 import com.arv.app.core.model.MemberRole
@@ -64,11 +71,6 @@ import com.arv.app.core.model.Person
 import com.arv.app.core.model.Story
 import com.arv.app.core.model.StoryKind
 import com.arv.app.ui.components.formatElapsed
-import com.arv.app.ui.theme.BrassDark
-import com.arv.app.ui.theme.ForestLight
-import com.arv.app.ui.theme.InkLight
-import com.arv.app.ui.theme.PaperLight
-import com.arv.app.ui.theme.TerracottaLight
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -77,13 +79,32 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
+/**
+ * One way of looking at the feed: the whole family, one side of it, or only yourself.
+ *
+ * Sides are the viewer's own parents, derived from the graph, so the menu offers exactly
+ * the sides this person's family actually has and nothing invented.
+ */
+data class FeedLens(
+    val label: String,
+    /** The parent whose side this is, null for whole-family and just-me. */
+    val parentId: String? = null,
+    val mine: Boolean = false
+) {
+    companion object {
+        val Whole = FeedLens("Whole family")
+    }
+}
+
 data class FeedUiState(
     val posts: List<Story> = emptyList(),
     val people: List<Person> = emptyList(),
     val pendingSyncCount: Int = 0,
     val loading: Boolean = true,
     /** storyId to its audio file, present only for stories that can actually be played. */
-    val audioPaths: Map<String, String> = emptyMap()
+    val audioPaths: Map<String, String> = emptyMap(),
+    val lenses: List<FeedLens> = listOf(FeedLens.Whole),
+    val lens: FeedLens = FeedLens.Whole
 ) {
     val isEmpty: Boolean get() = !loading && posts.isEmpty()
 
@@ -107,25 +128,103 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     /** Whose archive this is, so the header can say so instead of guessing. */
     val familyName: String get() = ActiveSession.familyName ?: "Our Family"
 
+    private val lens = kotlinx.coroutines.flow.MutableStateFlow(FeedLens.Whole)
+
+    fun chooseLens(choice: FeedLens) { lens.value = choice }
+
     val uiState: StateFlow<FeedUiState> =
         combine(
-            repo.observeRecent(familyId).map { stories ->
-                // The same filter the librarian uses. The feed is not a separate
-                // permission surface, it is the same one rendered differently.
-                stories.filter { MemoryAccess.canRead(it, viewer) }
+            combine(
+                repo.observeRecent(familyId),
+                repo.observePeople(familyId),
+                repo.observeRelationships(familyId),
+                lens
+            ) { all, people, edges, chosen ->
+                // The same filter the librarian uses, consent included. The feed is not a
+                // separate permission surface, it is the same one rendered differently.
+                val readable = all.filter { MemoryAccess.canRead(it, viewer, people) }
+
+                val meId = people.firstOrNull { it.linkedUserId == viewer.userId }?.personId
+                val lenses = feedLenses(meId, people, edges)
+                // A lens that stopped existing (a parent edge was removed) falls back to
+                // the whole family rather than filtering by a ghost.
+                val active = lenses.firstOrNull {
+                    it.parentId == chosen.parentId && it.mine == chosen.mine
+                } ?: FeedLens.Whole
+
+                Triple(
+                    filterByLens(readable, active, meId, edges),
+                    peopleForLens(people, active, meId, edges),
+                    lenses to active
+                )
             },
-            repo.observePeople(familyId),
             repo.observePendingSyncCount(),
             repo.observeAudioPaths(familyId)
-        ) { posts, people, pending, paths ->
+        ) { (posts, people, lensPair), pending, paths ->
             FeedUiState(
                 posts = posts,
                 people = people,
                 pendingSyncCount = pending,
                 loading = false,
-                audioPaths = paths
+                audioPaths = paths,
+                lenses = lensPair.first,
+                lens = lensPair.second
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FeedUiState())
+
+    /** Whole family, one entry per parent the viewer actually has, and just-me. */
+    private fun feedLenses(
+        meId: String?,
+        people: List<Person>,
+        edges: List<com.arv.app.core.model.Relationship>
+    ): List<FeedLens> {
+        if (meId == null) return listOf(FeedLens.Whole)
+        val sides = Lineage.immediateParents(meId, edges).mapNotNull { parentId ->
+            people.firstOrNull { it.personId == parentId }?.let { parent ->
+                FeedLens("${parent.shortName()}'s side", parentId = parentId)
+            }
+        }
+        return listOf(FeedLens.Whole) + sides + FeedLens("Just me", mine = true)
+    }
+
+    /**
+     * A story belongs to a side when somebody who told it is on that side of the
+     * viewer's family, or the memory was scoped to a branch on that side. Derived from
+     * the same walk the person pages use, so the feed and the tree never disagree about
+     * where somebody stands.
+     */
+    private fun filterByLens(
+        posts: List<Story>,
+        lens: FeedLens,
+        meId: String?,
+        edges: List<com.arv.app.core.model.Relationship>
+    ): List<Story> = when {
+        lens.mine -> posts.filter { story ->
+            story.createdBy == viewer.userId || (meId != null && meId in story.narratorIds)
+        }
+        lens.parentId == null || meId == null -> posts
+        else -> posts.filter { story ->
+            val onSide = { id: String ->
+                id == lens.parentId || lens.parentId in Lineage.sideOf(id, meId, edges)
+            }
+            story.narratorIds.any(onSide) || story.branchRootPersonId?.let(onSide) == true
+        }
+    }
+
+    /** The avatar strip narrows with the lens, so the row shows who the feed shows. */
+    private fun peopleForLens(
+        people: List<Person>,
+        lens: FeedLens,
+        meId: String?,
+        edges: List<com.arv.app.core.model.Relationship>
+    ): List<Person> = when {
+        lens.mine -> people.filter { it.personId == meId }
+        lens.parentId == null || meId == null -> people
+        else -> people.filter {
+            it.personId == meId || it.personId == lens.parentId ||
+                lens.parentId in Lineage.sideOf(it.personId, meId, edges)
+        }
+    }
 
     init {
         // Only the sample family gets sample data. A real family's archive starts empty
@@ -169,6 +268,9 @@ fun FeedScreen(
                 familyName = viewModel.familyName,
                 people = state.people,
                 pendingSyncCount = state.pendingSyncCount,
+                lenses = state.lenses,
+                lens = state.lens,
+                onChooseLens = viewModel::chooseLens,
                 onOpenPerson = onOpenPerson,
                 onOpenSettings = onOpenSettings
             )
@@ -218,7 +320,8 @@ fun FeedScreen(
                     ) {
                         Text(
                             "Recent memories",
-                            style = MaterialTheme.typography.headlineSmall
+                            style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(Modifier.weight(1f))
                         Row(
@@ -272,13 +375,16 @@ private fun HomeHeader(
     people: List<Person>,
     familyName: String,
     pendingSyncCount: Int,
+    lenses: List<FeedLens>,
+    lens: FeedLens,
+    onChooseLens: (FeedLens) -> Unit,
     onOpenPerson: (String) -> Unit,
     onOpenSettings: () -> Unit
 ) {
     Column(
         Modifier
             .fillMaxWidth()
-            .background(ForestLight)
+            .background(ArvHero.container)
             .padding(top = 8.dp, bottom = 18.dp)
     ) {
         Row(
@@ -293,7 +399,7 @@ private fun HomeHeader(
                 // hardcoded words on the first screen of their own archive.
                 familyName,
                 style = MaterialTheme.typography.displaySmall,
-                color = PaperLight,
+                color = ArvHero.on,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false)
@@ -306,7 +412,7 @@ private fun HomeHeader(
                 Icon(
                     Icons.Outlined.Settings,
                     contentDescription = "Settings",
-                    tint = PaperLight
+                    tint = ArvHero.on
                 )
             }
         }
@@ -317,26 +423,46 @@ private fun HomeHeader(
             Modifier.padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = Color.Transparent,
-                border = androidx.compose.foundation.BorderStroke(1.dp, PaperLight.copy(alpha = 0.55f))
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            // Was a painted pill that did nothing. It now chooses whose stories the
+            // page shows: the whole family, one side of it, or only your own.
+            var lensMenuOpen by remember { mutableStateOf(false) }
+            Box {
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = Color.Transparent,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, ArvHero.on.copy(alpha = 0.55f)),
+                    onClick = { lensMenuOpen = true }
                 ) {
-                    Text(
-                        "Whole family",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = PaperLight
-                    )
-                    Icon(
-                        Icons.Outlined.KeyboardArrowDown,
-                        contentDescription = null,
-                        tint = PaperLight,
-                        modifier = Modifier.size(18.dp)
-                    )
+                    Row(
+                        Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            lens.label,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = ArvHero.on
+                        )
+                        Icon(
+                            Icons.Outlined.KeyboardArrowDown,
+                            contentDescription = "Choose whose stories to show",
+                            tint = ArvHero.on,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+                DropdownMenu(
+                    expanded = lensMenuOpen,
+                    onDismissRequest = { lensMenuOpen = false }
+                ) {
+                    lenses.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.label) },
+                            onClick = {
+                                onChooseLens(option)
+                                lensMenuOpen = false
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -356,8 +482,8 @@ private fun HomeHeader(
                         Modifier
                             .size(64.dp)
                             .clip(CircleShape)
-                            .background(PaperLight.copy(alpha = 0.12f))
-                            .border(2.dp, BrassDark, CircleShape),
+                            .background(ArvHero.on.copy(alpha = 0.12f))
+                            .border(2.dp, ArvHero.accent, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -365,14 +491,14 @@ private fun HomeHeader(
                                 .mapNotNull { it.firstOrNull()?.uppercase() }
                                 .take(2).joinToString(""),
                             style = MaterialTheme.typography.titleLarge,
-                            color = PaperLight
+                            color = ArvHero.on
                         )
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
                         person.shortName(),
                         style = MaterialTheme.typography.labelLarge,
-                        color = PaperLight,
+                        color = ArvHero.on,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -385,7 +511,7 @@ private fun HomeHeader(
             Surface(
                 shape = RoundedCornerShape(14.dp),
                 color = Color.Transparent,
-                border = androidx.compose.foundation.BorderStroke(1.dp, PaperLight.copy(alpha = 0.35f)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, ArvHero.on.copy(alpha = 0.35f)),
                 modifier = Modifier
                     .padding(horizontal = 16.dp)
                     .fillMaxWidth()
@@ -398,7 +524,7 @@ private fun HomeHeader(
                     Icon(
                         Icons.Outlined.CloudOff,
                         contentDescription = null,
-                        tint = PaperLight
+                        tint = ArvHero.on
                     )
                     Column(Modifier.weight(1f)) {
                         // Says what is true today. Nothing drains the outbox yet, so
@@ -415,13 +541,13 @@ private fun HomeHeader(
                         Text(
                             label,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = PaperLight
+                            color = ArvHero.on
                         )
                         // The sentence the whole offline design exists to earn.
                         Text(
                             "Nothing is lost.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = PaperLight.copy(alpha = 0.8f)
+                            color = ArvHero.on.copy(alpha = 0.8f)
                         )
                     }
                 }
@@ -451,7 +577,7 @@ private fun FeaturedStoryCard(
                 .fillMaxWidth()
                 .background(
                     Brush.linearGradient(
-                        listOf(Color(0xFF3A5741), ForestLight)
+                        listOf(ArvHero.containerBright, ArvHero.container)
                     )
                 )
         ) {
@@ -461,7 +587,7 @@ private fun FeaturedStoryCard(
                     .align(Alignment.TopEnd)
                     .padding(top = 0.dp, end = 20.dp)
                     .background(
-                        TerracottaLight,
+                        ArvHero.cta,
                         RoundedCornerShape(bottomStart = 6.dp, bottomEnd = 6.dp)
                     )
                     .padding(horizontal = 8.dp, vertical = 10.dp)
@@ -469,7 +595,7 @@ private fun FeaturedStoryCard(
                 Icon(
                     Icons.Filled.Star,
                     contentDescription = "Featured",
-                    tint = PaperLight,
+                    tint = ArvHero.on,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -483,7 +609,7 @@ private fun FeaturedStoryCard(
                 Text(
                     story.title,
                     style = MaterialTheme.typography.headlineMedium,
-                    color = PaperLight
+                    color = ArvHero.on
                 )
                 Text(
                     buildString {
@@ -491,7 +617,7 @@ private fun FeaturedStoryCard(
                         story.placeLabel?.let { append(" · $it") }
                     },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = PaperLight.copy(alpha = 0.85f)
+                    color = ArvHero.on.copy(alpha = 0.85f)
                 )
                 Spacer(Modifier.height(8.dp))
                 Row(
@@ -506,7 +632,7 @@ private fun FeaturedStoryCard(
                         Modifier
                             .size(40.dp)
                             .clip(CircleShape)
-                            .background(if (playable) PaperLight else PaperLight.copy(alpha = 0.4f))
+                            .background(if (playable) ArvHero.on else ArvHero.on.copy(alpha = 0.4f))
                             .clickable(enabled = playable, onClick = onTogglePlay),
                         contentAlignment = Alignment.Center
                     ) {
@@ -517,12 +643,12 @@ private fun FeaturedStoryCard(
                                 isPlaying -> "Pause"
                                 else -> "Play"
                             },
-                            tint = InkLight
+                            tint = ArvHero.ink
                         )
                     }
                     StaticWaveform(
                         seed = story.storyId,
-                        color = PaperLight.copy(alpha = 0.75f),
+                        color = ArvHero.on.copy(alpha = 0.75f),
                         modifier = Modifier
                             .weight(1f)
                             .height(28.dp)
@@ -531,7 +657,7 @@ private fun FeaturedStoryCard(
                         Text(
                             formatElapsed(story.durationMs),
                             style = MaterialTheme.typography.labelLarge,
-                            color = PaperLight
+                            color = ArvHero.on
                         )
                     }
                 }
@@ -580,7 +706,7 @@ private fun PromptCard(
         onClick = onRecord,
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = ForestLight)
+        colors = CardDefaults.cardColors(containerColor = ArvHero.container)
     ) {
         Row(
             Modifier.padding(16.dp),
@@ -590,25 +716,25 @@ private fun PromptCard(
             Icon(
                 Icons.Outlined.Mic,
                 contentDescription = null,
-                tint = BrassDark,
+                tint = ArvHero.accent,
                 modifier = Modifier.size(44.dp)
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     "Ask $askName:",
                     style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic),
-                    color = BrassDark
+                    color = ArvHero.accent
                 )
                 Text(
                     question,
                     style = MaterialTheme.typography.headlineSmall,
-                    color = PaperLight
+                    color = ArvHero.on
                 )
                 Button(
                     onClick = onRecord,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = TerracottaLight,
-                        contentColor = PaperLight
+                        containerColor = ArvHero.cta,
+                        contentColor = ArvHero.on
                     ),
                     shape = RoundedCornerShape(50)
                 ) {
@@ -657,7 +783,7 @@ private fun RecentMemoryCard(
             ) {
                 Surface(
                     shape = RoundedCornerShape(6.dp),
-                    color = InkLight.copy(alpha = 0.75f),
+                    color = ArvHero.ink.copy(alpha = 0.75f),
                     modifier = Modifier
                         .align(Alignment.BottomStart)
                         .padding(8.dp)
@@ -665,7 +791,7 @@ private fun RecentMemoryCard(
                     Text(
                         post.eraLabel,
                         style = MaterialTheme.typography.labelMedium,
-                        color = PaperLight,
+                        color = ArvHero.on,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
@@ -677,7 +803,7 @@ private fun RecentMemoryCard(
                             .padding(8.dp)
                             .size(28.dp)
                             .clip(CircleShape)
-                            .background(InkLight.copy(alpha = if (playable) 0.75f else 0.35f))
+                            .background(ArvHero.ink.copy(alpha = if (playable) 0.75f else 0.35f))
                             .clickable(enabled = playable, onClick = onTogglePlay),
                         contentAlignment = Alignment.Center
                     ) {
@@ -688,7 +814,7 @@ private fun RecentMemoryCard(
                                 isPlaying -> "Pause"
                                 else -> "Play"
                             },
-                            tint = PaperLight,
+                            tint = ArvHero.on,
                             modifier = Modifier.size(18.dp)
                         )
                     }

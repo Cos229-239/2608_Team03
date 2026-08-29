@@ -194,9 +194,11 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
             // LaunchedEffect that navigates, which pops this back stack entry and cancels
             // viewModelScope; anything launched there would be killed within milliseconds
             // of starting, leaving every saved story on "Transcribing" forever.
-            ServiceLocator.appScope.launch {
-                runCatching {
-                    repo.transcribeStory(id, ServiceLocator.transcriptionService(getApplication()))
+            // No model installed means the story simply stays PENDING; Settings kicks
+            // every pending story through the real model the moment it is downloaded.
+            ServiceLocator.transcriptionService(getApplication())?.let { service ->
+                ServiceLocator.appScope.launch {
+                    runCatching { repo.transcribeStory(id, service) }
                 }
             }
 
