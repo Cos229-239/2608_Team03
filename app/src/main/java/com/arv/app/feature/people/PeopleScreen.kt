@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -55,7 +56,10 @@ fun PeopleScreen(
     val people by viewModel.people.collectAsStateWithLifecycle()
 
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
+        // Below the clock, not under it. The first card here sat half beneath the
+        // status bar and taps on that half never reached the app, so a wired button
+        // read as dead: the screen was simply standing in the wrong place.
+        modifier = modifier.fillMaxSize().statusBarsPadding(),
         contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {

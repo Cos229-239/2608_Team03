@@ -495,10 +495,14 @@ private fun HomeHeader(
                         )
                     }
                     Spacer(Modifier.height(6.dp))
+                    // Who am I in here? Nothing on the home screen answered it, so the
+                    // strip now says so under your own face rather than making you open
+                    // your profile to find out.
+                    val isMe = person.linkedUserId == ServiceLocator.viewer.userId
                     Text(
-                        person.shortName(),
+                        if (isMe) "${person.shortName()} (you)" else person.shortName(),
                         style = MaterialTheme.typography.labelLarge,
-                        color = ArvHero.on,
+                        color = if (isMe) ArvHero.accent else ArvHero.on,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )

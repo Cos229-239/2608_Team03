@@ -93,6 +93,14 @@ class LocalLibrarianService(
             if (story.tags.any { it.lowercase().contains(term) }) score += 2
         }
 
+        // Where it happened. A family archive holds the same place across decades, and
+        // without this the librarian could not tell Vicksburg 1953 from Vicksburg 1980:
+        // place matched nothing, so the year match alone picked the story. Weighted just
+        // under a year hit so place-plus-year beats either alone.
+        story.placeLabel?.lowercase()?.let { place ->
+            if (parsed.terms.any { it.length > 2 && place.contains(it) }) score += 4
+        }
+
         // The words inside the recording count. This is what makes it retrieval rather
         // than filename search: the archive is searched by what people actually said.
         if (parsed.terms.isNotEmpty() && story.durationMs > 0) {
