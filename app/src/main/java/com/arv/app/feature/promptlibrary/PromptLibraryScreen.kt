@@ -21,11 +21,20 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+
+
 
 @Composable
 fun PromptLibraryScreen(
     modifier: Modifier = Modifier
 ){
+    var selectedCategory by remember{
+        mutableStateOf("Suggested")
+    }
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -55,31 +64,39 @@ fun PromptLibraryScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             FilterChip(
-                selected = true,
-                onClick = { },
+                selected = selectedCategory == "Suggested",
+                onClick = {
+                    selectedCategory = "Suggested"
+                },
                 label = {
                     Text("Suggested")
                 }
             )
             FilterChip(
-                selected = false,
-                onClick = { },
+                selected = selectedCategory == "Childhood",
+                onClick = {
+                    selectedCategory = "Childhood"
+                },
                 label = {
                     Text("Childhood")
                 }
             )
 
             FilterChip(
-                selected = false,
-                onClick = { },
+                selected = selectedCategory == "Food",
+                onClick = {
+                    selectedCategory = "Food"
+                },
                 label = {
                     Text("Food")
                 }
             )
 
             FilterChip(
-                selected = false,
-                onClick = { },
+                selected = selectedCategory == "Work",
+                onClick = {
+                    selectedCategory = "Work"
+                },
                 label = {
                     Text("Work")
                 }
@@ -90,15 +107,19 @@ fun PromptLibraryScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             FilterChip(
-                selected = false,
-                onClick = { },
+                selected = selectedCategory == "Hard Things",
+                onClick = {
+                    selectedCategory = "Hard Things"
+                },
                 label = {
-                    Text("Hard things")
+                    Text("Hard Things")
                 }
             )
             FilterChip(
-                selected = false,
-                onClick = { },
+                selected = selectedCategory == "Faith",
+                onClick = {
+                    selectedCategory = "Faith"
+                },
                 label = {
                     Text("Faith")
                 }
@@ -116,7 +137,7 @@ fun PromptLibraryScreen(
                 )
 
                 Text(
-                    text = "You mentioned a song your mother hummed. Can you try to sing it ?"
+                    text = "You mentioned a song your mother hummed. Can you try to sing it?"
                 )
 
                 Text(
@@ -142,128 +163,258 @@ fun PromptLibraryScreen(
         }
         Spacer(modifier = Modifier.height(16.dp))
 
-        Card(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
+        if (selectedCategory == "Suggested" || selectedCategory == "Food") {
+
+            Card(
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column {
-                    Text(
-                        text = "Who taught you to cook?"
-                    )
-
-                    Text(
-                        text = "Food • often opens into migration stories"
-                    )
-                }
-                OutlinedIconButton(
-                    onClick = { },
-                    modifier = Modifier.size(36.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("+")
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "Who taught you to cook?"
+                        )
 
+                        Text(
+                            text = "Food • often opens into migration stories"
+                        )
+                    }
+                    OutlinedIconButton(
+                        onClick = { },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Text("+")
+
+                    }
                 }
             }
         }
 
+        Spacer(modifier = Modifier.height(8.dp))
 
-    Spacer(modifier = Modifier.height(8.dp))
+        if (selectedCategory == "Suggested" || selectedCategory == "Childhood") {
 
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ){
-       Row(
-           modifier = Modifier
-               .fillMaxWidth()
-               .padding(16.dp),
-           horizontalArrangement = Arrangement.SpaceBetween
-       ) {
-           Column(
-               modifier = Modifier.weight(1f)
-           ){
-               Text(
-                   text = "What did your street sound like at night?"
-               )
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "What did your street sound like at night?"
+                        )
 
-               Text(
-                   text = "Childhood • Sounds can unlock vivid memories"
-               )
-           }
-           OutlinedIconButton(
-               onClick = { },
-               modifier = Modifier.size(36.dp)
-           ){
-               Text("+")
-           }
-       }
-    }
-    Spacer(modifier = Modifier.height(8.dp))
-
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ){
-       Row(
-           modifier = Modifier
-               .fillMaxWidth()
-               .padding(16.dp),
-           horizontalArrangement = Arrangement.SpaceBetween
-       ) {
-         Column(
-             modifier = Modifier.weight(1f)
-         ){
-             Text(
-                 text = "What's a word your family used that nobody else did?"
-             )
-
-             Text(
-                 text = "Childhood • Family language holds unique memories"
-             )
-         }
-           OutlinedIconButton(
-               onClick = { },
-               modifier = Modifier.size(36.dp)
-           ){
-               Text("+")
-           }
-       }
-    }
-    Spacer(modifier = Modifier.height(8.dp))
-
-    Card(
-        modifier = Modifier.fillMaxWidth()
-    ){
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ){
-           Column{
-               Text(
-                   text = "Tell me about a day you'd live again."
-               )
-
-               Text(
-                   text = "Reflection • Revisit a memory worth reliving"
-               )
-           }
-            OutlinedIconButton(
-                onClick = { },
-                modifier = Modifier.size(36.dp)
-            ){
-                Text("+")
+                        Text(
+                            text = "Childhood • Sounds can unlock vivid memories"
+                        )
+                    }
+                    OutlinedIconButton(
+                        onClick = { },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Text("+")
+                    }
+                }
             }
         }
-    }
-    Spacer(modifier = Modifier.height(16.dp))
 
-    OutlinedButton(
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (selectedCategory == "Suggested" || selectedCategory == "Childhood") {
+
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "What's a word your family used that nobody else did?"
+                        )
+
+                        Text(
+                            text = "Childhood • Family language holds unique memories"
+                        )
+                    }
+                    OutlinedIconButton(
+                        onClick = { },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Text("+")
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (selectedCategory == "Suggested" || selectedCategory == "Childhood") {
+
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1F)
+                    ) {
+                        Text(
+                            text = "Tell me about a day you'd live again."
+                        )
+
+                        Text(
+                            text = "Reflection • Revisit a memory worth reliving"
+                        )
+                    }
+                    OutlinedIconButton(
+                        onClick = { },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Text("+")
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (selectedCategory == "Suggested" || selectedCategory == "Work") {
+
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+
+                ) {
+
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "What was your first job, and what do you remember most about it?"
+                        )
+
+                        Text(
+                            text = "Work • Early jobs can reveal family responsibilities and life changes"
+                        )
+                    }
+
+                    OutlinedIconButton(
+                        onClick = { },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Text("+")
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (selectedCategory == "Suggested" || selectedCategory == "Hard Things") {
+
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+
+                ) {
+
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "What was one difficult time your family made it through together?"
+                        )
+
+                        Text(
+                            text = "Hard Things • Challenges can reveal strength, support, and resilience"
+                        )
+                    }
+
+                    OutlinedIconButton(
+                        onClick = { },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Text("+")
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (selectedCategory == "Suggested" || selectedCategory == "Faith") {
+
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+
+                ) {
+
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "Was there a tradition, prayer, or belief that brought your family comfort?"
+                        )
+
+                        Text(
+                            text = "Faith • Beliefs and traditions can preserve meaningful family memories"
+                        )
+                    }
+
+                    OutlinedIconButton(
+                        onClick = { },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Text("+")
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedButton(
         onClick = { },
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
     ){
         Text("Write your own question")
     }
