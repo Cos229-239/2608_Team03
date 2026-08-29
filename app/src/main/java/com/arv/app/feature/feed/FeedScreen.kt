@@ -40,7 +40,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,6 +60,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.arv.app.core.ai.Lineage
 import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.ai.Viewer
 import com.arv.app.ui.theme.ArvHero
@@ -73,13 +79,32 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
+/**
+ * One way of looking at the feed: the whole family, one side of it, or only yourself.
+ *
+ * Sides are the viewer's own parents, derived from the graph, so the menu offers exactly
+ * the sides this person's family actually has and nothing invented.
+ */
+data class FeedLens(
+    val label: String,
+    /** The parent whose side this is, null for whole-family and just-me. */
+    val parentId: String? = null,
+    val mine: Boolean = false
+) {
+    companion object {
+        val Whole = FeedLens("Whole family")
+    }
+}
+
 data class FeedUiState(
     val posts: List<Story> = emptyList(),
     val people: List<Person> = emptyList(),
     val pendingSyncCount: Int = 0,
     val loading: Boolean = true,
     /** storyId to its audio file, present only for stories that can actually be played. */
-    val audioPaths: Map<String, String> = emptyMap()
+    val audioPaths: Map<String, String> = emptyMap(),
+    val lenses: List<FeedLens> = listOf(FeedLens.Whole),
+    val lens: FeedLens = FeedLens.Whole
 ) {
     val isEmpty: Boolean get() = !loading && posts.isEmpty()
 
@@ -103,24 +128,103 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     /** Whose archive this is, so the header can say so instead of guessing. */
     val familyName: String get() = ActiveSession.familyName ?: "Our Family"
 
+    private val lens = kotlinx.coroutines.flow.MutableStateFlow(FeedLens.Whole)
+
+    fun chooseLens(choice: FeedLens) { lens.value = choice }
+
     val uiState: StateFlow<FeedUiState> =
         combine(
-            repo.observeRecent(familyId),
-            repo.observePeople(familyId),
+            combine(
+                repo.observeRecent(familyId),
+                repo.observePeople(familyId),
+                repo.observeRelationships(familyId),
+                lens
+            ) { all, people, edges, chosen ->
+                // The same filter the librarian uses, consent included. The feed is not a
+                // separate permission surface, it is the same one rendered differently.
+                val readable = all.filter { MemoryAccess.canRead(it, viewer, people) }
+
+                val meId = people.firstOrNull { it.linkedUserId == viewer.userId }?.personId
+                val lenses = feedLenses(meId, people, edges)
+                // A lens that stopped existing (a parent edge was removed) falls back to
+                // the whole family rather than filtering by a ghost.
+                val active = lenses.firstOrNull {
+                    it.parentId == chosen.parentId && it.mine == chosen.mine
+                } ?: FeedLens.Whole
+
+                Triple(
+                    filterByLens(readable, active, meId, edges),
+                    peopleForLens(people, active, meId, edges),
+                    lenses to active
+                )
+            },
             repo.observePendingSyncCount(),
             repo.observeAudioPaths(familyId)
-        ) { all, people, pending, paths ->
-            // The same filter the librarian uses, consent included. The feed is not a
-            // separate permission surface, it is the same one rendered differently.
-            val posts = all.filter { MemoryAccess.canRead(it, viewer, people) }
+        ) { (posts, people, lensPair), pending, paths ->
             FeedUiState(
                 posts = posts,
                 people = people,
                 pendingSyncCount = pending,
                 loading = false,
-                audioPaths = paths
+                audioPaths = paths,
+                lenses = lensPair.first,
+                lens = lensPair.second
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FeedUiState())
+
+    /** Whole family, one entry per parent the viewer actually has, and just-me. */
+    private fun feedLenses(
+        meId: String?,
+        people: List<Person>,
+        edges: List<com.arv.app.core.model.Relationship>
+    ): List<FeedLens> {
+        if (meId == null) return listOf(FeedLens.Whole)
+        val sides = Lineage.immediateParents(meId, edges).mapNotNull { parentId ->
+            people.firstOrNull { it.personId == parentId }?.let { parent ->
+                FeedLens("${parent.shortName()}'s side", parentId = parentId)
+            }
+        }
+        return listOf(FeedLens.Whole) + sides + FeedLens("Just me", mine = true)
+    }
+
+    /**
+     * A story belongs to a side when somebody who told it is on that side of the
+     * viewer's family, or the memory was scoped to a branch on that side. Derived from
+     * the same walk the person pages use, so the feed and the tree never disagree about
+     * where somebody stands.
+     */
+    private fun filterByLens(
+        posts: List<Story>,
+        lens: FeedLens,
+        meId: String?,
+        edges: List<com.arv.app.core.model.Relationship>
+    ): List<Story> = when {
+        lens.mine -> posts.filter { story ->
+            story.createdBy == viewer.userId || (meId != null && meId in story.narratorIds)
+        }
+        lens.parentId == null || meId == null -> posts
+        else -> posts.filter { story ->
+            val onSide = { id: String ->
+                id == lens.parentId || lens.parentId in Lineage.sideOf(id, meId, edges)
+            }
+            story.narratorIds.any(onSide) || story.branchRootPersonId?.let(onSide) == true
+        }
+    }
+
+    /** The avatar strip narrows with the lens, so the row shows who the feed shows. */
+    private fun peopleForLens(
+        people: List<Person>,
+        lens: FeedLens,
+        meId: String?,
+        edges: List<com.arv.app.core.model.Relationship>
+    ): List<Person> = when {
+        lens.mine -> people.filter { it.personId == meId }
+        lens.parentId == null || meId == null -> people
+        else -> people.filter {
+            it.personId == meId || it.personId == lens.parentId ||
+                lens.parentId in Lineage.sideOf(it.personId, meId, edges)
+        }
+    }
 
     init {
         // Only the sample family gets sample data. A real family's archive starts empty
@@ -164,6 +268,9 @@ fun FeedScreen(
                 familyName = viewModel.familyName,
                 people = state.people,
                 pendingSyncCount = state.pendingSyncCount,
+                lenses = state.lenses,
+                lens = state.lens,
+                onChooseLens = viewModel::chooseLens,
                 onOpenPerson = onOpenPerson,
                 onOpenSettings = onOpenSettings
             )
@@ -267,6 +374,9 @@ private fun HomeHeader(
     people: List<Person>,
     familyName: String,
     pendingSyncCount: Int,
+    lenses: List<FeedLens>,
+    lens: FeedLens,
+    onChooseLens: (FeedLens) -> Unit,
     onOpenPerson: (String) -> Unit,
     onOpenSettings: () -> Unit
 ) {
@@ -312,26 +422,46 @@ private fun HomeHeader(
             Modifier.padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = Color.Transparent,
-                border = androidx.compose.foundation.BorderStroke(1.dp, ArvHero.on.copy(alpha = 0.55f))
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            // Was a painted pill that did nothing. It now chooses whose stories the
+            // page shows: the whole family, one side of it, or only your own.
+            var lensMenuOpen by remember { mutableStateOf(false) }
+            Box {
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = Color.Transparent,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, ArvHero.on.copy(alpha = 0.55f)),
+                    onClick = { lensMenuOpen = true }
                 ) {
-                    Text(
-                        "Whole family",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = ArvHero.on
-                    )
-                    Icon(
-                        Icons.Outlined.KeyboardArrowDown,
-                        contentDescription = null,
-                        tint = ArvHero.on,
-                        modifier = Modifier.size(18.dp)
-                    )
+                    Row(
+                        Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            lens.label,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = ArvHero.on
+                        )
+                        Icon(
+                            Icons.Outlined.KeyboardArrowDown,
+                            contentDescription = "Choose whose stories to show",
+                            tint = ArvHero.on,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+                DropdownMenu(
+                    expanded = lensMenuOpen,
+                    onDismissRequest = { lensMenuOpen = false }
+                ) {
+                    lenses.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.label) },
+                            onClick = {
+                                onChooseLens(option)
+                                lensMenuOpen = false
+                            }
+                        )
+                    }
                 }
             }
         }
