@@ -62,6 +62,18 @@ fun RecordScreen(
     val context = LocalContext.current
     val state by RecordingBus.state.collectAsStateWithLifecycle()
 
+    // Android 13 made the recording notification opt-in, and nothing ever asked, so the
+    // one signal that a recording is still alive with the screen elsewhere was invisible
+    // on every modern phone. Asked here, where the person is about to need it.
+    val notifPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     // Erasing someone's voice is not a mistap away. Confirm first.
     var confirmDiscard by remember { mutableStateOf(false) }
     var discardFailed by remember { mutableStateOf(false) }
@@ -249,15 +261,50 @@ fun RecordScreen(
                         )
                     }
                 } else {
+                    // Starting over an unheard take used to erase it silently. The take
+                    // on this screen may be the only copy of somebody's voice, so
+                    // replacing it is a question, never a side effect.
+                    var confirmReplace by remember { mutableStateOf(false) }
+                    val unsavedTake = state.outputPath != null
                     Button(
                         onClick = {
-                            ServiceLocator.playback.stop()
-                            RecordingService.send(context, RecordingService.ACTION_START)
+                            if (unsavedTake) {
+                                confirmReplace = true
+                            } else {
+                                ServiceLocator.playback.stop()
+                                RecordingService.send(context, RecordingService.ACTION_START)
+                            }
                         },
                         modifier = Modifier
                             .weight(1f)
                             .height(64.dp)
                     ) { Text(stringResource(R.string.record_start)) }
+
+                    if (confirmReplace) {
+                        AlertDialog(
+                            onDismissRequest = { confirmReplace = false },
+                            title = { Text("Record over this take?") },
+                            text = {
+                                Text(
+                                    "The recording below has not been saved. Starting " +
+                                        "again throws it away."
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    confirmReplace = false
+                                    RecordingBus.discard()
+                                    ServiceLocator.playback.stop()
+                                    RecordingService.send(context, RecordingService.ACTION_START)
+                                }) { Text("Throw it away and record") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { confirmReplace = false }) {
+                                    Text("Keep it")
+                                }
+                            }
+                        )
+                    }
                 }
             }
 
