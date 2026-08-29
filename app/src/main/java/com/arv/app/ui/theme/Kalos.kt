@@ -9,7 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 
 /**
- * The Kalos theme family, ported from the Lorien's Library design system.
+ * The Kalos theme family.
  *
  * Each palette is four background depths, one ink at three strengths, an accent pair, and
  * the warn/privacy colors, mapped onto Material roles the same way in every theme so the
