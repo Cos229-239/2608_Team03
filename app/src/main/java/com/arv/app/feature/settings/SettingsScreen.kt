@@ -71,7 +71,19 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                 store.ensure { p -> _model.value = SpeechModelState.Downloading(p) }
             }
             _model.value = result.fold(
-                onSuccess = { SpeechModelState.Ready },
+                onSuccess = {
+                    // The recordings made while there was no model have been waiting for
+                    // this exact moment. Fire and forget on the app scope: leaving
+                    // Settings must not cancel their transcription.
+                    ServiceLocator.transcriptionService(getApplication())?.let { service ->
+                        ServiceLocator.appScope.launch {
+                            runCatching {
+                                repo.transcribeAwaiting(ServiceLocator.familyId, service)
+                            }
+                        }
+                    }
+                    SpeechModelState.Ready
+                },
                 onFailure = {
                     SpeechModelState.Failed(
                         "Could not download the speech model. Check the connection and try again."
@@ -143,7 +155,8 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
                             db = com.arv.app.core.data.local.ArvDatabase.get(app),
                             familyId = ServiceLocator.familyId,
                             familyName = familyName,
-                            filesDir = app.filesDir
+                            filesDir = app.filesDir,
+                            viewer = ServiceLocator.viewer
                         )
                     } ?: error("Could not write there")
                 }

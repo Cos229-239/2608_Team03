@@ -1,6 +1,9 @@
 package com.arv.app.core.data
 
+import com.arv.app.core.ai.MemoryAccess
+import com.arv.app.core.ai.Viewer
 import com.arv.app.core.data.local.ArvDatabase
+import com.arv.app.core.data.local.toDomain
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -43,12 +46,19 @@ object ArchiveExport {
         familyId: String,
         familyName: String,
         filesDir: File,
+        viewer: Viewer,
         onProgress: (Float) -> Unit = {}
     ) {
         val people = db.personDao().all(familyId)
+        // The zip holds exactly what this viewer may read inside the app, and nothing
+        // more. Export is the easiest place to lose that promise: it ran unfiltered, so
+        // anyone in the family could carry out every private story, transcript and
+        // recording as a file.
         val stories = db.storyDao().all(familyId)
+            .filter { MemoryAccess.canRead(it.toDomain(), viewer) }
+        val allowed = stories.map { it.storyId }.toSet()
         val relationships = db.relationshipDao().observeAllOnce(familyId)
-        val assets = db.assetDao().forFamily(familyId)
+        val assets = db.assetDao().forFamily(familyId).filter { it.storyId in allowed }
         val transcripts = assets.flatMap { db.transcriptDao().forAssetOnce(it.assetId) }
 
         ZipOutputStream(out).use { zip ->
