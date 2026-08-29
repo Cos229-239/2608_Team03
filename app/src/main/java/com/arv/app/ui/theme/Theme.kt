@@ -1,6 +1,15 @@
 package com.arv.app.ui.theme
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -95,11 +104,88 @@ fun ArvTheme(
     // A chosen Kalos theme overrides the system light/dark split: they are dark by
     // design, and the choice is the point. Heirloom keeps following the system.
     val kalos = ThemeController.current.scheme()
+    val target = kalos ?: if (darkTheme) DarkColors else LightColors
     MaterialTheme(
-        colorScheme = kalos ?: if (darkTheme) DarkColors else LightColors,
+        colorScheme = target.eased(),
         typography = ArvTypography,
         content = content
     )
+}
+
+/**
+ * The same scheme with every major role easing toward its target, so choosing a theme
+ * plays as one slow crossfade instead of a hard cut. 600ms to match the design system's
+ * own transition. Colors only: nothing moves, which keeps it calm on an archive.
+ */
+@Composable
+private fun androidx.compose.material3.ColorScheme.eased(): androidx.compose.material3.ColorScheme {
+    @Composable
+    fun c(target: Color): Color {
+        val v by animateColorAsState(target, tween(600), label = "theme")
+        return v
+    }
+    return copy(
+        primary = c(primary), onPrimary = c(onPrimary),
+        primaryContainer = c(primaryContainer), onPrimaryContainer = c(onPrimaryContainer),
+        secondary = c(secondary), onSecondary = c(onSecondary),
+        secondaryContainer = c(secondaryContainer), onSecondaryContainer = c(onSecondaryContainer),
+        tertiary = c(tertiary), onTertiary = c(onTertiary),
+        tertiaryContainer = c(tertiaryContainer), onTertiaryContainer = c(onTertiaryContainer),
+        background = c(background), onBackground = c(onBackground),
+        surface = c(surface), onSurface = c(onSurface),
+        surfaceVariant = c(surfaceVariant), onSurfaceVariant = c(onSurfaceVariant),
+        surfaceContainerLowest = c(surfaceContainerLowest),
+        surfaceContainerLow = c(surfaceContainerLow),
+        surfaceContainer = c(surfaceContainer),
+        surfaceContainerHigh = c(surfaceContainerHigh),
+        surfaceContainerHighest = c(surfaceContainerHighest),
+        outline = c(outline), error = c(error), onError = c(onError)
+    )
+}
+
+/**
+ * The page's ground: theme background with the Kalos glow pooled into it.
+ *
+ * The design system never paints a flat dark field. The accents pool at low alpha, one
+ * high, one low, one center, which is what gives the dark themes depth instead of
+ * flatness. Drawn once here behind every screen; content sits on transparent surfaces so
+ * the glow reads through. Heirloom paints its plain paper and skips the theatrics.
+ */
+@Composable
+fun ArvBackground(content: @Composable () -> Unit) {
+    val halos = ThemeController.current.halos()
+    val bg = MaterialTheme.colorScheme.background
+    Box(Modifier.fillMaxSize()) {
+        Canvas(Modifier.fillMaxSize()) {
+            drawRect(bg)
+            if (halos.isNotEmpty()) {
+                val (h1, h2, h3) = halos
+                val r = size.maxDimension
+                drawRect(
+                    Brush.radialGradient(
+                        listOf(h1, Color.Transparent),
+                        center = Offset(size.width * 0.85f, size.height * 0.10f),
+                        radius = r * 0.55f
+                    )
+                )
+                drawRect(
+                    Brush.radialGradient(
+                        listOf(h2, Color.Transparent),
+                        center = Offset(size.width * 0.10f, size.height * 0.85f),
+                        radius = r * 0.50f
+                    )
+                )
+                drawRect(
+                    Brush.radialGradient(
+                        listOf(h3, Color.Transparent),
+                        center = Offset(size.width * 0.50f, size.height * 0.45f),
+                        radius = r * 0.60f
+                    )
+                )
+            }
+        }
+        content()
+    }
 }
 
 /**

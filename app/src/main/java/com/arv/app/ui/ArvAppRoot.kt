@@ -130,7 +130,11 @@ fun ArvAppRoot() {
         currentDestination?.hierarchy?.any { it.route == tab.destination.route } == true
     }
 
+    com.arv.app.ui.theme.ArvBackground {
     Scaffold(
+        // Transparent so the themed glow painted behind the app shows through.
+        // Heirloom's ground is opaque paper, so it looks exactly as it always has.
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
         topBar = {
             // Every screen off the tabs gets a visible way back. The system gesture is
             // invisible, and a 78-year-old storyteller will never find it. Screen 04's
@@ -345,5 +349,6 @@ fun ArvAppRoot() {
                 }
             }
         }
+    }
     }
 }

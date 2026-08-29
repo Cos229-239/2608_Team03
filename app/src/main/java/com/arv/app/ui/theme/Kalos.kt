@@ -43,6 +43,9 @@ enum class ThemeOption(
 
     /** Null means Heirloom: use the hand-built light/dark schemes in Theme.kt. */
     fun scheme(): ColorScheme? = palette?.toScheme()
+
+    /** The accent pair at whisper strength, for the page's atmospheric glow. */
+    fun halos(): List<Color> = palette?.halos() ?: emptyList()
 }
 
 /** One Kalos palette, in the order the design system declares them. */
@@ -51,6 +54,16 @@ class Kalos(
     private val ink: Long, private val ac: Long, private val acB: Long, private val cy: Long,
     private val warn: Long, private val priv: Long
 ) {
+    /**
+     * The glow the design system pools behind a page: the accents at 6 to 8 percent,
+     * which is enough to give the dark ground depth and never enough to cost contrast.
+     */
+    fun halos(): List<Color> = listOf(
+        Color(ac).copy(alpha = 0.08f),
+        Color(acB).copy(alpha = 0.06f),
+        Color(cy).copy(alpha = 0.05f)
+    )
+
     fun toScheme(): ColorScheme {
         val bgC = Color(bg)
         val inkC = Color(ink)
