@@ -488,6 +488,6 @@ private fun SectionLabel(text: String) {
     Text(
         text.uppercase(),
         style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        color = MaterialTheme.colorScheme.primary
     )
 }

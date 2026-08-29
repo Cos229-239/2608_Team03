@@ -463,7 +463,9 @@ private fun FamilyAround(
             Text(
                 label,
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                // The accent does the wayfinding. Small text, full strength: this is
+                // where Aurora's pop lives without ever touching a whole surface.
+                color = MaterialTheme.colorScheme.primary
             )
             @OptIn(ExperimentalLayoutApi::class)
             FlowRow(
@@ -474,6 +476,10 @@ private fun FamilyAround(
                 ids.forEach { id ->
                     AssistChip(
                         onClick = { onOpenPerson(id) },
+                        border = androidx.compose.material3.AssistChipDefaults.assistChipBorder(
+                            enabled = true,
+                            borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                        ),
                         label = {
                             val who = everyone.firstOrNull { it.personId == id }
                             Text(
@@ -506,7 +512,7 @@ private fun FamilyAround(
                     Text(
                         "Parents",
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.primary
                     )
                     Text(
                         "Nobody recorded yet",
@@ -566,7 +572,7 @@ private fun FamilyAround(
                         side?.let { append(", ").append(it).append("'s side") }
                     },
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.primary
                 )
                 if (people.isEmpty()) {
                     // Names the gap rather than dropping the heading.
@@ -588,6 +594,15 @@ private fun FamilyAround(
                         val isCentre = node.personId == frame.centrePersonId
                         AssistChip(
                             onClick = { if (!isCentre) onOpenPerson(node.personId) },
+                            // A whisper of the theme on every edge, and the counter color
+                            // on anything still carrying a question mark, so the unproven
+                            // links are findable across a whole tree at a glance.
+                            border = androidx.compose.material3.AssistChipDefaults.assistChipBorder(
+                                enabled = true,
+                                borderColor = if (node.viaUncertain)
+                                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.65f)
+                                else MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                            ),
                             label = {
                                 val who = everyone.firstOrNull { it.personId == node.personId }
                                 Text(
@@ -703,7 +718,13 @@ private fun UnconfirmedLinks(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         AssistChip(
                             onClick = { onConfirm(edge) },
-                            label = { Text("That's right") }
+                            border = androidx.compose.material3.AssistChipDefaults.assistChipBorder(
+                                enabled = true,
+                                borderColor = MaterialTheme.colorScheme.primary
+                            ),
+                            label = {
+                                Text("That's right", color = MaterialTheme.colorScheme.primary)
+                            }
                         )
                         AssistChip(
                             onClick = { onReject(edge) },

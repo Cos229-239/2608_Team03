@@ -320,7 +320,8 @@ fun FeedScreen(
                     ) {
                         Text(
                             "Recent memories",
-                            style = MaterialTheme.typography.headlineSmall
+                            style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(Modifier.weight(1f))
                         Row(
