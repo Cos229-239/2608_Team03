@@ -208,7 +208,14 @@ data class Person(
      * consent that neither exists nor is needed.
      */
     val needsAConsentDecision: Boolean
-        get() = !consentGranted && !isPublicRecord
+        get() = when {
+            isPublicRecord -> false
+            // A living yes survives death, and postMortemOk records the decision a
+            // family made on a dead person's behalf. This flag was stored and displayed
+            // and never actually read, so recording the decision changed nothing.
+            isDeceased -> !consentGranted && !postMortemOk
+            else -> !consentGranted
+        }
 }
 
 /** An edge in the family tree. Stored once, rendered from both directions. */

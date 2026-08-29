@@ -57,6 +57,7 @@ import com.arv.app.ui.theme.PaperLight
 import com.arv.app.ui.theme.TerracottaLight
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
@@ -106,10 +107,10 @@ class PersonDetailViewModel(
      */
     val stories: StateFlow<List<Story>> =
         repo.observeRecent(familyId)
-            .map { stories ->
+            .combine(repo.observePeople(familyId)) { stories, people ->
                 stories.filter { story ->
                     (personId in story.narratorIds || personId in story.subjectPersonIds) &&
-                        MemoryAccess.canRead(story, viewer)
+                        MemoryAccess.canRead(story, viewer, people)
                 }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

@@ -50,12 +50,13 @@ object ArchiveExport {
         onProgress: (Float) -> Unit = {}
     ) {
         val people = db.personDao().all(familyId)
+        val consentContext = people.map { it.toDomain() }
         // The zip holds exactly what this viewer may read inside the app, and nothing
         // more. Export is the easiest place to lose that promise: it ran unfiltered, so
         // anyone in the family could carry out every private story, transcript and
         // recording as a file.
         val stories = db.storyDao().all(familyId)
-            .filter { MemoryAccess.canRead(it.toDomain(), viewer) }
+            .filter { MemoryAccess.canRead(it.toDomain(), viewer, consentContext) }
         val allowed = stories.map { it.storyId }.toSet()
         val relationships = db.relationshipDao().observeAllOnce(familyId)
         val assets = db.assetDao().forFamily(familyId).filter { it.storyId in allowed }

@@ -47,6 +47,7 @@ import com.arv.app.ui.components.formatElapsed
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -73,11 +74,15 @@ class StoryDetailViewModel(
      * something it is in fact refusing to show.
      */
     val story: StateFlow<Story?> = repo.observeById(storyId)
-        .map { s -> s?.takeIf { MemoryAccess.canRead(it, viewer) } }
+        .combine(repo.observePeople(ServiceLocator.familyId)) { s, ppl ->
+            s?.takeIf { MemoryAccess.canRead(it, viewer, ppl) }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val accessDenied: StateFlow<Boolean> = repo.observeById(storyId)
-        .map { s -> s != null && !MemoryAccess.canRead(s, viewer) }
+        .combine(repo.observePeople(ServiceLocator.familyId)) { s, ppl ->
+            s != null && !MemoryAccess.canRead(s, viewer, ppl)
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /** Where the recording lives on disk. Null until loaded; "seed://" for demo items. */

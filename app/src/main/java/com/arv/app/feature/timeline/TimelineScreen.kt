@@ -26,6 +26,7 @@ import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.model.Story
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
@@ -35,7 +36,7 @@ class TimelineViewModel(app: Application) : AndroidViewModel(app) {
 
     val decades: StateFlow<Map<Int?, List<Story>>> =
         repo.observeByDecade(ServiceLocator.familyId)
-            .map { byDecade ->
+            .combine(repo.observePeople(ServiceLocator.familyId)) { byDecade, people ->
                 // The same filter the feed and the librarian apply. A timeline is not a
                 // separate permission surface, it is the same archive drawn on an axis,
                 // and the DAO query behind it is deliberately unfiltered.
@@ -45,7 +46,7 @@ class TimelineViewModel(app: Application) : AndroidViewModel(app) {
                 // would read the decade as present and hide a gap that is really there.
                 byDecade
                     .mapValues { (_, stories) ->
-                        stories.filter { MemoryAccess.canRead(it, viewer) }
+                        stories.filter { MemoryAccess.canRead(it, viewer, people) }
                     }
                     .filterValues { it.isNotEmpty() }
             }

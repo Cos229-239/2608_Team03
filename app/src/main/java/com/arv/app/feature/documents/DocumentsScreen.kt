@@ -84,13 +84,12 @@ class DocumentsViewModel(app: Application) : AndroidViewModel(app) {
 
     val uiState: StateFlow<DocumentsUiState> =
         combine(
+            repo.observeDocuments(familyId),
+            repo.observePeople(familyId)
+        ) { all, people ->
             // Documents run through the same permission filter as everything else. A
             // death record is not automatically public just because it is paperwork.
-            repo.observeDocuments(familyId).map { docs ->
-                docs.filter { MemoryAccess.canRead(it, viewer) }
-            },
-            repo.observePeople(familyId)
-        ) { docs, people ->
+            val docs = all.filter { MemoryAccess.canRead(it, viewer, people) }
             DocumentsUiState(documents = docs, people = people)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DocumentsUiState())
 }

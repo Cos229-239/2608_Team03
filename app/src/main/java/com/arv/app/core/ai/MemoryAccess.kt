@@ -4,6 +4,7 @@ import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.ArchiveArea
 import com.arv.app.core.model.LibrarianScope
 import com.arv.app.core.model.MemberRole
+import com.arv.app.core.model.Person
 import com.arv.app.core.model.Story
 import com.arv.app.core.model.Visibility
 
@@ -81,6 +82,35 @@ object MemoryAccess {
     }
 
     /**
+     * Does a missing consent record stand between this viewer and this memory?
+     *
+     * Consent follows the voice: a story is blocked while any of its narrators has no
+     * consent decision on file. The person page has promised exactly this in writing
+     * ("their memories stay restricted until one exists") since the flag was added, and
+     * until now nothing enforced it, so the sentence was a bluff.
+     *
+     * Who still reads a blocked story: its creator, who holds the recording and the
+     * responsibility of getting the consent, and the narrator themselves or their memory
+     * steward. Deliberately not keepers: a role in the app is not a substitute for a
+     * person's answer, the same stance PRIVATE takes.
+     */
+    fun consentBlocks(story: Story, people: List<Person>, viewer: Viewer): Boolean {
+        val undecided = people.filter {
+            it.personId in story.narratorIds && it.needsAConsentDecision
+        }
+        if (undecided.isEmpty()) return false
+        if (story.createdBy == viewer.userId) return false
+        return !undecided.all { it.personId in viewer.personIds }
+    }
+
+    /**
+     * [canRead] with consent enforced. Every surface that can show a story's content
+     * calls this form; the two-argument form is the visibility gate alone.
+     */
+    fun canRead(story: Story, viewer: Viewer, people: List<Person>): Boolean =
+        canRead(story, viewer) && !consentBlocks(story, people, viewer)
+
+    /**
      * Can a librarian working in [scope] use this memory when composing an answer?
      *
      * Two independent gates. Readability is not permission to summarize: a memory can be
@@ -138,9 +168,14 @@ object MemoryAccess {
     fun partition(
         candidates: List<Story>,
         viewer: Viewer,
-        scope: LibrarianScope
+        scope: LibrarianScope,
+        people: List<Person> = emptyList()
     ): Partitioned {
-        val usable = candidates.filter { canLibrarianUse(it, viewer, scope) }
+        // Consent gates the model exactly as it gates a screen. A voice nobody agreed
+        // to share is not summary material either.
+        val usable = candidates.filter {
+            canLibrarianUse(it, viewer, scope) && !consentBlocks(it, people, viewer)
+        }
         return Partitioned(usable = usable, withheldCount = candidates.size - usable.size)
     }
 

@@ -109,15 +109,14 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 
     val uiState: StateFlow<FeedUiState> =
         combine(
-            repo.observeRecent(familyId).map { stories ->
-                // The same filter the librarian uses. The feed is not a separate
-                // permission surface, it is the same one rendered differently.
-                stories.filter { MemoryAccess.canRead(it, viewer) }
-            },
+            repo.observeRecent(familyId),
             repo.observePeople(familyId),
             repo.observePendingSyncCount(),
             repo.observeAudioPaths(familyId)
-        ) { posts, people, pending, paths ->
+        ) { all, people, pending, paths ->
+            // The same filter the librarian uses, consent included. The feed is not a
+            // separate permission surface, it is the same one rendered differently.
+            val posts = all.filter { MemoryAccess.canRead(it, viewer, people) }
             FeedUiState(
                 posts = posts,
                 people = people,

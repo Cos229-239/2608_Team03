@@ -293,9 +293,10 @@ class StoryRepository(
             // and unescaped they let a query match everything.
             val safe = query.trim()
                 .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            val people = db.personDao().all(familyId).map { it.toDomain() }
             db.storyDao().searchKeyword(familyId, safe)
                 .map { it.toDomain() }
-                .filter { MemoryAccess.canRead(it, viewer) }
+                .filter { MemoryAccess.canRead(it, viewer, people) }
         }
 
     /**
