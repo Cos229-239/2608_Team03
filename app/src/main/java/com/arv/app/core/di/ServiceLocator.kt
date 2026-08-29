@@ -3,7 +3,6 @@ package com.arv.app.core.di
 import android.content.Context
 import com.arv.app.core.audio.PlaybackController
 import com.arv.app.core.ai.ClinicalClaimGuard
-import com.arv.app.core.ai.FakeTranscriptionService
 import com.arv.app.core.ai.GroundingEnforcer
 import com.arv.app.core.ai.LibrarianHive
 import com.arv.app.core.ai.LibrarianService
@@ -128,9 +127,18 @@ object ServiceLocator {
      * exactly that. What it must never do is invent plausible sentences and file them next
      * to a real recording, which is what the old fake did.
      */
-    fun transcriptionService(context: Context): TranscriptionService {
+    /**
+     * Null until the speech model is installed.
+     *
+     * The placeholder service this used to fall back to reported success, so its stand-in
+     * sentence was written to the transcript table and the story marked READY: permanent,
+     * searchable, and never redone once the real model arrived. No model means no
+     * transcription happened, and the only honest status for that is the one the story
+     * already has, PENDING.
+     */
+    fun transcriptionService(context: Context): TranscriptionService? {
         val store = voskModelStore(context)
-        return if (store.isReady) VoskTranscriptionService(store) else FakeTranscriptionService()
+        return if (store.isReady) VoskTranscriptionService(store) else null
     }
 
     /** One voice at a time, app-wide. Every play button goes through here. */
