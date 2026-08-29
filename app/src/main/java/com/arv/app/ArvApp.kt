@@ -17,6 +17,7 @@ class ArvApp : Application() {
         // and that question cannot be answered asynchronously without flashing the wrong
         // screen at someone.
         ActiveSession.restore(this)
+        com.arv.app.ui.theme.ThemeController.restore(this)
         ServiceLocator.playback.attach(this)
         createRecordingChannel()
 

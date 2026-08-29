@@ -30,8 +30,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.arv.app.ui.theme.PaperLight
-import com.arv.app.ui.theme.TerracottaLight
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -58,6 +56,7 @@ import com.arv.app.feature.search.SearchScreen
 import com.arv.app.feature.settings.SettingsScreen
 import com.arv.app.feature.story.StoryDetailScreen
 import com.arv.app.feature.timeline.TimelineScreen
+import com.arv.app.ui.theme.ArvHero
 
 sealed class Destination(val route: String) {
     /** Screen 01. Only reachable before an archive exists on this phone. */
@@ -187,13 +186,13 @@ fun ArvAppRoot() {
                                 Modifier
                                     .size(48.dp)
                                     .clip(CircleShape)
-                                    .background(TerracottaLight),
+                                    .background(ArvHero.cta),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     Icons.Filled.Mic,
                                     contentDescription = stringResource(R.string.record_start),
-                                    tint = PaperLight
+                                    tint = ArvHero.on
                                 )
                             }
                         },

@@ -32,6 +32,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.FilterChip
+import androidx.compose.ui.platform.LocalContext
+import com.arv.app.ui.theme.ThemeController
+import com.arv.app.ui.theme.ThemeOption
 import com.arv.app.core.data.ArchiveExport
 import com.arv.app.core.data.FamilyImport
 import com.arv.app.core.di.ServiceLocator
@@ -252,6 +258,29 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+
+        item { HorizontalDivider() }
+
+        item { SectionLabel("How it looks") }
+
+        item {
+            // The Kalos family, plus the archive's own Heirloom default. Restyles
+            // immediately and survives restart.
+            val context = LocalContext.current
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ThemeOption.entries.forEach { option ->
+                    FilterChip(
+                        selected = ThemeController.current == option,
+                        onClick = { ThemeController.choose(option, context) },
+                        label = { Text(option.label) }
+                    )
+                }
+            }
         }
 
         item { HorizontalDivider() }

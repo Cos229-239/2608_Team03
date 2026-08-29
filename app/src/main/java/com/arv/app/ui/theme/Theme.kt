@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 
 /**
  * Role assignments, so the accent stays meaningful:
@@ -91,9 +92,51 @@ fun ArvTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
+    // A chosen Kalos theme overrides the system light/dark split: they are dark by
+    // design, and the choice is the point. Heirloom keeps following the system.
+    val kalos = ThemeController.current.scheme()
     MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
+        colorScheme = kalos ?: if (darkTheme) DarkColors else LightColors,
         typography = ArvTypography,
         content = content
     )
+}
+
+/**
+ * The hero-panel palette: the dark headed blocks on Home, People and Documents.
+ *
+ * Heirloom keeps its hand-tuned forest-and-paper hero exactly as designed. A Kalos theme
+ * renders the same structure as a raised dark panel with the accent doing the pointing,
+ * which is how that design system uses color. Screens name the role and the theme decides
+ * the value, so switching themes restyles the heroes instead of leaving green islands.
+ */
+object ArvHero {
+    private val kalos: Boolean
+        @Composable get() = ThemeController.current != ThemeOption.HEIRLOOM
+
+    /** The panel itself. */
+    val container: Color
+        @Composable get() =
+            if (kalos) MaterialTheme.colorScheme.surfaceContainerHigh else ForestLight
+
+    /** The lighter end of the panel's gradient. */
+    val containerBright: Color
+        @Composable get() =
+            if (kalos) MaterialTheme.colorScheme.surfaceContainer else Color(0xFF3A5741)
+
+    /** Text and icons standing on the panel. */
+    val on: Color
+        @Composable get() = if (kalos) MaterialTheme.colorScheme.onSurface else PaperLight
+
+    /** Dark foreground for the light chips that sit on the panel. */
+    val ink: Color
+        @Composable get() = if (kalos) MaterialTheme.colorScheme.background else InkLight
+
+    /** Provenance and small accents on the panel. Brass in Heirloom. */
+    val accent: Color
+        @Composable get() = if (kalos) MaterialTheme.colorScheme.tertiary else BrassDark
+
+    /** The one action that matters most. Terracotta in Heirloom. */
+    val cta: Color
+        @Composable get() = if (kalos) MaterialTheme.colorScheme.primary else TerracottaLight
 }

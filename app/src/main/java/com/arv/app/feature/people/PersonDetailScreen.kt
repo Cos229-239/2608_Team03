@@ -46,15 +46,12 @@ import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.ai.Viewer
 import com.arv.app.core.ai.Lineage
 import com.arv.app.core.ai.TreeFrame
+import com.arv.app.ui.theme.ArvHero
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.Story
 import com.arv.app.core.model.StoryKind
-import com.arv.app.ui.theme.BrassDark
-import com.arv.app.ui.theme.ForestLight
-import com.arv.app.ui.theme.PaperLight
-import com.arv.app.ui.theme.TerracottaLight
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -146,7 +143,7 @@ fun PersonDetailScreen(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .background(ForestLight)
+                    .background(ArvHero.container)
                     .padding(horizontal = 16.dp, vertical = 20.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -154,8 +151,8 @@ fun PersonDetailScreen(
                         Modifier
                             .size(72.dp)
                             .clip(CircleShape)
-                            .background(PaperLight.copy(alpha = 0.12f))
-                            .border(2.dp, BrassDark, CircleShape),
+                            .background(ArvHero.on.copy(alpha = 0.12f))
+                            .border(2.dp, ArvHero.accent, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -163,7 +160,7 @@ fun PersonDetailScreen(
                                 .mapNotNull { it.firstOrNull()?.uppercase() }
                                 .take(2).joinToString(""),
                             style = MaterialTheme.typography.titleLarge,
-                            color = PaperLight
+                            color = ArvHero.on
                         )
                     }
                     Spacer(Modifier.size(16.dp))
@@ -171,7 +168,7 @@ fun PersonDetailScreen(
                         Text(
                             p.displayName,
                             style = MaterialTheme.typography.headlineMedium,
-                            color = PaperLight
+                            color = ArvHero.on
                         )
                         val line = buildString {
                             p.birthYear?.let { append(it) }
@@ -189,19 +186,19 @@ fun PersonDetailScreen(
                             Text(
                                 line,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = PaperLight.copy(alpha = 0.85f)
+                                color = ArvHero.on.copy(alpha = 0.85f)
                             )
                         }
                         if (p.isDeceased) {
                             Spacer(Modifier.height(6.dp))
                             Surface(
                                 shape = RoundedCornerShape(4.dp),
-                                color = TerracottaLight
+                                color = ArvHero.cta
                             ) {
                                 Text(
                                     "MEMORIAL",
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = PaperLight,
+                                    color = ArvHero.on,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
@@ -215,7 +212,7 @@ fun PersonDetailScreen(
                         shape = RoundedCornerShape(12.dp),
                         color = Color.Transparent,
                         border = androidx.compose.foundation.BorderStroke(
-                            1.dp, PaperLight.copy(alpha = 0.35f)
+                            1.dp, ArvHero.on.copy(alpha = 0.35f)
                         ),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -224,18 +221,18 @@ fun PersonDetailScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Surface(shape = RoundedCornerShape(4.dp), color = BrassDark) {
+                            Surface(shape = RoundedCornerShape(4.dp), color = ArvHero.accent) {
                                 Text(
                                     "THEIR VOICE",
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = ForestLight,
+                                    color = ArvHero.container,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
                             Text(
                                 "${formatPreserved(recordedMs)} preserved",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = PaperLight
+                                color = ArvHero.on
                             )
                         }
                     }
@@ -330,13 +327,13 @@ private fun PersonStoryCard(
                     Modifier
                         .size(36.dp)
                         .clip(CircleShape)
-                        .background(ForestLight),
+                        .background(ArvHero.container),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Filled.PlayArrow,
                         contentDescription = "Play",
-                        tint = PaperLight,
+                        tint = ArvHero.on,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -358,7 +355,7 @@ private fun PersonStoryCard(
             Text(
                 if (personId in story.narratorIds) "their voice" else "about them",
                 style = MaterialTheme.typography.labelMedium,
-                color = if (personId in story.narratorIds) BrassDark
+                color = if (personId in story.narratorIds) ArvHero.accent
                 else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
