@@ -242,6 +242,62 @@ class StoryRepository(
         )
     }
 
+    /**
+     * Somebody looked at an uncertain link and said it is right.
+     *
+     * The question mark on a chip is a question, and until now the app had no way to
+     * hear the answer. Confirming rewrites the same edge with the uncertainty removed;
+     * nothing else about it changes, so a confirmed grandparent is exactly the
+     * grandparent the record claimed, minus the doubt.
+     */
+    suspend fun confirmRelationship(
+        familyId: String,
+        fromPersonId: String,
+        toPersonId: String,
+        kind: RelationshipKind,
+        userId: String,
+        nowMillis: Long
+    ) {
+        db.relationshipDao().upsert(
+            RelationshipEntity(
+                familyId = familyId,
+                fromPersonId = fromPersonId,
+                toPersonId = toPersonId,
+                kind = kind,
+                uncertain = false,
+                updatedAt = nowMillis
+            )
+        )
+        refreshLineage(familyId, userId)
+    }
+
+    /**
+     * Somebody looked at an uncertain link and said it is wrong.
+     *
+     * The edge is deleted, not marked. A link the family has rejected is not a disputed
+     * fact worth preserving, it is somebody else's mistake, and leaving it drawn would
+     * keep seating the wrong person at the table. The person themselves stays in the
+     * archive; only the claim about how they connect goes.
+     */
+    suspend fun removeRelationship(
+        familyId: String,
+        fromPersonId: String,
+        toPersonId: String,
+        kind: RelationshipKind,
+        userId: String,
+        nowMillis: Long
+    ) {
+        db.relationshipDao().delete(
+            RelationshipEntity(
+                familyId = familyId,
+                fromPersonId = fromPersonId,
+                toPersonId = toPersonId,
+                kind = kind
+            )
+        )
+        refreshLineage(familyId, userId)
+    }
+
     fun observeRelationships(familyId: String) =
         db.relationshipDao().observeAll(familyId).map { rows -> rows.map { it.toDomain() } }
 

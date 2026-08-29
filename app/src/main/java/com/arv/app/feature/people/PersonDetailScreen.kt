@@ -41,6 +41,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.ai.Viewer
@@ -111,6 +112,39 @@ class PersonDetailViewModel(
                 }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * The uncertain links touching this person: every question mark on the page, as a
+     * list somebody can actually answer. Imported research arrives full of these, and
+     * verifying them is meant to be a feature, not a chore the app never offers.
+     */
+    val unconfirmed: StateFlow<List<com.arv.app.core.model.Relationship>> =
+        repo.observeRelationships(familyId)
+            .map { edges ->
+                edges.filter {
+                    it.uncertain &&
+                        (it.fromPersonId == personId || it.toPersonId == personId)
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun confirm(edge: com.arv.app.core.model.Relationship) {
+        viewModelScope.launch {
+            repo.confirmRelationship(
+                familyId, edge.fromPersonId, edge.toPersonId, edge.kind,
+                ServiceLocator.viewer.userId, System.currentTimeMillis()
+            )
+        }
+    }
+
+    fun reject(edge: com.arv.app.core.model.Relationship) {
+        viewModelScope.launch {
+            repo.removeRelationship(
+                familyId, edge.fromPersonId, edge.toPersonId, edge.kind,
+                ServiceLocator.viewer.userId, System.currentTimeMillis()
+            )
+        }
+    }
 }
 
 /**
@@ -131,6 +165,7 @@ fun PersonDetailScreen(
     val frame by viewModel.frame.collectAsStateWithLifecycle()
     val everyone by viewModel.everyone.collectAsStateWithLifecycle()
     val edges by viewModel.edges.collectAsStateWithLifecycle()
+    val unconfirmed by viewModel.unconfirmed.collectAsStateWithLifecycle()
 
     val p = person ?: return
 
@@ -275,6 +310,19 @@ fun PersonDetailScreen(
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+        }
+
+        if (unconfirmed.isNotEmpty()) {
+            item {
+                UnconfirmedLinks(
+                    person = p,
+                    edges = unconfirmed,
+                    everyone = everyone,
+                    onConfirm = viewModel::confirm,
+                    onReject = viewModel::reject,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
@@ -617,3 +665,76 @@ private fun lifespan(person: Person?, thisYear: Int): String? {
 }
 
 private const val MAX_BELIEVABLE_AGE = 110
+
+/**
+ * Every question mark on the page, asked as a question somebody can answer.
+ *
+ * The sentence reads the same from either end of the edge, so it is correct on both
+ * people's pages. Confirming keeps the link and drops the doubt; "Not right" removes the
+ * claim entirely, because a link the family has rejected is somebody else's mistake, not
+ * a disputed fact worth drawing.
+ */
+@Composable
+private fun UnconfirmedLinks(
+    person: Person,
+    edges: List<com.arv.app.core.model.Relationship>,
+    everyone: List<Person>,
+    onConfirm: (com.arv.app.core.model.Relationship) -> Unit,
+    onReject: (com.arv.app.core.model.Relationship) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    fun name(id: String) =
+        everyone.firstOrNull { it.personId == id }?.displayName ?: "Somebody"
+
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Worth confirming", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "These came from records nobody has checked yet. If you know, say so.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        edges.forEach { edge ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        claimSentence(edge, ::name),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AssistChip(
+                            onClick = { onConfirm(edge) },
+                            label = { Text("That's right") }
+                        )
+                        AssistChip(
+                            onClick = { onReject(edge) },
+                            label = { Text("Not right") }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The claim in plain words. Edge direction reads "from is the kind of to". */
+private fun claimSentence(
+    edge: com.arv.app.core.model.Relationship,
+    name: (String) -> String
+): String {
+    val from = name(edge.fromPersonId)
+    val to = name(edge.toPersonId)
+    return when (edge.kind) {
+        com.arv.app.core.model.RelationshipKind.PARENT -> "$from is $to's parent?"
+        com.arv.app.core.model.RelationshipKind.CHILD -> "$to is $from's parent?"
+        com.arv.app.core.model.RelationshipKind.GRANDPARENT -> "$from is $to's grandparent?"
+        com.arv.app.core.model.RelationshipKind.GRANDCHILD -> "$to is $from's grandparent?"
+        com.arv.app.core.model.RelationshipKind.SIBLING -> "$from and $to are siblings?"
+        com.arv.app.core.model.RelationshipKind.AUNT_UNCLE -> "$from is $to's aunt or uncle?"
+        com.arv.app.core.model.RelationshipKind.NIECE_NEPHEW -> "$from is $to's niece or nephew?"
+        com.arv.app.core.model.RelationshipKind.COUSIN -> "$from and $to are cousins?"
+        com.arv.app.core.model.RelationshipKind.SPOUSE -> "$from and $to are married?"
+        com.arv.app.core.model.RelationshipKind.PARTNER -> "$from and $to are partners?"
+        com.arv.app.core.model.RelationshipKind.CHOSEN -> "$from is chosen family to $to?"
+        com.arv.app.core.model.RelationshipKind.OTHER -> "$from and $to are connected?"
+    }
+}
