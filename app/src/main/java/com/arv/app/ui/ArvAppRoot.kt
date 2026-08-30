@@ -62,7 +62,7 @@ import com.arv.app.feature.search.SearchScreen
 import com.arv.app.feature.settings.SettingsScreen
 import com.arv.app.feature.story.StoryDetailScreen
 import com.arv.app.feature.timeline.TimelineScreen
-import com.arv.app.ui.theme.ArvHero
+import com.arv.app.feature.promptlibrary.PromptLibraryScreen
 
 sealed class Destination(val route: String) {
     /** Screen 01. Only reachable before an archive exists on this phone. */
@@ -91,6 +91,8 @@ sealed class Destination(val route: String) {
     data object Documents : Destination("documents")
 
     data object Librarian : Destination("librarian")
+
+    data object PromptLibrary : Destination("promptlibrary")
 
     /** Same retrieval as the librarian, without generation. Reached from the Librarian tab. */
     data object Search : Destination("search")
@@ -126,7 +128,7 @@ private val leftTabs = listOf(
 )
 private val rightTabs = listOf(
     Tab(Destination.Timeline, Icons.Outlined.Schedule, R.string.tab_timeline),
-    Tab(Destination.Librarian, Icons.Outlined.MenuBook, R.string.tab_librarian)
+    Tab(Destination.PromptLibrary, Icons.Outlined.MenuBook, R.string.tab_librarian)
 )
 private val tabs = leftTabs + rightTabs
 
@@ -358,6 +360,9 @@ fun ArvAppRoot() {
                     LibrarianScreen(
                         onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) }
                     )
+                }
+                composable(Destination.PromptLibrary.route){
+                    PromptLibraryScreen()
                 }
                 composable(Destination.Search.route) {
                     SearchScreen(
