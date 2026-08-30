@@ -197,8 +197,10 @@ fun EditStoryScreen(
         }
 
         item {
-            val noYear = state.eraText.isNotBlank() &&
-                !Regex("\\d{4}").containsMatchIn(state.eraText)
+            // The same parser that will run at save decides the warning, so the field can
+                // never promise a year the save will drop. A future year counts as no year.
+                val noYear = state.eraText.isNotBlank() &&
+                    com.arv.app.core.data.EraText.parse(state.eraText).start == null
             OutlinedTextField(
                 value = state.eraText,
                 onValueChange = viewModel::onEra,

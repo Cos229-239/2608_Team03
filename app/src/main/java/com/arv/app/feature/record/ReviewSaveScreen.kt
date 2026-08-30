@@ -358,8 +358,10 @@ fun ReviewSaveScreen(
                 // parse happens silently at save, so a typo like "-953" or "!!!" quietly
                 // became an undated story with nobody told. The field now says what it
                 // will actually do while there is still time to fix it.
+                // The same parser that will run at save decides the warning, so the field can
+                // never promise a year the save will drop. A future year counts as no year.
                 val noYear = state.eraText.isNotBlank() &&
-                    !Regex("\\d{4}").containsMatchIn(state.eraText)
+                    com.arv.app.core.data.EraText.parse(state.eraText).start == null
                 OutlinedTextField(
                     value = state.eraText,
                     onValueChange = viewModel::onEra,

@@ -37,4 +37,24 @@ class EraTextTest {
             assertEquals(text, EraPrecision.UNKNOWN, e.precision)
         }
     }
+
+    @Test
+    fun `a future year is a typo, not a memory`() {
+        val e = EraText.parse("3026", thisYear = 2026)
+        assertNull(e.start)
+        assertEquals(EraPrecision.UNKNOWN, e.precision)
+    }
+
+    @Test
+    fun `a real year beside a future one survives alone`() {
+        val e = EraText.parse("1953 to 2953", thisYear = 2026)
+        assertEquals(1953, e.start)
+        assertEquals(1953, e.end)
+        assertEquals(EraPrecision.EXACT, e.precision)
+    }
+
+    @Test
+    fun `this year itself is fine`() {
+        assertEquals(2026, EraText.parse("2026", thisYear = 2026).start)
+    }
 }

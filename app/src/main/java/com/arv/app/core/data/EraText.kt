@@ -17,8 +17,17 @@ object EraText {
 
     data class Parsed(val start: Int?, val end: Int?, val precision: EraPrecision)
 
-    fun parse(text: String): Parsed {
-        val years = Regex("\\d{4}").findAll(text).map { it.value.toInt() }.toList()
+    fun parse(
+        text: String,
+        thisYear: Int = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+    ): Parsed {
+        // Years after this one are typos, not memories. Nobody has a story from 3026,
+        // and a future year in an archive would sort ahead of everything real forever.
+        // Rule from this week's QA branch, with credit.
+        val years = Regex("\\d{4}").findAll(text)
+            .map { it.value.toInt() }
+            .filter { it <= thisYear }
+            .toList()
         return when {
             years.isEmpty() -> Parsed(null, null, EraPrecision.UNKNOWN)
             years.size == 1 -> Parsed(years[0], years[0], EraPrecision.EXACT)
