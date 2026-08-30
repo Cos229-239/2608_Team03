@@ -127,28 +127,30 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
-        val yearPattern = Regex("""\d{4}""")
-        val years = yearPattern
+        val validFormat =
+            trimmed.matches(Regex("""\d{4}""")) ||
+                    trimmed.matches(Regex("""\d{4}\s*(to|-|–)\s*\d{4}"""))
+
+        if (!validFormat) {
+            _state.value = _state.value.copy(
+                eraText = v,
+                eraUnknown = false,
+                eraError = "Enter a valid year, such as 1953, or a range such as 1953 to 1964."
+            )
+            return
+        }
+
+        val years = Regex("""\d{4}""")
             .findAll(trimmed)
             .map { it.value.toInt() }
             .toList()
 
-        val validFormat = when {
-            trimmed.matches(Regex("""\d{4}""")) -> true
-            trimmed.matches(Regex("""\d{4}\s*(to|-|–)\s*\d{4}""")) -> true
-            else -> false
-        }
-
         val currentYear = java.time.Year.now().value
 
-        val error = when {
-            !validFormat ->
-                "Enter a valid year, such as 1953, or a range such as 1953 to 1964."
-
-            years.any { it > currentYear } ->
-                "The year cannot be in the future."
-
-            else -> null
+        val error = if (years.any { it > currentYear }) {
+            "The year cannot be in the future."
+        } else {
+            null
         }
 
         _state.value = _state.value.copy(
@@ -226,6 +228,7 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         _state.value = s.copy(saving = true)
+
 
         val (start, end, precision) =
             if (s.eraUnknown) Triple(null, null, EraPrecision.UNKNOWN) else parseEra(s.eraText)

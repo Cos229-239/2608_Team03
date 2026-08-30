@@ -18,11 +18,26 @@ object EraText {
     data class Parsed(val start: Int?, val end: Int?, val precision: EraPrecision)
 
     fun parse(text: String): Parsed {
-        val years = Regex("\\d{4}").findAll(text).map { it.value.toInt() }.toList()
-        return when {
-            years.isEmpty() -> Parsed(null, null, EraPrecision.UNKNOWN)
-            years.size == 1 -> Parsed(years[0], years[0], EraPrecision.EXACT)
-            else -> Parsed(years.min(), years.max(), EraPrecision.RANGE)
+        val trimmed = text.trim()
+
+        if (trimmed.matches(Regex("""\d{4}"""))) {
+            val year = trimmed.toInt()
+            return Parsed(year, year, EraPrecision.EXACT)
         }
+
+        if (trimmed.matches(Regex("""\d{4}\s*(to|-|–)\s*\d{4}"""))) {
+            val years = Regex("""\d{4}""")
+                .findAll(trimmed)
+                .map { it.value.toInt() }
+                .toList()
+
+            return Parsed(
+                start = years[0],
+                end = years[1],
+                precision = EraPrecision.RANGE
+            )
+        }
+
+        return Parsed(null, null, EraPrecision.UNKNOWN)
     }
 }
