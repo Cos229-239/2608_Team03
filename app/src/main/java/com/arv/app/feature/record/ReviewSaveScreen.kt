@@ -160,18 +160,11 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    /**
-     * Accepts "1958-1964", "1958 to 1964", or "1953". Anything it cannot read becomes
-     * UNKNOWN rather than a guess, because a wrong year in an archive outlives the
-     * person who could have corrected it.
-     */
+    // One parser for save and edit both, so the same text can never mean different
+    // years depending on which screen it was typed into.
     private fun parseEra(text: String): Triple<Int?, Int?, EraPrecision> {
-        val years = Regex("\\d{4}").findAll(text).map { it.value.toInt() }.toList()
-        return when {
-            years.isEmpty() -> Triple(null, null, EraPrecision.UNKNOWN)
-            years.size == 1 -> Triple(years[0], years[0], EraPrecision.EXACT)
-            else -> Triple(years.min(), years.max(), EraPrecision.RANGE)
-        }
+        val era = com.arv.app.core.data.EraText.parse(text)
+        return Triple(era.start, era.end, era.precision)
     }
 
     fun save(localAudioPath: String, durationMs: Long, nowMillis: Long) {
@@ -418,12 +411,22 @@ fun ReviewSaveScreen(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // Free text on purpose: "summer 1953" is how a family answers. But the
+                // parse happens silently at save, so a typo like "-953" or "!!!" quietly
+                // became an undated story with nobody told. The field now says what it
+                // will actually do while there is still time to fix it.
+                val noYear = state.eraText.isNotBlank() &&
+                    !Regex("\\d{4}").containsMatchIn(state.eraText)
                 OutlinedTextField(
                     value = state.eraText,
                     onValueChange = viewModel::onEra,
                     enabled = !state.eraUnknown,
+                    isError = noYear,
                     label = { Text("Year or range") },
                     placeholder = { Text("1958 to 1964") },
+                    supportingText = if (noYear) {
+                        { Text("No year found here. It will save as undated unless one is added, like 1958.") }
+                    } else null,
                     modifier = Modifier.weight(1f)
                 )
             }

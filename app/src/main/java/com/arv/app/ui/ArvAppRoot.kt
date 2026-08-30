@@ -18,9 +18,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -97,6 +102,11 @@ sealed class Destination(val route: String) {
         fun of(storyId: String) = "story/$storyId"
     }
 
+    /** Fixing what was typed, never what was said. Reached from a story's page. */
+    data object EditStory : Destination("editStory/{storyId}") {
+        fun of(storyId: String) = "editStory/$storyId"
+    }
+
     /** Screen 19. One person, their voice meter, and everything they touch in the archive. */
     data object PersonDetail : Destination("person/{personId}") {
         fun of(personId: String) = "person/$personId"
@@ -131,6 +141,8 @@ fun ArvAppRoot() {
         currentDestination?.hierarchy?.any { it.route == tab.destination.route } == true
     }
 
+    val recording by com.arv.app.feature.record.RecordingBus.state.collectAsStateWithLifecycle()
+
     com.arv.app.ui.theme.ArvBackground {
     Scaffold(
         // Transparent so the themed glow painted behind the app shows through.
@@ -140,23 +152,56 @@ fun ArvAppRoot() {
         // black: every headline without an explicit color vanished on the dark themes.
         contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
+            androidx.compose.foundation.layout.Column {
+            // Leaving the record screen does not stop a recording, on purpose: a
+            // 45-minute interview must survive a pocketed phone. What it must never be
+            // is silent about it. While a recording is live, every screen carries this
+            // and tapping it returns to the recorder.
+            if (recording.isRecording &&
+                currentDestination?.route != Destination.Record.route
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.tertiary,
+                    onClick = { navController.navigate(Destination.Record.route) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.padding(
+                            top = androidx.compose.foundation.layout.WindowInsets.statusBars
+                                .asPaddingValues().calculateTopPadding()
+                        )
+                    ) {
+                    Text(
+                        "Recording is still going. Tap to return to it.",
+                        color = MaterialTheme.colorScheme.onTertiary,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                    )
+                    }
+                }
+            }
             // Every screen off the tabs gets a visible way back. The system gesture is
             // invisible, and a 78-year-old storyteller will never find it. Screen 04's
             // full-attention layout earns its own top bar; everything else shares this.
             val onOnboarding =
                 currentDestination?.route == Destination.Onboarding.route
             if (!onATab && !onOnboarding) {
-                TopAppBar(
-                    title = {},
-                    navigationIcon = {
-                        IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back"
-                            )
-                        }
+                // Just the arrow. This was a full app bar with an empty title, which
+                // painted a wide band across the top of every page to hold one icon;
+                // the arrow is the affordance and the band was furniture.
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                ) {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
                     }
-                )
+                }
+            }
             }
         },
         bottomBar = {
@@ -349,7 +394,17 @@ fun ArvAppRoot() {
                     route = Destination.StoryDetail.route,
                     arguments = listOf(navArgument("storyId") { type = NavType.StringType })
                 ) {
-                    StoryDetailScreen()
+                    StoryDetailScreen(
+                        onEdit = { navController.navigate(Destination.EditStory.of(it)) }
+                    )
+                }
+                composable(
+                    route = Destination.EditStory.route,
+                    arguments = listOf(navArgument("storyId") { type = NavType.StringType })
+                ) {
+                    com.arv.app.feature.story.EditStoryScreen(
+                        onDone = { navController.popBackStack() }
+                    )
                 }
             }
         }

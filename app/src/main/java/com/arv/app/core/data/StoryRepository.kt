@@ -518,6 +518,55 @@ class StoryRepository(
     }
 
     /**
+     * Rewrites a story's details, if this viewer may.
+     *
+     * The permission check lives here, not on the screen, for the same reason search's
+     * does: a screen can forget. canEdit already knows the rules, health records answer
+     * to their subject, everything else to its creator or a keeper, and this is the
+     * first write path to actually ask it.
+     *
+     * Choosing BRANCH without naming whose line fails closed and changes nothing:
+     * BRANCH with no root is readable by nobody, and no edit should be able to disappear
+     * a memory.
+     */
+    suspend fun updateStoryDetails(
+        storyId: String,
+        viewer: Viewer,
+        title: String,
+        eraText: String,
+        eraUnknown: Boolean,
+        placeLabel: String?,
+        tags: List<String>,
+        visibility: Visibility,
+        branchRootPersonId: String?,
+        aiUsePolicy: AiUsePolicy,
+        nowMillis: Long
+    ): Boolean {
+        val entity = db.storyDao().observeById(storyId).first() ?: return false
+        if (!MemoryAccess.canEdit(entity.toDomain(), viewer)) return false
+        if (visibility == Visibility.BRANCH && branchRootPersonId == null) return false
+
+        val era = if (eraUnknown) EraText.Parsed(null, null, EraPrecision.UNKNOWN)
+        else EraText.parse(eraText)
+
+        db.storyDao().upsert(
+            entity.copy(
+                title = title.trim().ifBlank { entity.title },
+                eraStart = era.start,
+                eraEnd = era.end,
+                eraPrecision = era.precision,
+                placeLabel = placeLabel?.trim()?.ifBlank { null },
+                tags = tags.map { it.trim() }.filter { it.isNotBlank() },
+                visibility = visibility,
+                branchRootPersonId = if (visibility == Visibility.BRANCH) branchRootPersonId else null,
+                aiUsePolicy = aiUsePolicy,
+                updatedAt = nowMillis
+            )
+        )
+        return true
+    }
+
+    /**
      * CAP-5. Turns a finished recording into a story the archive can hold.
      *
      * Everything is written locally and queued, never uploaded inline. The keeper is

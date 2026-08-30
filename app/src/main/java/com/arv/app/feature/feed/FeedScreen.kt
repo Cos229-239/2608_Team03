@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -385,6 +386,10 @@ private fun HomeHeader(
         Modifier
             .fillMaxWidth()
             .background(ArvHero.container)
+            // The panel paints up under the clock on purpose; the words do not go
+            // there. Ordering matters: background first, inset second, so the color is
+            // edge-to-edge and the content is not.
+            .statusBarsPadding()
             .padding(top = 8.dp, bottom = 18.dp)
     ) {
         Row(
@@ -495,10 +500,14 @@ private fun HomeHeader(
                         )
                     }
                     Spacer(Modifier.height(6.dp))
+                    // Who am I in here? Nothing on the home screen answered it, so the
+                    // strip now says so under your own face rather than making you open
+                    // your profile to find out.
+                    val isMe = person.linkedUserId == ServiceLocator.viewer.userId
                     Text(
-                        person.shortName(),
+                        if (isMe) "${person.shortName()} (you)" else person.shortName(),
                         style = MaterialTheme.typography.labelLarge,
-                        color = ArvHero.on,
+                        color = if (isMe) ArvHero.accent else ArvHero.on,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
