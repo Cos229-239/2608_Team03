@@ -137,11 +137,25 @@ fun PromptLibraryScreen(
                 )
 
                 Text(
-                    text = "You mentioned a song your mother hummed. Can you try to sing it?"
+                    text = when (selectedCategory){
+                        "Childhood" -> "What is one childhood memory you can still picture clearly?"
+                        "Food" -> "Is there a family recipe that brings back a specific memory?"
+                        "Work" -> "What is something your first job taught you that stayed with you?"
+                        "Hard Things" -> "What helped your family get through a difficult time?"
+                        "Faith" -> "Was there a belief or tradition that helped guide your family?"
+                        else -> "You mentioned a song your mother hummed. Can you try to sing it?"
+                    }
                 )
 
                 Text(
-                    text = "Ruth referenced this at 06:18 in \"Sunday kitchen \" but never sang it. Melodies are the first thing lost"
+                    text = when (selectedCategory){
+                        "Childhood" -> "Childhood memories can reveal details about family,home, and experiences that may otherwise be forgotten."
+                        "Food" -> "Food can connect generations through recipes, traditions,celebrations, and memories shared around the table."
+                        "Work" -> "Work stories can reveal important lessons,responsibilities, and experiences that shaped a person's life."
+                        "Hard Things" -> "Difficult memories can preserve stories of resilience, support, and how a family overcame challenges together."
+                        "Faith" -> "Beliefs and traditions can preserve the values,practices, and sources of comfort passed through a family."
+                        else -> "Ruth referenced this at 06:18 in \"Sunday kitchen\" but never sang it. Melodies are the first thing lost."
+                    }
 
                 )
 
