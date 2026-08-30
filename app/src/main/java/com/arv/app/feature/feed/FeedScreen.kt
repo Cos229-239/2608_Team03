@@ -205,14 +205,20 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
         edges: List<com.arv.app.core.model.Relationship>
     ): List<Story> = when {
         lens.mine -> posts.filter { story ->
-            story.createdBy == viewer.userId || (meId != null && meId in story.narratorIds)
+            story.createdBy == viewer.userId ||
+                (meId != null && (meId in story.narratorIds || meId in story.subjectPersonIds))
         }
         lens.parentId == null || meId == null -> posts
         else -> posts.filter { story ->
             val onSide = { id: String ->
                 id == lens.parentId || lens.parentId in Lineage.sideOf(id, meId, edges)
             }
-            story.narratorIds.any(onSide) || story.branchRootPersonId?.let(onSide) == true
+            // Who told it, and who it is about. A photograph of somebody's mother has no
+            // narrator at all, and checking narrators alone made every document about a
+            // person vanish from that person's own side of the family.
+            story.narratorIds.any(onSide) ||
+                story.subjectPersonIds.any(onSide) ||
+                story.branchRootPersonId?.let(onSide) == true
         }
     }
 
