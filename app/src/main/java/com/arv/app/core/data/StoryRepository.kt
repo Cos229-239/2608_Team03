@@ -570,6 +570,10 @@ class StoryRepository(
                 db.transcriptDao().clearForAsset(asset.assetId)
             }
             db.assetDao().deleteForStory(storyId)
+            db.outboxDao().deleteForDoc(storyId)
+            for (asset in assets) {
+                db.outboxDao().deleteForDoc(asset.assetId)
+            }
             db.storyDao().delete(entity)
         }
         for (asset in assets) {

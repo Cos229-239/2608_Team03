@@ -263,4 +263,8 @@ interface OutboxDao {
 
     @Query("DELETE FROM outbox WHERE id = :id")
     suspend fun complete(id: Long)
+
+    /** A deleted story's queued uploads must die with it, or the queue uploads ghosts. */
+    @Query("DELETE FROM outbox WHERE docId = :docId")
+    suspend fun deleteForDoc(docId: String)
 }

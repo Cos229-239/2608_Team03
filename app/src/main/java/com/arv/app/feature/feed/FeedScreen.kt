@@ -272,7 +272,7 @@ fun FeedScreen(
             HomeHeader(
                 familyName = viewModel.familyName,
                 people = state.people,
-                pendingSyncCount = state.pendingSyncCount,
+                pendingSyncCount = state.posts.size,
                 lenses = state.lenses,
                 lens = state.lens,
                 onChooseLens = viewModel::chooseLens,
@@ -542,13 +542,14 @@ private fun HomeHeader(
                     )
                     Column(Modifier.weight(1f)) {
                         // Says what is true today. Nothing drains the outbox yet, so
-                        // "waiting to upload" promised a queue that is moving toward
-                        // somewhere, and after ten recordings the home screen claimed
-                        // twenty memories were pending on a phone with no upload path.
-                        // This screen exists to build trust; the old wording spent it.
+                        // Counts the stories this person can actually open, because
+                        // that is what "memories" means to the family reading it. It
+                        // used to count outbox rows, sync bookkeeping, two per audio
+                        // save and never cleaned up on delete, so the number was wrong
+                        // in both directions and the word was wrong entirely.
                         //
-                        // TODO(DAT-2): once a sync worker exists, this goes back to
-                        // counting genuinely pending uploads.
+                        // TODO(DAT-2): once a sync worker exists, pending uploads get
+                        // their own honest line.
                         val label =
                             if (pendingSyncCount == 1) "1 memory saved on this phone"
                             else "$pendingSyncCount memories saved on this phone"
