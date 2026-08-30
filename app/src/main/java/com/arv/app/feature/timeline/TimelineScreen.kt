@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,19 +22,35 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.model.Story
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 class TimelineViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = ServiceLocator.storyRepository(app)
+    private val viewer = ServiceLocator.viewer
 
     val decades: StateFlow<Map<Int?, List<Story>>> =
-        repo.observeByDecade(ServiceLocator.DEMO_FAMILY_ID)
-            .map { it }
+        repo.observeByDecade(ServiceLocator.familyId)
+            .combine(repo.observePeople(ServiceLocator.familyId)) { byDecade, people ->
+                // The same filter the feed and the librarian apply. A timeline is not a
+                // separate permission surface, it is the same archive drawn on an axis,
+                // and the DAO query behind it is deliberately unfiltered.
+                //
+                // Decades left empty by the filter are dropped rather than shown bare.
+                // An empty year heading tells you something was withheld, and findGaps
+                // would read the decade as present and hide a gap that is really there.
+                byDecade
+                    .mapValues { (_, stories) ->
+                        stories.filter { MemoryAccess.canRead(it, viewer, people) }
+                    }
+                    .filterValues { it.isNotEmpty() }
+            }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 }
 
@@ -47,6 +64,7 @@ class TimelineViewModel(app: Application) : AndroidViewModel(app) {
 @Composable
 fun TimelineScreen(
     onOpenStory: (String) -> Unit,
+    onRecord: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: TimelineViewModel = viewModel()
 ) {
@@ -54,8 +72,30 @@ fun TimelineScreen(
     val presentDecades = decades.keys.filterNotNull().sorted()
     val gaps = findGaps(presentDecades)
 
+    if (decades.isEmpty()) {
+        // Every other tab root has an empty state; this one rendered a blank white screen
+        // to a family that just onboarded. The timeline is also the most natural place to
+        // start, because it is the screen that asks what is missing.
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("No years yet", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "As stories come in they line up here by decade, and the years with " +
+                    "nothing in them get named so someone can still be asked.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedButton(onClick = onRecord) { Text("Record the first story") }
+        }
+        return
+    }
+
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().statusBarsPadding(),
         contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -87,15 +127,18 @@ fun TimelineScreen(
                     }
                 }
             }
-            if (decade != null && gaps.contains(decade)) {
-                item(key = "gap-$decade") { GapCard(decade + 10) }
+            // One card per missing decade, not one card for the whole hole.
+            if (decade != null) {
+                gaps[decade]?.forEach { missing ->
+                    item(key = "gap-$missing") { GapCard(missing, onRecord = onRecord) }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun GapCard(missingDecade: Int) {
+private fun GapCard(missingDecade: Int, onRecord: () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
@@ -111,17 +154,27 @@ private fun GapCard(missingDecade: Int) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            // TODO(AI-8): open the prompt library filtered to this decade.
-            OutlinedButton(onClick = {}) { Text("Ask about it") }
+            // TODO(AI-8): open the prompt library filtered to this decade. Until the
+            // library exists, the honest action is the recorder itself.
+            OutlinedButton(onClick = onRecord) { Text("Ask about it") }
         }
     }
 }
 
-/** Decades that are followed by a hole in the record. */
-private fun findGaps(present: List<Int>): Set<Int> {
-    if (present.size < 2) return emptySet()
+/**
+ * For each decade that is followed by a hole, every decade actually missing after it.
+ *
+ * The old version returned only the decade before each hole, and the caller rendered a
+ * single card for `decade + 10`. A 1950 to 1990 hole therefore advertised the 1960s as the
+ * only thing missing and stayed silent about the 1970s and 1980s. On a screen whose entire
+ * purpose is naming what is not recorded yet, hiding two thirds of a gap is the one bug it
+ * cannot have.
+ *
+ * Internal rather than private so it can be tested without a device.
+ */
+internal fun findGaps(present: List<Int>): Map<Int, List<Int>> {
+    if (present.size < 2) return emptyMap()
     return present.zipWithNext()
         .filter { (a, b) -> b - a > 10 }
-        .map { it.first }
-        .toSet()
+        .associate { (a, b) -> a to ((a + 10) until b step 10).toList() }
 }

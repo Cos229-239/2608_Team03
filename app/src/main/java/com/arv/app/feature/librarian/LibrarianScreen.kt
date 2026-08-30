@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -48,14 +49,11 @@ data class LibrarianUiState(
 class LibrarianViewModel(app: Application) : AndroidViewModel(app) {
 
     private val service = ServiceLocator.librarianService(app)
-    private val familyId = ServiceLocator.DEMO_FAMILY_ID
+    private val familyId = ServiceLocator.familyId
 
-    // TODO(DAT-1): the real signed-in member, their role, and their branch root.
-    private val viewer = Viewer(
-        userId = ServiceLocator.DEMO_USER_ID,
-        role = MemberRole.OWNER,
-        branchRootPersonId = null
-    )
+    // One definition, in ServiceLocator. Four screens each building their own
+    // Viewer is four chances to disagree about what someone may read.
+    private val viewer = ServiceLocator.viewer
 
     private val _state = MutableStateFlow(LibrarianUiState())
     val state: StateFlow<LibrarianUiState> = _state.asStateFlow()
@@ -91,7 +89,7 @@ fun LibrarianScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().statusBarsPadding(),
         contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -156,6 +154,13 @@ fun LibrarianScreen(
                                 fontStyle = FontStyle.Italic,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            if (answer.routedThrough.isNotEmpty()) {
+                                Text(
+                                    "Shelves consulted: ${answer.routedThrough.joinToString(", ")}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             HorizontalDivider()
                             Text(
                                 "WHERE THIS CAME FROM",

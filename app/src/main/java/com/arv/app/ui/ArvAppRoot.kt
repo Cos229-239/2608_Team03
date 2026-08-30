@@ -17,9 +17,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -30,8 +36,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.arv.app.ui.theme.PaperLight
-import com.arv.app.ui.theme.TerracottaLight
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -41,24 +45,50 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.arv.app.R
+import com.arv.app.core.session.ActiveSession
+import com.arv.app.feature.documents.AddDocumentScreen
+import com.arv.app.feature.documents.DocumentsScreen
 import com.arv.app.feature.feed.FeedScreen
 import com.arv.app.feature.librarian.LibrarianScreen
+import com.arv.app.feature.onboarding.OnboardingScreen
+import com.arv.app.feature.people.AddPersonScreen
 import com.arv.app.feature.people.PeopleScreen
+import com.arv.app.feature.people.PlacePeopleScreen
+import com.arv.app.feature.people.PersonDetailScreen
 import com.arv.app.feature.record.RecordScreen
 import com.arv.app.feature.record.RecordingBus
 import com.arv.app.feature.record.ReviewSaveScreen
 import com.arv.app.feature.search.SearchScreen
+import com.arv.app.feature.settings.SettingsScreen
 import com.arv.app.feature.story.StoryDetailScreen
 import com.arv.app.feature.timeline.TimelineScreen
 import com.arv.app.feature.promptlibrary.PromptLibraryScreen
 
 sealed class Destination(val route: String) {
+    /** Screen 01. Only reachable before an archive exists on this phone. */
+    data object Onboarding : Destination("onboarding")
+
+    /** Adding a relative by hand, reached from the Tree tab. */
+    data object AddPerson : Destination("addPerson")
+
+    /** Filing a certificate, photograph or letter, reached from Documents. */
+    data object AddDocument : Destination("addDocument")
+
+    /** Speech-model setup and the way out of an archive. */
+    data object Settings : Destination("settings")
+
+    /** The imported people the archive cannot yet place in the tree. */
+    data object PlacePeople : Destination("placePeople")
+
     /** The private family feed. TODO(UX-3): the feed itself; today this shows the archive. */
     data object Family : Destination("family")
     data object Timeline : Destination("timeline")
 
     /** TODO(UX-6): the interactive tree; today this is the flat people list. */
     data object Tree : Destination("tree")
+
+    /** Records rather than recordings, linked to the people they name. */
+    data object Documents : Destination("documents")
 
     data object Librarian : Destination("librarian")
 
@@ -72,6 +102,16 @@ sealed class Destination(val route: String) {
     data object ReviewSave : Destination("review")
     data object StoryDetail : Destination("story/{storyId}") {
         fun of(storyId: String) = "story/$storyId"
+    }
+
+    /** Fixing what was typed, never what was said. Reached from a story's page. */
+    data object EditStory : Destination("editStory/{storyId}") {
+        fun of(storyId: String) = "editStory/$storyId"
+    }
+
+    /** Screen 19. One person, their voice meter, and everything they touch in the archive. */
+    data object PersonDetail : Destination("person/{personId}") {
+        fun of(personId: String) = "person/$personId"
     }
 }
 
@@ -103,23 +143,67 @@ fun ArvAppRoot() {
         currentDestination?.hierarchy?.any { it.route == tab.destination.route } == true
     }
 
+    val recording by com.arv.app.feature.record.RecordingBus.state.collectAsStateWithLifecycle()
+
+    com.arv.app.ui.theme.ArvBackground {
     Scaffold(
+        // Transparent so the themed glow painted behind the app shows through.
+        // Heirloom's ground is opaque paper, so it looks exactly as it always has.
+        containerColor = androidx.compose.ui.graphics.Color.Transparent,
+        // Stated because a transparent container cannot imply one, and the fallback is
+        // black: every headline without an explicit color vanished on the dark themes.
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
+            androidx.compose.foundation.layout.Column {
+            // Leaving the record screen does not stop a recording, on purpose: a
+            // 45-minute interview must survive a pocketed phone. What it must never be
+            // is silent about it. While a recording is live, every screen carries this
+            // and tapping it returns to the recorder.
+            if (recording.isRecording &&
+                currentDestination?.route != Destination.Record.route
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.tertiary,
+                    onClick = { navController.navigate(Destination.Record.route) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.padding(
+                            top = androidx.compose.foundation.layout.WindowInsets.statusBars
+                                .asPaddingValues().calculateTopPadding()
+                        )
+                    ) {
+                    Text(
+                        "Recording is still going. Tap to return to it.",
+                        color = MaterialTheme.colorScheme.onTertiary,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                    )
+                    }
+                }
+            }
             // Every screen off the tabs gets a visible way back. The system gesture is
             // invisible, and a 78-year-old storyteller will never find it. Screen 04's
             // full-attention layout earns its own top bar; everything else shares this.
-            if (!onATab) {
-                TopAppBar(
-                    title = {},
-                    navigationIcon = {
-                        IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back"
-                            )
-                        }
+            val onOnboarding =
+                currentDestination?.route == Destination.Onboarding.route
+            if (!onATab && !onOnboarding) {
+                // Just the arrow. This was a full app bar with an empty title, which
+                // painted a wide band across the top of every page to hold one icon;
+                // the arrow is the affordance and the band was furniture.
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                ) {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
                     }
-                )
+                }
+            }
             }
         },
         bottomBar = {
@@ -157,13 +241,13 @@ fun ArvAppRoot() {
                                 Modifier
                                     .size(48.dp)
                                     .clip(CircleShape)
-                                    .background(TerracottaLight),
+                                    .background(ArvHero.cta),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     Icons.Filled.Mic,
                                     contentDescription = stringResource(R.string.record_start),
-                                    tint = PaperLight
+                                    tint = ArvHero.on
                                 )
                             }
                         },
@@ -178,12 +262,36 @@ fun ArvAppRoot() {
         Box(Modifier.padding(innerPadding)) {
             NavHost(
                 navController = navController,
-                startDestination = Destination.Family.route
+                startDestination = if (ActiveSession.isSignedIn) {
+                    Destination.Family.route
+                } else {
+                    Destination.Onboarding.route
+                }
             ) {
+                composable(Destination.Onboarding.route) {
+                    OnboardingScreen(
+                        onReady = {
+                            navController.navigate(Destination.Family.route) {
+                                popUpTo(Destination.Onboarding.route) { inclusive = true }
+                            }
+                        }
+                    )
+                }
+                composable(Destination.AddPerson.route) {
+                    AddPersonScreen(
+                        onSaved = { personId ->
+                            navController.navigate(Destination.PersonDetail.of(personId)) {
+                                popUpTo(Destination.AddPerson.route) { inclusive = true }
+                            }
+                        }
+                    )
+                }
                 composable(Destination.Family.route) {
                     FeedScreen(
                         onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) },
+                        onOpenPerson = { navController.navigate(Destination.PersonDetail.of(it)) },
                         onRecord = { navController.navigate(Destination.Record.route) },
+                        onOpenSettings = { navController.navigate(Destination.Settings.route) },
                         onViewAll = {
                             navController.navigate(Destination.Timeline.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
@@ -197,10 +305,57 @@ fun ArvAppRoot() {
                 }
                 composable(Destination.Timeline.route) {
                     TimelineScreen(
-                        onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) }
+                        onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) },
+                        onRecord = { navController.navigate(Destination.Record.route) }
                     )
                 }
-                composable(Destination.Tree.route) { PeopleScreen() }
+                composable(Destination.Tree.route) {
+                    PeopleScreen(
+                        onOpenDocuments = { navController.navigate(Destination.Documents.route) },
+                        onOpenPerson = { navController.navigate(Destination.PersonDetail.of(it)) },
+                        onAddPerson = { navController.navigate(Destination.AddPerson.route) },
+                        onPlacePeople = { navController.navigate(Destination.PlacePeople.route) }
+                    )
+                }
+                composable(
+                    route = Destination.PersonDetail.route,
+                    arguments = listOf(navArgument("personId") { type = NavType.StringType })
+                ) {
+                    PersonDetailScreen(
+                        onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) },
+                        onOpenPerson = { navController.navigate(Destination.PersonDetail.of(it)) }
+                    )
+                }
+                composable(Destination.Documents.route) {
+                    DocumentsScreen(
+                        onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) },
+                        onAddDocument = { navController.navigate(Destination.AddDocument.route) }
+                    )
+                }
+                composable(Destination.PlacePeople.route) {
+                    PlacePeopleScreen()
+                }
+                composable(Destination.Settings.route) {
+                    SettingsScreen(
+                        onSignedOut = {
+                            // Back to the first screen with nothing behind it. Leaving an
+                            // archive must not leave its screens on the back stack for a
+                            // gesture to walk back into.
+                            navController.navigate(Destination.Onboarding.route) {
+                                popUpTo(navController.graph.id) { inclusive = true }
+                            }
+                        }
+                    )
+                }
+                composable(Destination.AddDocument.route) {
+                    AddDocumentScreen(
+                        onSaved = { storyId ->
+                            navController.navigate(Destination.StoryDetail.of(storyId)) {
+                                popUpTo(Destination.AddDocument.route) { inclusive = true }
+                            }
+                        }
+                    )
+                }
                 composable(Destination.Librarian.route) {
                     LibrarianScreen(
                         onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) }
@@ -244,9 +399,20 @@ fun ArvAppRoot() {
                     route = Destination.StoryDetail.route,
                     arguments = listOf(navArgument("storyId") { type = NavType.StringType })
                 ) {
-                    StoryDetailScreen()
+                    StoryDetailScreen(
+                        onEdit = { navController.navigate(Destination.EditStory.of(it)) }
+                    )
+                }
+                composable(
+                    route = Destination.EditStory.route,
+                    arguments = listOf(navArgument("storyId") { type = NavType.StringType })
+                ) {
+                    com.arv.app.feature.story.EditStoryScreen(
+                        onDone = { navController.popBackStack() }
+                    )
                 }
             }
         }
+    }
     }
 }

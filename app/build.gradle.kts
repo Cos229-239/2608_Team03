@@ -21,6 +21,15 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // The exported schemas ride along inside the androidTest APK, which is what lets
+    // MigrationTestHelper open a real version 1 database and run the migration against it
+    // rather than taking the migration's word for it.
+    sourceSets {
+        getByName("androidTest") {
+            assets.srcDirs(files("$projectDir/schemas"))
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -86,6 +95,7 @@ dependencies {
 
     implementation(libs.coil.compose)
     implementation(libs.okhttp)
+    implementation(libs.vosk.android)
     implementation(libs.mlkit.text.recognition)
 
     // Firebase: safe to compile against before google-services.json exists.
@@ -96,7 +106,11 @@ dependencies {
     implementation(libs.firebase.functions)
 
     testImplementation(libs.junit)
+    // Android ships org.json, the JVM does not. Without this the import parser could only
+    // be tested on a device, which is why it had no tests at all.
+    testImplementation(libs.json)
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
 }
