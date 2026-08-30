@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -385,6 +386,10 @@ private fun HomeHeader(
         Modifier
             .fillMaxWidth()
             .background(ArvHero.container)
+            // The panel paints up under the clock on purpose; the words do not go
+            // there. Ordering matters: background first, inset second, so the color is
+            // edge-to-edge and the content is not.
+            .statusBarsPadding()
             .padding(top = 8.dp, bottom = 18.dp)
     ) {
         Row(

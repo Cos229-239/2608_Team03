@@ -21,11 +21,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -100,6 +100,11 @@ sealed class Destination(val route: String) {
     data object ReviewSave : Destination("review")
     data object StoryDetail : Destination("story/{storyId}") {
         fun of(storyId: String) = "story/$storyId"
+    }
+
+    /** Fixing what was typed, never what was said. Reached from a story's page. */
+    data object EditStory : Destination("editStory/{storyId}") {
+        fun of(storyId: String) = "editStory/$storyId"
     }
 
     /** Screen 19. One person, their voice meter, and everything they touch in the archive. */
@@ -181,17 +186,21 @@ fun ArvAppRoot() {
             val onOnboarding =
                 currentDestination?.route == Destination.Onboarding.route
             if (!onATab && !onOnboarding) {
-                TopAppBar(
-                    title = {},
-                    navigationIcon = {
-                        IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back"
-                            )
-                        }
+                // Just the arrow. This was a full app bar with an empty title, which
+                // painted a wide band across the top of every page to hold one icon;
+                // the arrow is the affordance and the band was furniture.
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                ) {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
                     }
-                )
+                }
             }
             }
         },
@@ -385,7 +394,17 @@ fun ArvAppRoot() {
                     route = Destination.StoryDetail.route,
                     arguments = listOf(navArgument("storyId") { type = NavType.StringType })
                 ) {
-                    StoryDetailScreen()
+                    StoryDetailScreen(
+                        onEdit = { navController.navigate(Destination.EditStory.of(it)) }
+                    )
+                }
+                composable(
+                    route = Destination.EditStory.route,
+                    arguments = listOf(navArgument("storyId") { type = NavType.StringType })
+                ) {
+                    com.arv.app.feature.story.EditStoryScreen(
+                        onDone = { navController.popBackStack() }
+                    )
                 }
             }
         }

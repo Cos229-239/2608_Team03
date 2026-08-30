@@ -20,6 +20,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -124,6 +125,7 @@ class StoryDetailViewModel(
  */
 @Composable
 fun StoryDetailScreen(
+    onEdit: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: StoryDetailViewModel = viewModel()
 ) {
@@ -157,10 +159,19 @@ fun StoryDetailScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text(
-                story?.title ?: "Loading",
-                style = MaterialTheme.typography.headlineMedium
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    story?.title ?: "Loading",
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                // Shown only to somebody canEdit would let through; the repository
+                // checks again on save, so hiding this is courtesy, not the lock.
+                val s = story
+                if (s != null && MemoryAccess.canEdit(s, ServiceLocator.viewer)) {
+                    TextButton(onClick = { onEdit(s.storyId) }) { Text("Edit") }
+                }
+            }
         }
         item {
             Text(
