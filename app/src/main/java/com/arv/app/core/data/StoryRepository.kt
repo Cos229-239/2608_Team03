@@ -449,6 +449,21 @@ class StoryRepository(
      * the UI: a play button that cannot play should not be offered in the first place. The
      * existence check touches the disk, which is why this runs off the main thread.
      */
+    /** storyId to its first image file, for cards that should show the photograph. */
+    fun observeImagePaths(familyId: String): Flow<Map<String, String>> =
+        db.assetDao().observeForFamily(familyId)
+            .map { rows ->
+                rows.filter {
+                    (it.type == AssetType.IMAGE || it.mimeType.startsWith("image/")) &&
+                        File(it.localPath).exists()
+                }
+                    .groupBy { it.storyId }
+                    .mapValues { entry -> entry.value.first().localPath }
+            }
+
+    /** Every asset one story holds, live. */
+    fun observeAssets(storyId: String) = db.assetDao().observeForStory(storyId)
+
     fun observeAudioPaths(familyId: String): Flow<Map<String, String>> =
         db.assetDao().observeForFamily(familyId)
             .map { rows ->

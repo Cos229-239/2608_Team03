@@ -104,6 +104,8 @@ data class FeedUiState(
     val loading: Boolean = true,
     /** storyId to its audio file, present only for stories that can actually be played. */
     val audioPaths: Map<String, String> = emptyMap(),
+    /** storyId to its photograph, for cards about pictures rather than voices. */
+    val imagePaths: Map<String, String> = emptyMap(),
     val lenses: List<FeedLens> = listOf(FeedLens.Whole),
     val lens: FeedLens = FeedLens.Whole
 ) {
@@ -160,14 +162,16 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 )
             },
             repo.observePendingSyncCount(),
-            repo.observeAudioPaths(familyId)
-        ) { (posts, people, lensPair), pending, paths ->
+            repo.observeAudioPaths(familyId),
+            repo.observeImagePaths(familyId)
+        ) { (posts, people, lensPair), pending, paths, images ->
             FeedUiState(
                 posts = posts,
                 people = people,
                 pendingSyncCount = pending,
                 loading = false,
                 audioPaths = paths,
+                imagePaths = images,
                 lenses = lensPair.first,
                 lens = lensPair.second
             )
@@ -286,6 +290,7 @@ fun FeedScreen(
                     FeaturedStoryCard(
                         story = story,
                         audioPath = path,
+                        imagePath = state.imagePaths[story.storyId],
                         isPlaying = playState.isPlaying && playState.storyId == story.storyId,
                         onTogglePlay = {
                             path?.let { viewModel.playback.toggle(story.storyId, it) }
@@ -570,6 +575,7 @@ private fun HomeHeader(
 private fun FeaturedStoryCard(
     story: Story,
     audioPath: String?,
+    imagePath: String? = null,
     isPlaying: Boolean,
     onTogglePlay: () -> Unit,
     onClick: () -> Unit,
@@ -629,6 +635,18 @@ private fun FeaturedStoryCard(
                     color = ArvHero.on.copy(alpha = 0.85f)
                 )
                 Spacer(Modifier.height(8.dp))
+                // A photograph story shows its photograph. Player chrome on a picture
+                // put a play button on the first card people see that could never play
+                // anything, which reads as broken rather than as a photo.
+                if (story.durationMs == 0L && imagePath != null) {
+                    coil.compose.AsyncImage(
+                        model = java.io.File(imagePath),
+                        contentDescription = story.title,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                    )
+                } else {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -669,6 +687,7 @@ private fun FeaturedStoryCard(
                             color = ArvHero.on
                         )
                     }
+                }
                 }
             }
         }

@@ -93,16 +93,16 @@ class StoryDetailViewModel(
         flow { emit(repo.primaryAsset(storyId)?.localPath) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** The photograph or scanned page itself, when this record is one. */
-    val imagePath: StateFlow<String?> =
-        flow {
-            val asset = repo.primaryAsset(storyId)
-            emit(asset?.localPath?.takeIf {
-                asset.type == com.arv.app.core.model.AssetType.IMAGE ||
-                    asset.mimeType.startsWith("image/")
-            })
-        }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    /** Every photograph or scanned page this record holds, in the order they arrived. */
+    val imagePaths: StateFlow<List<String>> =
+        repo.observeAssets(storyId)
+            .map { assets ->
+                assets.filter {
+                    it.type == com.arv.app.core.model.AssetType.IMAGE ||
+                        it.mimeType.startsWith("image/")
+                }.map { it.localPath }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val playback = ServiceLocator.playback
     val playbackStoryId: String get() = storyId
@@ -247,15 +247,17 @@ fun StoryDetailScreen(
             // A photograph record shows the photograph. The page rendered every field
             // about the picture and never the picture, which made filing one feel like
             // it had lost the thing it was filing.
-            val image by viewModel.imagePath.collectAsStateWithLifecycle()
-            image?.let { file ->
-                coil.compose.AsyncImage(
-                    model = java.io.File(file),
-                    contentDescription = story?.title,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                )
+            val images by viewModel.imagePaths.collectAsStateWithLifecycle()
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                images.forEach { file ->
+                    coil.compose.AsyncImage(
+                        model = java.io.File(file),
+                        contentDescription = story?.title,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                    )
+                }
             }
         }
 
