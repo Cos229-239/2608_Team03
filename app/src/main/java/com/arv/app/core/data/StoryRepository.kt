@@ -539,6 +539,34 @@ class StoryRepository(
     }
 
     /**
+     * Removes a story from the archive: the row, its assets, its transcript, and the
+     * files on disk. Permission-checked with the same canEdit rule as editing, because
+     * deleting is the strongest edit there is. The recording bytes are erased last, after
+     * the database writes succeed, so a failure can never leave a listed story whose
+     * audio is already gone.
+     */
+    suspend fun deleteStory(storyId: String, viewer: Viewer): Boolean {
+        val entity = db.storyDao().observeById(storyId).first() ?: return false
+        if (!MemoryAccess.canEdit(entity.toDomain(), viewer)) return false
+
+        val assets = db.assetDao().observeForStory(storyId).first()
+        db.withTransaction {
+            for (asset in assets) {
+                db.transcriptDao().clearForAsset(asset.assetId)
+            }
+            db.assetDao().deleteForStory(storyId)
+            db.storyDao().delete(entity)
+        }
+        for (asset in assets) {
+            runCatching {
+                val f = File(asset.localPath)
+                if (f.exists()) f.delete()
+            }
+        }
+        return true
+    }
+
+    /**
      * Rewrites a story's details, if this viewer may.
      *
      * The permission check lives here, not on the screen, for the same reason search's

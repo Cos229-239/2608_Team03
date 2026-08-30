@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -120,6 +121,13 @@ class EditStoryViewModel(
 
     private fun update(block: (EditStoryUiState) -> EditStoryUiState) {
         _state.value = block(_state.value)
+    }
+
+    fun delete() {
+        viewModelScope.launch {
+            val ok = repo.deleteStory(storyId, ServiceLocator.viewer)
+            if (ok) _state.value = _state.value.copy(done = true)
+        }
     }
 
     fun save() {
@@ -326,6 +334,46 @@ fun EditStoryScreen(
                 enabled = state.canSave && state.loaded,
                 modifier = Modifier.fillMaxWidth()
             ) { Text(if (state.saving) "Saving" else "Save changes") }
+        }
+
+        item {
+            // Deleting is the strongest edit, so it lives here with the other edits,
+            // behind a question that says exactly what will be lost.
+            var confirmDelete by androidx.compose.runtime.remember {
+                androidx.compose.runtime.mutableStateOf(false)
+            }
+            androidx.compose.material3.TextButton(
+                onClick = { confirmDelete = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "Delete this story",
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            if (confirmDelete) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { confirmDelete = false },
+                    title = { Text("Delete this story?") },
+                    text = {
+                        Text(
+                            "The recording, the transcript, and everything about it " +
+                                "are erased. There is no undo."
+                        )
+                    },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(onClick = {
+                            confirmDelete = false
+                            viewModel.delete()
+                        }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                    },
+                    dismissButton = {
+                        androidx.compose.material3.TextButton(onClick = { confirmDelete = false }) {
+                            Text("Keep it")
+                        }
+                    }
+                )
+            }
         }
     }
 }

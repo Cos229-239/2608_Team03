@@ -199,6 +199,11 @@ interface AssetDao {
 
     @Upsert
     suspend fun upsert(asset: AssetEntity)
+
+    /** Deleting a story takes its asset rows with it; orphaned rows would point at
+     *  files the delete already erased. */
+    @Query("DELETE FROM assets WHERE storyId = :storyId")
+    suspend fun deleteForStory(storyId: String)
 }
 
 @Dao
