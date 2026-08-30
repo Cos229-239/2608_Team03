@@ -82,7 +82,10 @@ data class ReviewSaveUiState(
      * including the person who just recorded it. Block the save rather than lose it.
      */
     val canSave: Boolean
-        get() = !saving && !(visibility == Visibility.BRANCH && branchRootPersonId == null)
+        get() =
+            !saving &&
+                    eraError == null &&
+                    !(visibility == Visibility.BRANCH && branchRootPersonId == null)
 }
 
 class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
@@ -113,23 +116,45 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
 
     fun onTitle(v: String) { _state.value = _state.value.copy(title = v) }
     fun onEra(v: String) {
-        val years = Regex("\\d{4}")
-            .findAll(v)
+        val trimmed = v.trim()
+
+        if (trimmed.isEmpty()) {
+            _state.value = _state.value.copy(
+                eraText = v,
+                eraUnknown = false,
+                eraError = null
+            )
+            return
+        }
+
+        val yearPattern = Regex("""\d{4}""")
+        val years = yearPattern
+            .findAll(trimmed)
             .map { it.value.toInt() }
             .toList()
 
+        val validFormat = when {
+            trimmed.matches(Regex("""\d{4}""")) -> true
+            trimmed.matches(Regex("""\d{4}\s*(to|-|–)\s*\d{4}""")) -> true
+            else -> false
+        }
+
         val currentYear = java.time.Year.now().value
 
-        val hasFutureYear = years.any { it > currentYear }
+        val error = when {
+            !validFormat ->
+                "Enter a valid year, such as 1953, or a range such as 1953 to 1964."
+
+            years.any { it > currentYear } ->
+                "The year cannot be in the future."
+
+            else -> null
+        }
 
         _state.value = _state.value.copy(
             eraText = v,
             eraUnknown = false,
-            eraError = if (hasFutureYear) {
-                "The year cannot be in the future."
-            } else {
-                null
-            }
+            eraError = error
         )
     }
     fun onPlace(v: String) { _state.value = _state.value.copy(place = v) }
@@ -171,22 +196,33 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
         val s = _state.value
         if (s.saving) return
 
-        val years = if (s.eraUnknown) {
-            emptyList()
-        } else {
-            Regex("\\d{4}")
-                .findAll(s.eraText)
+        if (!s.eraUnknown) {
+            val trimmedEra = s.eraText.trim()
+
+            val validFormat =
+                trimmedEra.matches(Regex("""\d{4}""")) ||
+                        trimmedEra.matches(Regex("""\d{4}\s*(to|-|–)\s*\d{4}"""))
+
+            if (!validFormat) {
+                _state.value = s.copy(
+                    eraError = "Enter a valid year, such as 1953, or a range such as 1953 to 1964."
+                )
+                return
+            }
+
+            val years = Regex("""\d{4}""")
+                .findAll(trimmedEra)
                 .map { it.value.toInt() }
                 .toList()
-        }
 
-        val currentYear = java.time.Year.now().value
+            val currentYear = java.time.Year.now().value
 
-        if (years.any { it > currentYear }) {
-            _state.value = s.copy(
-                eraError = "The year cannot be in the future."
-            )
-            return
+            if (years.any { it > currentYear }) {
+                _state.value = s.copy(
+                    eraError = "The year cannot be in the future."
+                )
+                return
+            }
         }
 
         _state.value = s.copy(saving = true)
