@@ -1,9 +1,13 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.arv.app.feature.record
 
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -337,7 +341,10 @@ fun ReviewSaveScreen(
 
         item { SectionLabel("Whose voice is this?") }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 people.forEach { person ->
                     FilterChip(
                         selected = person.personId in state.narratorIds,
@@ -407,7 +414,10 @@ fun ReviewSaveScreen(
 
         item { SectionLabel("Who can see this") }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 VisibilityChip(state, viewModel, Visibility.FAMILY, "Whole family")
                 if (branchChoices.isNotEmpty()) {
                     VisibilityChip(state, viewModel, Visibility.BRANCH, "One side")
@@ -436,7 +446,10 @@ fun ReviewSaveScreen(
                 )
             }
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                     branchChoices.forEach { ancestor ->
                         FilterChip(
                             selected = state.branchRootPersonId == ancestor.personId,
@@ -467,7 +480,10 @@ fun ReviewSaveScreen(
 
         item { SectionLabel("What the librarian may do with it") }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 PolicyChip(state, viewModel, AiUsePolicy.SUMMARY_OK, "Summarize")
                 PolicyChip(state, viewModel, AiUsePolicy.QUOTE_ONLY, "Quote only")
                 PolicyChip(state, viewModel, AiUsePolicy.NONE, "Never use it")

@@ -31,6 +31,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -89,6 +91,17 @@ class StoryDetailViewModel(
     /** Where the recording lives on disk. Null until loaded; "seed://" for demo items. */
     val audioPath: StateFlow<String?> =
         flow { emit(repo.primaryAsset(storyId)?.localPath) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** The photograph or scanned page itself, when this record is one. */
+    val imagePath: StateFlow<String?> =
+        flow {
+            val asset = repo.primaryAsset(storyId)
+            emit(asset?.localPath?.takeIf {
+                asset.type == com.arv.app.core.model.AssetType.IMAGE ||
+                    asset.mimeType.startsWith("image/")
+            })
+        }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val playback = ServiceLocator.playback
@@ -227,6 +240,22 @@ fun StoryDetailScreen(
                         AssistChip(onClick = {}, label = { Text(tag) })
                     }
                 }
+            }
+        }
+
+        item {
+            // A photograph record shows the photograph. The page rendered every field
+            // about the picture and never the picture, which made filing one feel like
+            // it had lost the thing it was filing.
+            val image by viewModel.imagePath.collectAsStateWithLifecycle()
+            image?.let { file ->
+                coil.compose.AsyncImage(
+                    model = java.io.File(file),
+                    contentDescription = story?.title,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                )
             }
         }
 

@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.arv.app.feature.documents
 
 import android.app.Application
@@ -7,6 +9,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -329,7 +333,10 @@ fun AddDocumentScreen(
 
         item { SectionLabel("Which archive") }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 AreaChip(state, viewModel, ArchiveArea.LINEAGE, "Lineage")
                 AreaChip(state, viewModel, ArchiveArea.CULTURE, "Culture")
                 AreaChip(state, viewModel, ArchiveArea.STORIES, "Stories")
@@ -338,7 +345,10 @@ fun AddDocumentScreen(
 
         item { SectionLabel("Who is in it") }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 people.forEach { person ->
                     FilterChip(
                         selected = person.personId in state.subjectPersonIds,
@@ -390,7 +400,10 @@ fun AddDocumentScreen(
 
         item { SectionLabel("Who can see this") }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 VisChip(state, viewModel, Visibility.FAMILY, "Whole family")
                 VisChip(state, viewModel, Visibility.PRIVATE, "Only me")
             }
