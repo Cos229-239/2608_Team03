@@ -165,7 +165,7 @@ fun RecordScreen(
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Text(
-                    "\"What did your mother's kitchen smell like on a Sunday?\"",
+                    "\"What did your grandma's kitchen smell like on a Sunday?\"",
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )

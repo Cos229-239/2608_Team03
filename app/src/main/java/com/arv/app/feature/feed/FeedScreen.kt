@@ -316,7 +316,7 @@ fun FeedScreen(
                     .minByOrNull { it.birthYear ?: Int.MAX_VALUE }
                 PromptCard(
                     askName = target?.shortName() ?: "them",
-                    question = "What did your mother's kitchen smell like on a Sunday?",
+                    question = "What did your grandma's kitchen smell like on a Sunday?",
                     onRecord = onRecord,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
