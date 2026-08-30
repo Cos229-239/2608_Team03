@@ -1,5 +1,6 @@
 package com.arv.app.core.data
 
+import androidx.room.withTransaction
 import com.arv.app.core.ai.Lineage
 import com.arv.app.core.ai.TranscriptionService
 import com.arv.app.core.ai.MemoryAccess
@@ -474,6 +475,26 @@ class StoryRepository(
      * is never at risk from this path: transcription failing loses text, not voice.
      */
     /**
+     * Picks up every transcription the last process left behind.
+     *
+     * A story stuck on RUNNING after a crash stayed "Transcribing" forever, because
+     * nothing ever revisited it: the coroutine that owned it died with the process and
+     * the status pretended otherwise. At launch nothing can actually be running, so
+     * RUNNING resets to PENDING, and if the model is installed the waiting stories go
+     * straight back through it.
+     */
+    suspend fun recoverTranscriptions(familyId: String, transcription: TranscriptionService?): Int {
+        db.storyDao().resetStuckTranscription(familyId)
+        if (transcription == null) return 0
+        return transcribeAwaiting(familyId, transcription)
+    }
+
+    /** One story, retried by hand from its own page. */
+    suspend fun retryTranscription(storyId: String, transcription: TranscriptionService) {
+        transcribeStory(storyId, transcription)
+    }
+
+    /**
      * Every recording saved before the model existed, transcribed now that it does.
      *
      * A story saved with no model stays PENDING on purpose: writing a placeholder and
@@ -638,6 +659,11 @@ class StoryRepository(
             createdAt = now
         )
 
+        // One transaction, because a crash between these writes used to be able to
+        // leave a story with no asset row: a memory the archive lists and can never
+        // play. All four writes land or none do; the audio file itself is already on
+        // disk either way, so nothing here can lose the recording.
+        db.withTransaction {
         db.storyDao().upsert(story)
         db.assetDao().upsert(asset)
 
@@ -661,6 +687,7 @@ class StoryRepository(
                 createdAt = now
             )
         )
+        }
 
         return storyId
     }

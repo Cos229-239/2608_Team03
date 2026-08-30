@@ -31,6 +31,13 @@ class ArvApp : Application() {
         if (familyId != null && userId != null) {
             ServiceLocator.appScope.launch {
                 runCatching { ServiceLocator.storyRepository(this@ArvApp).refreshLineage(familyId, userId) }
+                // Whatever transcription the last run left behind, picked back up. A
+                // crash must cost a retry, never a permanently stuck "Transcribing".
+                runCatching {
+                    ServiceLocator.storyRepository(this@ArvApp).recoverTranscriptions(
+                        familyId, ServiceLocator.transcriptionService(this@ArvApp)
+                    )
+                }
             }
         }
     }

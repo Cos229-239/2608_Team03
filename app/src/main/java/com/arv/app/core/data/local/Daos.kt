@@ -66,6 +66,16 @@ interface StoryDao {
     )
     suspend fun awaitingTranscription(familyId: String): List<StoryEntity>
 
+    /** RUNNING at app start is a lie: nothing survives the process. Back to PENDING so
+     *  the recovery pass picks it up instead of it reading "Transcribing" forever. */
+    @Query(
+        """
+        UPDATE stories SET transcriptStatus = 'PENDING'
+        WHERE familyId = :familyId AND transcriptStatus = 'RUNNING'
+        """
+    )
+    suspend fun resetStuckTranscription(familyId: String): Int
+
     /**
      * Unfiltered. Callers MUST run [com.arv.app.core.ai.MemoryAccess]
      * over the result before anything reaches a screen or a model.

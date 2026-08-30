@@ -116,6 +116,14 @@ class StoryDetailViewModel(
         if (newText.isBlank()) return
         viewModelScope.launch { repo.correctSegment(segmentId, newText.trim()) }
     }
+
+    /** On the app scope: leaving the page must not kill the retry it asked for. */
+    fun retryTranscription() {
+        val service = ServiceLocator.transcriptionService(getApplication()) ?: return
+        ServiceLocator.appScope.launch {
+            runCatching { repo.retryTranscription(storyId, service) }
+        }
+    }
 }
 
 /**
@@ -250,11 +258,16 @@ fun StoryDetailScreen(
                 )
             }
             TranscriptStatus.FAILED -> item {
-                Text(
-                    "Transcription failed. The recording is safe. Only the text is missing.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Transcription failed. The recording is safe. Only the text is missing.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    // Failure used to be a dead end; the only way to retry was noticing
+                    // it worked for newer recordings and wondering why not this one.
+                    TextButton(onClick = viewModel::retryTranscription) { Text("Try again") }
+                }
             }
             TranscriptStatus.NONE -> item {
                 Text(
