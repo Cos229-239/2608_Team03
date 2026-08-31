@@ -63,6 +63,7 @@ import com.arv.app.feature.settings.SettingsScreen
 import com.arv.app.feature.story.StoryDetailScreen
 import com.arv.app.feature.timeline.TimelineScreen
 import com.arv.app.feature.promptlibrary.PromptLibraryScreen
+import com.arv.app.ui.theme.ArvHero
 
 sealed class Destination(val route: String) {
     /** Screen 01. Only reachable before an archive exists on this phone. */
