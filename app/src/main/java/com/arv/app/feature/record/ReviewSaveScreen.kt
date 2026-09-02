@@ -68,6 +68,7 @@ data class ReviewSaveUiState(
     val narratorIds: List<String> = emptyList(),
     val eraText: String = "",
     val eraUnknown: Boolean = false,
+    val eraError: String? = null,
     val place: String = "",
     val tagText: String = "",
     val visibility: Visibility = Visibility.FAMILY,
@@ -85,7 +86,10 @@ data class ReviewSaveUiState(
      * including the person who just recorded it. Block the save rather than lose it.
      */
     val canSave: Boolean
-        get() = !saving && !(visibility == Visibility.BRANCH && branchRootPersonId == null)
+        get() =
+            !saving &&
+                    eraError == null &&
+                    !(visibility == Visibility.BRANCH && branchRootPersonId == null)
 }
 
 class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
@@ -115,7 +119,50 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun onTitle(v: String) { _state.value = _state.value.copy(title = v) }
-    fun onEra(v: String) { _state.value = _state.value.copy(eraText = v, eraUnknown = false) }
+    fun onEra(v: String) {
+        val trimmed = v.trim()
+
+        if (trimmed.isEmpty()) {
+            _state.value = _state.value.copy(
+                eraText = v,
+                eraUnknown = false,
+                eraError = null
+            )
+            return
+        }
+
+        val validFormat =
+            trimmed.matches(Regex("""\d{4}""")) ||
+                    trimmed.matches(Regex("""\d{4}\s*(to|-|–)\s*\d{4}"""))
+
+        if (!validFormat) {
+            _state.value = _state.value.copy(
+                eraText = v,
+                eraUnknown = false,
+                eraError = "Enter a valid year, such as 1953, or a range such as 1953 to 1964."
+            )
+            return
+        }
+
+        val years = Regex("""\d{4}""")
+            .findAll(trimmed)
+            .map { it.value.toInt() }
+            .toList()
+
+        val currentYear = java.time.Year.now().value
+
+        val error = if (years.any { it > currentYear }) {
+            "The year cannot be in the future."
+        } else {
+            null
+        }
+
+        _state.value = _state.value.copy(
+            eraText = v,
+            eraUnknown = false,
+            eraError = error
+        )
+    }
     fun onPlace(v: String) { _state.value = _state.value.copy(place = v) }
     fun onTags(v: String) { _state.value = _state.value.copy(tagText = v) }
     fun onVisibility(v: Visibility) {
@@ -130,7 +177,11 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleEraUnknown() {
         val s = _state.value
-        _state.value = s.copy(eraUnknown = !s.eraUnknown, eraText = if (!s.eraUnknown) "" else s.eraText)
+        _state.value = s.copy(
+            eraUnknown = !s.eraUnknown,
+            eraText = if (!s.eraUnknown) "" else s.eraText,
+            eraError = null
+        )
     }
 
     fun toggleNarrator(personId: String) {
@@ -150,7 +201,38 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
     fun save(localAudioPath: String, durationMs: Long, nowMillis: Long) {
         val s = _state.value
         if (s.saving) return
+
+        if (!s.eraUnknown) {
+            val trimmedEra = s.eraText.trim()
+
+            val validFormat =
+                trimmedEra.matches(Regex("""\d{4}""")) ||
+                        trimmedEra.matches(Regex("""\d{4}\s*(to|-|–)\s*\d{4}"""))
+
+            if (!validFormat) {
+                _state.value = s.copy(
+                    eraError = "Enter a valid year, such as 1953, or a range such as 1953 to 1964."
+                )
+                return
+            }
+
+            val years = Regex("""\d{4}""")
+                .findAll(trimmedEra)
+                .map { it.value.toInt() }
+                .toList()
+
+            val currentYear = java.time.Year.now().value
+
+            if (years.any { it > currentYear }) {
+                _state.value = s.copy(
+                    eraError = "The year cannot be in the future."
+                )
+                return
+            }
+        }
+
         _state.value = s.copy(saving = true)
+
 
         val (start, end, precision) =
             if (s.eraUnknown) Triple(null, null, EraPrecision.UNKNOWN) else parseEra(s.eraText)
@@ -328,15 +410,29 @@ fun ReviewSaveScreen(
                 }
             }
         }
-
         item {
-            OutlinedTextField(
-                value = state.title,
-                onValueChange = viewModel::onTitle,
-                label = { Text("Title") },
-                placeholder = { Text("Sunday kitchen, Bellwood Avenue") },
-                modifier = Modifier.fillMaxWidth()
-            )
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = state.eraText,
+                    onValueChange = viewModel::onEra,
+                    enabled = !state.eraUnknown,
+                    isError = state.eraError != null,
+                    label = { Text("Year or range") },
+                    placeholder = { Text("1958 to 1964") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            state.eraError?.let { error ->
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
 
         item { SectionLabel("Whose voice is this?") }
