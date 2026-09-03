@@ -45,7 +45,7 @@ class LocalLibrarianService(
         if (scored.isEmpty()) return LibrarianOutcome.NoMatches
 
         val (usable, withheldCount) =
-            MemoryAccess.partition(scored.map { it.first }, viewer, scope)
+            MemoryAccess.partition(scored.map { it.first }, viewer, scope, people)
         if (usable.isEmpty()) return LibrarianOutcome.AllWithheld(withheldCount)
 
         val byScore = usable.sortedWith(

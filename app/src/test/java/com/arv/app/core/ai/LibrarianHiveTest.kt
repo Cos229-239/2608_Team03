@@ -87,6 +87,51 @@ class LibrarianHiveTest {
         segmentsForStory = { id -> segments[id].orEmpty() }
     )
 
+    /**
+     * A relative who did not record the story and is not the narrator. Consent has to be
+     * decided for them, not assumed.
+     */
+    private val cousin = Viewer(userId = "u_theo", role = MemberRole.OWNER)
+
+    // --- consent through the hive ---
+
+    @Test
+    fun `an undecided narrator withholds the story from everyone but its creator`() = runBlocking {
+        // Ruth has no consent decision on file (consentGranted defaults to false) and
+        // u_theo neither recorded the levee story nor is Ruth. The screens already
+        // withhold it; the hive has to reach the same answer or the librarian becomes
+        // the one surface where consent does not apply.
+        val outcome = hive(listOf(levee, shipyard))
+            .ask("What did Ruth say about the flood?", LibrarianScope.FAMILY, cousin, "fam")
+
+        assertTrue(
+            "The hive answered from a story whose narrator has no consent decision",
+            outcome is LibrarianOutcome.AllWithheld
+        )
+    }
+
+    @Test
+    fun `the creator still reads their own recording while consent is pending`() = runBlocking {
+        // Whoever holds the recording holds the job of getting the consent, so shutting
+        // them out of it would make that job impossible.
+        val outcome = hive(listOf(levee, shipyard))
+            .ask("What did Ruth say about the flood?", LibrarianScope.FAMILY, owner, "fam")
+
+        val answered = outcome as LibrarianOutcome.Answered
+        assertEquals("s_levee", answered.answer.sources.first().storyId)
+    }
+
+    @Test
+    fun `a recorded consent decision lets the story through to the family`() = runBlocking {
+        val outcome = hive(
+            listOf(levee, shipyard),
+            people = listOf(ruth.copy(consentGranted = true), ray)
+        ).ask("What did Ruth say about the flood?", LibrarianScope.FAMILY, cousin, "fam")
+
+        val answered = outcome as LibrarianOutcome.Answered
+        assertEquals("s_levee", answered.answer.sources.first().storyId)
+    }
+
     // --- routing ---
 
     @Test
