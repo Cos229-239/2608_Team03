@@ -138,6 +138,11 @@ object MemoryAccess {
      * and the subject would have no standing to remove it.
      */
     fun canEdit(story: Story, viewer: Viewer): Boolean {
+        // The family boundary, before anything else, exactly as [canRead] checks it.
+        // Reading somebody else's archive was closed off; editing and deleting it was
+        // left open, which is the more dangerous half of the same hole.
+        if (story.familyId != viewer.familyId) return false
+
         if (story.area == ArchiveArea.HEALTH) {
             val isSubject = story.subjectPersonIds.any { it in viewer.personIds }
             return isSubject || story.createdBy == viewer.userId

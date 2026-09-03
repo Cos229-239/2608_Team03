@@ -11,6 +11,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -62,7 +63,7 @@ class EditStoryViewModel(
     savedStateHandle: SavedStateHandle
 ) : AndroidViewModel(app) {
 
-    private val storyId: String = savedStateHandle["storyId"] ?: ""
+    val storyId: String = savedStateHandle["storyId"] ?: ""
     private val repo = ServiceLocator.storyRepository(app)
     private val familyId = ServiceLocator.familyId
 
@@ -169,6 +170,7 @@ class EditStoryViewModel(
  */
 @Composable
 fun EditStoryScreen(
+    onAddRecording: (String) -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: EditStoryViewModel = viewModel()
@@ -194,6 +196,15 @@ fun EditStoryScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item { Text("Edit story", style = MaterialTheme.typography.headlineMedium) }
+
+        // A story is not always born as a recording. A photograph goes in first and the
+        // voice explaining it arrives later, so the recorder has to be reachable from
+        // here and not only from the plus button.
+        item {
+            OutlinedButton(onClick = { onAddRecording(viewModel.storyId) }) {
+                Text("Add a recording")
+            }
+        }
 
         item {
             OutlinedTextField(

@@ -50,6 +50,7 @@ import com.arv.app.feature.documents.AddDocumentScreen
 import com.arv.app.feature.documents.DocumentsScreen
 import com.arv.app.feature.feed.FeedScreen
 import com.arv.app.feature.librarian.LibrarianScreen
+import com.arv.app.feature.record.AttachRecordingScreen
 import com.arv.app.feature.onboarding.OnboardingScreen
 import com.arv.app.feature.people.AddPersonScreen
 import com.arv.app.feature.people.PeopleScreen
@@ -99,8 +100,23 @@ sealed class Destination(val route: String) {
     data object Search : Destination("search")
     data object Record : Destination("record")
 
+    /**
+     * Recording meant for a story that already exists, rather than a new one.
+     *
+     * A photograph often goes in years before the voice that explains it, so the
+     * recorder has to be reachable from a story as well as from the plus button.
+     */
+    data object RecordForStory : Destination("record/{storyId}") {
+        fun of(storyId: String) = "record/$storyId"
+    }
+
     /** Screen 05. Reads the finished recording from [RecordingBus]. */
     data object ReviewSave : Destination("review")
+
+    /** The same draft playback as review, but it attaches instead of creating. */
+    data object AttachRecording : Destination("attach/{storyId}") {
+        fun of(storyId: String) = "attach/$storyId"
+    }
     data object StoryDetail : Destination("story/{storyId}") {
         fun of(storyId: String) = "story/$storyId"
     }
@@ -129,7 +145,7 @@ private val leftTabs = listOf(
 )
 private val rightTabs = listOf(
     Tab(Destination.Timeline, Icons.Outlined.Schedule, R.string.tab_timeline),
-    Tab(Destination.PromptLibrary, Icons.Outlined.MenuBook, R.string.tab_librarian)
+    Tab(Destination.Librarian, Icons.Outlined.MenuBook, R.string.tab_librarian)
 )
 private val tabs = leftTabs + rightTabs
 
@@ -359,7 +375,9 @@ fun ArvAppRoot() {
                 }
                 composable(Destination.Librarian.route) {
                     LibrarianScreen(
-                        onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) }
+                        onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) },
+                        onOpenPrompts = { navController.navigate(Destination.PromptLibrary.route) },
+                        onOpenSearch = { navController.navigate(Destination.Search.route) }
                     )
                 }
                 composable(Destination.PromptLibrary.route){
@@ -374,6 +392,43 @@ fun ArvAppRoot() {
                     RecordScreen(
                         onDone = { navController.navigate(Destination.ReviewSave.route) }
                     )
+                }
+                composable(
+                    route = Destination.RecordForStory.route,
+                    arguments = listOf(navArgument("storyId") { type = NavType.StringType })
+                ) { entry ->
+                    val storyId = entry.arguments?.getString("storyId").orEmpty()
+                    RecordScreen(
+                        onDone = { navController.navigate(Destination.AttachRecording.of(storyId)) }
+                    )
+                }
+                composable(
+                    route = Destination.AttachRecording.route,
+                    arguments = listOf(navArgument("storyId") { type = NavType.StringType })
+                ) { entry ->
+                    val storyId = entry.arguments?.getString("storyId").orEmpty()
+                    val recording by RecordingBus.state.collectAsStateWithLifecycle()
+                    val path = recording.outputPath
+                    if (path == null) {
+                        LaunchedEffect(Unit) { navController.popBackStack() }
+                    } else {
+                        AttachRecordingScreen(
+                            storyId = storyId,
+                            localAudioPath = path,
+                            durationMs = recording.elapsedMs,
+                            nowMillis = System.currentTimeMillis(),
+                            onAttached = {
+                                RecordingBus.reset()
+                                navController.navigate(Destination.StoryDetail.of(storyId)) {
+                                    popUpTo(Destination.Family.route)
+                                }
+                            },
+                            onCancel = {
+                                RecordingBus.reset()
+                                navController.popBackStack()
+                            }
+                        )
+                    }
                 }
                 composable(Destination.ReviewSave.route) {
                     val recording by RecordingBus.state.collectAsStateWithLifecycle()
@@ -409,6 +464,7 @@ fun ArvAppRoot() {
                     arguments = listOf(navArgument("storyId") { type = NavType.StringType })
                 ) {
                     com.arv.app.feature.story.EditStoryScreen(
+                        onAddRecording = { navController.navigate(Destination.RecordForStory.of(it)) },
                         onDone = { navController.popBackStack() }
                     )
                 }

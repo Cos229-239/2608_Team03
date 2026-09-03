@@ -127,7 +127,7 @@ class StoryDetailViewModel(
      */
     fun correct(segmentId: Long, newText: String) {
         if (newText.isBlank()) return
-        viewModelScope.launch { repo.correctSegment(segmentId, newText.trim()) }
+        viewModelScope.launch { repo.correctSegment(segmentId, viewer, newText.trim()) }
     }
 
     /** On the app scope: leaving the page must not kill the retry it asked for. */

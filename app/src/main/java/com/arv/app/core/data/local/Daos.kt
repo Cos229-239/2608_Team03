@@ -242,6 +242,17 @@ interface TranscriptDao {
     )
     suspend fun correct(segmentId: Long, newText: String)
 
+    /** The story a line belongs to, so a correction can be checked against it. */
+    @Query(
+        """
+        SELECT s.* FROM stories s
+        JOIN assets a ON a.storyId = s.storyId
+        JOIN transcript_segments t ON t.assetId = a.assetId
+        WHERE t.id = :segmentId
+        """
+    )
+    suspend fun storyForSegment(segmentId: Long): StoryEntity?
+
     @Query("DELETE FROM transcript_segments WHERE assetId = :assetId")
     suspend fun clearForAsset(assetId: String)
 }
