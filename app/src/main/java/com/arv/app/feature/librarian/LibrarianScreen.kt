@@ -83,6 +83,8 @@ class LibrarianViewModel(app: Application) : AndroidViewModel(app) {
 @Composable
 fun LibrarianScreen(
     onOpenStory: (String) -> Unit,
+    onOpenPrompts: () -> Unit,
+    onOpenSearch: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: LibrarianViewModel = viewModel()
 ) {
@@ -131,7 +133,15 @@ fun LibrarianScreen(
         }
 
         item {
-            AssistChip(onClick = viewModel::ask, label = { Text("Ask") })
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AssistChip(onClick = viewModel::ask, label = { Text("Ask") })
+                // The two other ways into the archive live here because this tab is
+                // where someone lands when they want to find something and have not
+                // decided how. Browsing prompts is for when you have no question yet;
+                // searching is for when you already know the words.
+                AssistChip(onClick = onOpenPrompts, label = { Text("Browse prompts") })
+                AssistChip(onClick = onOpenSearch, label = { Text("Search words") })
+            }
         }
 
         if (state.asking) {
