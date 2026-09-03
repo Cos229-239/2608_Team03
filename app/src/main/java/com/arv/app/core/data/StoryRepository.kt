@@ -479,8 +479,22 @@ class StoryRepository(
             }
             .flowOn(Dispatchers.IO)
 
-    suspend fun correctSegment(segmentId: Long, newText: String) =
+    /**
+     * Correcting a line is editing the memory, so it answers to [MemoryAccess.canEdit]
+     * like every other edit does.
+     *
+     * Read access is not write access to what somebody is recorded as having said. This
+     * matters most for health recordings, where the subject controls the record: gating
+     * the title while leaving the words open would enforce that rule everywhere except
+     * the place it means something. The correction is also marked human verified, so an
+     * unchecked one launders a stranger's words into the speaker's own.
+     */
+    suspend fun correctSegment(segmentId: Long, viewer: Viewer, newText: String): Boolean {
+        val story = db.transcriptDao().storyForSegment(segmentId) ?: return false
+        if (!MemoryAccess.canEdit(story.toDomain(), viewer)) return false
         db.transcriptDao().correct(segmentId, newText)
+        return true
+    }
 
     /**
      * AI-3, local edition. Runs the transcription service against a story's audio and
@@ -614,6 +628,13 @@ class StoryRepository(
         if (!MemoryAccess.canEdit(entity.toDomain(), viewer)) return false
         if (visibility == Visibility.BRANCH && branchRootPersonId == null) return false
 
+        // Visibility runs PRIVATE, SELECTED, BRANCH, FAMILY, narrowest to widest.
+        // A keeper may fix a title or a date on somebody else's memory. Deciding that
+        // more people may read it is the creator's call and nobody else's.
+        if (visibility.ordinal > entity.visibility.ordinal && entity.createdBy != viewer.userId) {
+            return false
+        }
+
         val era = if (eraUnknown) EraText.Parsed(null, null, EraPrecision.UNKNOWN)
         else EraText.parse(eraText)
 
@@ -641,6 +662,77 @@ class StoryRepository(
      * standing in a kitchen with someone's grandmother and cannot wait on a network call,
      * and the recording must be safe the instant they tap save.
      */
+    /**
+     * Attach a recording to a story that already exists.
+     *
+     * A story is not always born as a recording. A photograph goes in first, and the
+     * voice that explains it arrives later, sometimes years later. Without this the only
+     * way to hold both was two separate stories that happen to share a title, which is
+     * exactly the kind of bookkeeping a family should not have to do.
+     *
+     * The story keeps its own title, era, visibility and policy. Those were decided when
+     * it was made and adding audio is not a reason to reopen them. Returns the new asset
+     * id, or null when the viewer may not edit this story or it no longer exists.
+     */
+    suspend fun addRecordingToStory(
+        storyId: String,
+        viewer: Viewer,
+        localAudioPath: String,
+        durationMs: Long,
+        now: Long
+    ): String? {
+        val entity = db.storyDao().observeById(storyId).first() ?: return null
+        if (!MemoryAccess.canEdit(entity.toDomain(), viewer)) return null
+
+        val assetId = "a_" + UUID.randomUUID().toString().take(12)
+        val asset = AssetEntity(
+            assetId = assetId,
+            storyId = storyId,
+            familyId = entity.familyId,
+            type = AssetType.AUDIO,
+            localPath = localAudioPath,
+            mimeType = "audio/mp4",
+            bytes = runCatching { File(localAudioPath).length() }.getOrDefault(0L),
+            uploadState = UploadState.LOCAL_ONLY,
+            createdAt = now
+        )
+
+        // A story holding both photographs and a voice is a collection. Audio-only
+        // stories keep the kind they were born with.
+        val kind = when (entity.kind) {
+            StoryKind.AUDIO -> StoryKind.AUDIO
+            else -> StoryKind.COLLECTION
+        }
+
+        db.withTransaction {
+            db.assetDao().upsert(asset)
+            db.storyDao().upsert(
+                entity.copy(
+                    kind = kind,
+                    // The first voice on a story becomes the one it plays.
+                    primaryAssetId = entity.primaryAssetId ?: assetId,
+                    durationMs = entity.durationMs ?: durationMs,
+                    assetCount = entity.assetCount + 1,
+                    // There are words to find now, so the story owes a transcript again.
+                    transcriptStatus = TranscriptStatus.PENDING,
+                    updatedAt = now
+                )
+            )
+            db.outboxDao().enqueue(
+                OutboxEntity(
+                    op = OutboxOp.UPLOAD,
+                    collectionPath = "families/${entity.familyId}/assets",
+                    docId = assetId,
+                    payloadJson = "{\"assetId\":\"$assetId\"}",
+                    localFilePath = localAudioPath,
+                    createdAt = now
+                )
+            )
+        }
+
+        return assetId
+    }
+
     suspend fun saveRecording(
         familyId: String,
         createdByUserId: String,
@@ -815,28 +907,33 @@ class StoryRepository(
             createdAt = now
         )
 
-        db.storyDao().upsert(story)
-        db.assetDao().upsert(asset)
+        // All four writes land or none do. A crash between the story and its asset
+        // leaves a document the archive lists and can never open, which is the same
+        // defect saveRecording already closed.
+        db.withTransaction {
+            db.storyDao().upsert(story)
+            db.assetDao().upsert(asset)
 
-        db.outboxDao().enqueue(
-            OutboxEntity(
-                op = OutboxOp.CREATE,
-                collectionPath = "families/$familyId/stories",
-                docId = storyId,
-                payloadJson = "{\"storyId\":\"$storyId\"}",
-                createdAt = now
+            db.outboxDao().enqueue(
+                OutboxEntity(
+                    op = OutboxOp.CREATE,
+                    collectionPath = "families/$familyId/stories",
+                    docId = storyId,
+                    payloadJson = "{\"storyId\":\"$storyId\"}",
+                    createdAt = now
+                )
             )
-        )
-        db.outboxDao().enqueue(
-            OutboxEntity(
-                op = OutboxOp.UPLOAD,
-                collectionPath = "families/$familyId/assets",
-                docId = assetId,
-                payloadJson = "{\"assetId\":\"$assetId\"}",
-                localFilePath = localPath,
-                createdAt = now
+            db.outboxDao().enqueue(
+                OutboxEntity(
+                    op = OutboxOp.UPLOAD,
+                    collectionPath = "families/$familyId/assets",
+                    docId = assetId,
+                    payloadJson = "{\"assetId\":\"$assetId\"}",
+                    localFilePath = localPath,
+                    createdAt = now
+                )
             )
-        )
+        }
 
         return storyId
     }
