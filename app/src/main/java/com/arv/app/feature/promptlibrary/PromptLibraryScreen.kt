@@ -48,15 +48,7 @@ fun PromptLibraryScreen(
         )
         Spacer(modifier = Modifier.height(24.dp))
 
-        Text(
-            text = "For Ruth Delaney",
-            style = MaterialTheme.typography.titleLarge
-        )
 
-        Text(
-            text = "Age 83 • 11 recordings • last recorded 2 days ago",
-            style = MaterialTheme.typography.bodySmall
-        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
