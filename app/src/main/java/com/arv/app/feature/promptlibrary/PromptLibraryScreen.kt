@@ -35,6 +35,11 @@ fun PromptLibraryScreen(
     var selectedCategory by remember{
         mutableStateOf("Suggested")
     }
+
+    var savedQuestion by remember {
+        mutableStateOf<String?>(null)
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
