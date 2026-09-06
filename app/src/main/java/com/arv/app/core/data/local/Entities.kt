@@ -5,13 +5,19 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.TypeConverter
 import com.arv.app.core.model.Confidence
+import com.arv.app.core.model.ConsentMethod
 import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.ArchiveArea
 import com.arv.app.core.model.AssetType
 import com.arv.app.core.model.EraPrecision
+import com.arv.app.core.model.Member
+import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.OutboxOp
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.ProfileState
+import com.arv.app.core.model.Prompt
+import com.arv.app.core.model.PromptOrigin
+import com.arv.app.core.model.PromptStatus
 import com.arv.app.core.model.Provenance
 import com.arv.app.core.model.Relationship
 import com.arv.app.core.model.RelationshipKind
@@ -62,7 +68,11 @@ data class PersonEntity(
      * the way in while the confident parts survived.
      */
     val note: String? = null,
-    val updatedAt: Long = 0L
+    val updatedAt: Long = 0L,
+    val consentDeclined: Boolean = false,
+    val consentDecidedAt: Long? = null,
+    val consentMethod: ConsentMethod? = null,
+    val consentRecordedBy: String? = null
 )
 
 /**
@@ -224,6 +234,12 @@ class Converters {
     @TypeConverter fun relationshipKindToString(v: RelationshipKind): String = v.name
     @TypeConverter fun stringToRelationshipKind(v: String): RelationshipKind =
         RelationshipKind.valueOf(v)
+
+    @TypeConverter fun memberRoleToString(v: MemberRole): String = v.name
+    @TypeConverter fun stringToMemberRole(v: String): MemberRole = MemberRole.valueOf(v)
+
+    @TypeConverter fun consentMethodToString(v: ConsentMethod?): String? = v?.name
+    @TypeConverter fun stringToConsentMethod(v: String?): ConsentMethod? = v?.let { ConsentMethod.valueOf(it) }
 }
 
 // --- mapping to domain ---
@@ -275,7 +291,11 @@ fun PersonEntity.toDomain() = Person(
     source = source,
     verifiedAt = verifiedAt,
     deathYearEnd = deathYearEnd,
-    note = note
+    note = note,
+    consentDeclined = consentDeclined,
+    consentDecidedAt = consentDecidedAt,
+    consentMethod = consentMethod,
+    consentRecordedBy = consentRecordedBy
 )
 
 fun RelationshipEntity.toDomain() = Relationship(
@@ -294,3 +314,72 @@ fun TranscriptSegmentEntity.toDomain() = TranscriptSegment(
     confidence = confidence,
     humanVerified = humanVerified
 )
+
+/**
+ * A question the archive is holding for somebody to answer.
+ *
+ * Prompts are per family and they are stateful: suggested, saved for later, answered, or
+ * skipped. The state is the point. A question somebody already answered should stop being
+ * asked, and one they deliberately skipped should not keep resurfacing as if the archive
+ * forgot.
+ */
+@Entity(
+    tableName = "prompts",
+    indices = [Index("familyId"), Index("targetPersonId")]
+)
+data class PromptEntity(
+    @PrimaryKey val promptId: String,
+    val familyId: String,
+    val text: String,
+    val category: String,
+    val targetPersonId: String? = null,
+    val origin: PromptOrigin = PromptOrigin.LIBRARY,
+    /** Why the app is asking this now. Shown to the user, never a black box. */
+    val rationale: String? = null,
+    val status: PromptStatus = PromptStatus.SUGGESTED,
+    /** The story that answered it, when one did. */
+    val answeredStoryId: String? = null,
+    val createdAt: Long,
+    val updatedAt: Long
+) {
+    fun toDomain() = Prompt(
+        promptId = promptId,
+        text = text,
+        category = category,
+        targetPersonId = targetPersonId,
+        origin = origin,
+        rationale = rationale,
+        status = status
+    )
+}
+
+/**
+ * One account's membership in one family. See [Member] for why this is its own table.
+ *
+ * Keyed by family and user together: the same account will be in more than one family
+ * once joining exists, and a family has each account at most once.
+ */
+@Entity(
+    tableName = "members",
+    primaryKeys = ["familyId", "userId"],
+    indices = [Index("userId"), Index("personId")]
+)
+data class MemberEntity(
+    val familyId: String,
+    val userId: String,
+    val role: MemberRole,
+    val personId: String? = null,
+    val branchRootPersonId: String? = null,
+    val joinedAt: Long,
+    val invitedBy: String? = null
+) {
+    fun toDomain() = Member(
+        userId = userId,
+        familyId = familyId,
+        role = role,
+        personId = personId,
+        branchRootPersonId = branchRootPersonId,
+        joinedAt = joinedAt,
+        invitedBy = invitedBy
+    )
+}

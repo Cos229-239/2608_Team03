@@ -47,6 +47,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.ArchiveArea
+import com.arv.app.ui.hint
+import com.arv.app.ui.label
 import com.arv.app.core.model.EraPrecision
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.Visibility
@@ -61,18 +63,20 @@ import kotlinx.coroutines.launch
 
 /** Identity for the unsaved recording inside [com.arv.app.core.audio.PlaybackController].
  *  It has no storyId yet, and it must not collide with a real one. */
-internal const val DRAFT_PLAYBACK_KEY = "review-draft"
 
 data class ReviewSaveUiState(
     val title: String = "",
     val narratorIds: List<String> = emptyList(),
     val eraText: String = "",
     val eraUnknown: Boolean = false,
+    val eraError: String? = null,
     val place: String = "",
     val tagText: String = "",
     val visibility: Visibility = Visibility.FAMILY,
     val aiUsePolicy: AiUsePolicy = AiUsePolicy.SUMMARY_OK,
     val area: ArchiveArea = ArchiveArea.STORIES,
+    /** Only asked for Health. Empty means the narrators, which the save path applies. */
+    val subjectIds: List<String> = emptyList(),
     val saving: Boolean = false,
     val savedStoryId: String? = null,
     /** Which ancestor's line, when visibility is BRANCH. */
@@ -85,7 +89,10 @@ data class ReviewSaveUiState(
      * including the person who just recorded it. Block the save rather than lose it.
      */
     val canSave: Boolean
-        get() = !saving && !(visibility == Visibility.BRANCH && branchRootPersonId == null)
+        get() =
+            !saving &&
+                    eraError == null &&
+                    !(visibility == Visibility.BRANCH && branchRootPersonId == null)
 }
 
 class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
@@ -115,7 +122,50 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun onTitle(v: String) { _state.value = _state.value.copy(title = v) }
-    fun onEra(v: String) { _state.value = _state.value.copy(eraText = v, eraUnknown = false) }
+    fun onEra(v: String) {
+        val trimmed = v.trim()
+
+        if (trimmed.isEmpty()) {
+            _state.value = _state.value.copy(
+                eraText = v,
+                eraUnknown = false,
+                eraError = null
+            )
+            return
+        }
+
+        val validFormat =
+            trimmed.matches(Regex("""\d{4}""")) ||
+                    trimmed.matches(Regex("""\d{4}\s*(to|-|–)\s*\d{4}"""))
+
+        if (!validFormat) {
+            _state.value = _state.value.copy(
+                eraText = v,
+                eraUnknown = false,
+                eraError = "Enter a valid year, such as 1953, or a range such as 1953 to 1964."
+            )
+            return
+        }
+
+        val years = Regex("""\d{4}""")
+            .findAll(trimmed)
+            .map { it.value.toInt() }
+            .toList()
+
+        val currentYear = java.time.Year.now().value
+
+        val error = if (years.any { it > currentYear }) {
+            "The year cannot be in the future."
+        } else {
+            null
+        }
+
+        _state.value = _state.value.copy(
+            eraText = v,
+            eraUnknown = false,
+            eraError = error
+        )
+    }
     fun onPlace(v: String) { _state.value = _state.value.copy(place = v) }
     fun onTags(v: String) { _state.value = _state.value.copy(tagText = v) }
     fun onVisibility(v: Visibility) {
@@ -130,13 +180,26 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleEraUnknown() {
         val s = _state.value
-        _state.value = s.copy(eraUnknown = !s.eraUnknown, eraText = if (!s.eraUnknown) "" else s.eraText)
+        _state.value = s.copy(
+            eraUnknown = !s.eraUnknown,
+            eraText = if (!s.eraUnknown) "" else s.eraText,
+            eraError = null
+        )
     }
 
     fun toggleNarrator(personId: String) {
         val current = _state.value.narratorIds
         _state.value = _state.value.copy(
             narratorIds = if (personId in current) current - personId else current + personId
+        )
+    }
+
+    fun onArea(v: ArchiveArea) { _state.value = _state.value.copy(area = v) }
+
+    fun toggleSubject(personId: String) {
+        val current = _state.value.subjectIds
+        _state.value = _state.value.copy(
+            subjectIds = if (personId in current) current - personId else current + personId
         )
     }
 
@@ -150,7 +213,38 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
     fun save(localAudioPath: String, durationMs: Long, nowMillis: Long) {
         val s = _state.value
         if (s.saving) return
+
+        if (!s.eraUnknown) {
+            val trimmedEra = s.eraText.trim()
+
+            val validFormat =
+                trimmedEra.matches(Regex("""\d{4}""")) ||
+                        trimmedEra.matches(Regex("""\d{4}\s*(to|-|–)\s*\d{4}"""))
+
+            if (!validFormat) {
+                _state.value = s.copy(
+                    eraError = "Enter a valid year, such as 1953, or a range such as 1953 to 1964."
+                )
+                return
+            }
+
+            val years = Regex("""\d{4}""")
+                .findAll(trimmedEra)
+                .map { it.value.toInt() }
+                .toList()
+
+            val currentYear = java.time.Year.now().value
+
+            if (years.any { it > currentYear }) {
+                _state.value = s.copy(
+                    eraError = "The year cannot be in the future."
+                )
+                return
+            }
+        }
+
         _state.value = s.copy(saving = true)
+
 
         val (start, end, precision) =
             if (s.eraUnknown) Triple(null, null, EraPrecision.UNKNOWN) else parseEra(s.eraText)
@@ -172,6 +266,11 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
                     visibility = s.visibility,
                     aiUsePolicy = s.aiUsePolicy,
                     area = s.area,
+                    subjectPersonIds = if (s.area == ArchiveArea.HEALTH) {
+                        s.subjectIds.ifEmpty { s.narratorIds }
+                    } else {
+                        null
+                    },
                     branchRootPersonId = s.branchRootPersonId,
                     now = nowMillis
                 )
@@ -243,98 +342,20 @@ fun ReviewSaveScreen(
 
         item {
             // Nobody decides whether to keep a recording of someone by reading its length.
-            // Hearing it back before saving is the point of this screen, and it was the one
-            // thing missing from it.
-            val playback by ServiceLocator.playback.state.collectAsStateWithLifecycle()
-            val isThisDraft = playback.storyId == DRAFT_PLAYBACK_KEY
-            val playable = ServiceLocator.playback.canPlay(localAudioPath)
-            val positionMs = if (isThisDraft) playback.positionMs else 0L
-            val totalMs =
-                if (isThisDraft && playback.durationMs > 0L) playback.durationMs else durationMs
-
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            ) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Recorded just now", style = MaterialTheme.typography.bodyMedium)
-                        Text(formatElapsed(totalMs), style = MaterialTheme.typography.bodyMedium)
-                    }
-
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        IconButton(
-                            onClick = {
-                                ServiceLocator.playback.toggle(DRAFT_PLAYBACK_KEY, localAudioPath)
-                            },
-                            enabled = playable,
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            val playing = isThisDraft && playback.isPlaying
-                            Icon(
-                                if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                contentDescription =
-                                    if (playing) "Pause" else "Play what you just recorded"
-                            )
-                        }
-
-                        // Seeking happens on release, not on every touch sample. Seeking
-                        // while dragging starts audible playback the moment you touch the
-                        // bar to check the length, and each seek on an inactive draft
-                        // builds a MediaPlayer and calls prepare() on the main thread,
-                        // so the thumb also fights the position ticker.
-                        var scrub by remember { mutableStateOf<Float?>(null) }
-                        Slider(
-                            value = scrub
-                                ?: if (totalMs > 0L) positionMs.toFloat() / totalMs else 0f,
-                            onValueChange = { scrub = it },
-                            onValueChangeFinished = {
-                                scrub?.let { fraction ->
-                                    ServiceLocator.playback.seekTo(
-                                        DRAFT_PLAYBACK_KEY,
-                                        localAudioPath,
-                                        (fraction * totalMs).toLong()
-                                    )
-                                }
-                                scrub = null
-                            },
-                            enabled = playable,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        Text(formatElapsed(positionMs), style = MaterialTheme.typography.bodySmall)
-                    }
-
-                    if (!playable) {
-                        Text(
-                            "The audio file is missing, so there is nothing to play back.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
-            }
+            // Hearing it back before saving is the point of this screen. The player
+            // itself is shared with the attach flow so the two cannot drift.
+            DraftPlayer(localAudioPath = localAudioPath, durationMs = durationMs)
         }
-
         item {
+            // The one field every story is found by later. This slot held a second copy
+            // of the year field, so onTitle was never called and every recording saved
+            // with an empty title.
             OutlinedTextField(
                 value = state.title,
                 onValueChange = viewModel::onTitle,
-                label = { Text("Title") },
-                placeholder = { Text("Sunday kitchen, Bellwood Avenue") },
+                label = { Text("What is this story called?") },
+                placeholder = { Text("The night the levee broke") },
+                singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
         }
@@ -382,6 +403,13 @@ fun ReviewSaveScreen(
                     modifier = Modifier.weight(1f)
                 )
             }
+            state.eraError?.let { error ->
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
         item {
             // A first-class answer, not a fallback. See EraPrecision in the domain model.
@@ -408,6 +436,55 @@ fun ReviewSaveScreen(
                 label = { Text("Tags, comma separated") },
                 modifier = Modifier.fillMaxWidth()
             )
+        }
+
+        item { HorizontalDivider() }
+
+        item { SectionLabel("Which archive") }
+        item {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ArchiveArea.values().forEach { area ->
+                    FilterChip(
+                        selected = state.area == area,
+                        onClick = { viewModel.onArea(area) },
+                        label = { Text(area.label()) }
+                    )
+                }
+            }
+        }
+        item {
+            Text(
+                state.area.hint(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (state.area == ArchiveArea.HEALTH) {
+            item { SectionLabel("Who is this about?") }
+            item {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    people.forEach { person ->
+                        FilterChip(
+                            selected = person.personId in state.subjectIds,
+                            onClick = { viewModel.toggleSubject(person.personId) },
+                            label = { Text(person.displayName) }
+                        )
+                    }
+                }
+            }
+            item {
+                Text(
+                    "They will control this record. If nobody is picked, it is about whoever is speaking.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         item { HorizontalDivider() }

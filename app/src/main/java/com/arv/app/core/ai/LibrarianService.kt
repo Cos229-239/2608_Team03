@@ -4,6 +4,7 @@ import com.arv.app.core.model.ArchiveArea
 import com.arv.app.core.model.LibrarianAnswer
 import com.arv.app.core.model.LibrarianScope
 import com.arv.app.core.model.LibrarianSource
+import com.arv.app.core.model.Person
 import com.arv.app.core.model.Provenance
 import com.arv.app.core.model.Story
 
@@ -151,7 +152,8 @@ class ClinicalClaimGuard(
  * the empty path are exercised for actual reasons. Only the composition step is canned.
  */
 class FakeLibrarianService(
-    private val storiesProvider: suspend (familyId: String) -> List<Story>
+    private val storiesProvider: suspend (familyId: String) -> List<Story>,
+    private val peopleProvider: suspend (familyId: String) -> List<Person> = { emptyList() }
 ) : LibrarianService {
 
     override suspend fun ask(
@@ -173,7 +175,10 @@ class FakeLibrarianService(
         }
         if (candidates.isEmpty()) return LibrarianOutcome.NoMatches
 
-        val (usable, withheldCount) = MemoryAccess.partition(candidates, viewer, scope)
+        // The people list is what lets consent be checked. Dropping it here would make
+        // this double quietly more permissive than the real services it stands in for.
+        val people = peopleProvider(familyId)
+        val (usable, withheldCount) = MemoryAccess.partition(candidates, viewer, scope, people)
         if (usable.isEmpty()) return LibrarianOutcome.AllWithheld(withheldCount)
 
         val sources = usable.take(4).map { story ->

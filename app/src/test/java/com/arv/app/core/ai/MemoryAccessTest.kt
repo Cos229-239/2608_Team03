@@ -250,4 +250,21 @@ class MemoryAccessTest {
             .copy(familyId = "fam_2")
         assertFalse(MemoryAccess.canRead(theirs, dana))
     }
+
+    @Test
+    fun `another family's story cannot be edited or deleted either`() {
+        // canRead got the family boundary and canEdit did not, which left the more
+        // dangerous half open: not reading someone else's archive, but changing it.
+        val theirs = story(visibility = Visibility.FAMILY).copy(familyId = "fam_2")
+        assertFalse(MemoryAccess.canEdit(theirs, dana))
+        assertFalse(MemoryAccess.canEdit(theirs, keeper))
+    }
+
+    @Test
+    fun `a creator in another family is still refused`() {
+        // Ids are not unique across archives, so matching createdBy is not proof of
+        // anything on its own.
+        val theirs = story(createdBy = "u_dana").copy(familyId = "fam_2")
+        assertFalse(MemoryAccess.canEdit(theirs, dana))
+    }
 }

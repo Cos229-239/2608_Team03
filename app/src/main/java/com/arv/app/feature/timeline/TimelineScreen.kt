@@ -24,34 +24,62 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.di.ServiceLocator
+import com.arv.app.core.model.ArchiveArea
 import com.arv.app.core.model.Story
+import com.arv.app.ui.label
+import kotlinx.coroutines.flow.MutableStateFlow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.FilterChip
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
+data class TimelineUiState(
+    val decades: Map<Int?, List<Story>> = emptyMap(),
+    /** Null is every archive. */
+    val area: ArchiveArea? = null,
+    /** Whether the family has anything readable at all, before the archive filter. */
+    val anyAtAll: Boolean = false
+)
+
 class TimelineViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = ServiceLocator.storyRepository(app)
     private val viewer = ServiceLocator.viewer
+    private val area = MutableStateFlow<ArchiveArea?>(null)
 
-    val decades: StateFlow<Map<Int?, List<Story>>> =
-        repo.observeByDecade(ServiceLocator.familyId)
-            .combine(repo.observePeople(ServiceLocator.familyId)) { byDecade, people ->
-                // The same filter the feed and the librarian apply. A timeline is not a
-                // separate permission surface, it is the same archive drawn on an axis,
-                // and the DAO query behind it is deliberately unfiltered.
-                //
-                // Decades left empty by the filter are dropped rather than shown bare.
-                // An empty year heading tells you something was withheld, and findGaps
-                // would read the decade as present and hide a gap that is really there.
-                byDecade
-                    .mapValues { (_, stories) ->
-                        stories.filter { MemoryAccess.canRead(it, viewer, people) }
-                    }
+    fun chooseArea(choice: ArchiveArea?) { area.value = choice }
+
+    val state: StateFlow<TimelineUiState> =
+        combine(
+            repo.observeByDecade(ServiceLocator.familyId),
+            repo.observePeople(ServiceLocator.familyId),
+            area
+        ) { byDecade, people, chosen ->
+            // The same filter the feed and the librarian apply. A timeline is not a
+            // separate permission surface, it is the same archive drawn on an axis,
+            // and the DAO query behind it is deliberately unfiltered.
+            //
+            // Decades left empty by the filter are dropped rather than shown bare.
+            // An empty year heading tells you something was withheld, and findGaps
+            // would read the decade as present and hide a gap that is really there.
+            val readable = byDecade
+                .mapValues { (_, stories) ->
+                    stories.filter { MemoryAccess.canRead(it, viewer, people) }
+                }
+                .filterValues { it.isNotEmpty() }
+            // The archive filter runs after permission, never instead of it.
+            val shown = if (chosen == null) {
+                readable
+            } else {
+                readable
+                    .mapValues { (_, stories) -> stories.filter { it.area == chosen } }
                     .filterValues { it.isNotEmpty() }
             }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+            TimelineUiState(decades = shown, area = chosen, anyAtAll = readable.isNotEmpty())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TimelineUiState())
 }
 
 /**
@@ -68,11 +96,14 @@ fun TimelineScreen(
     modifier: Modifier = Modifier,
     viewModel: TimelineViewModel = viewModel()
 ) {
-    val decades by viewModel.decades.collectAsStateWithLifecycle()
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val decades = state.decades
     val presentDecades = decades.keys.filterNotNull().sorted()
-    val gaps = findGaps(presentDecades)
+    // Gaps are named across the whole archive. Inside one archive a missing decade is
+    // not a hole somebody lived through, it is just a decade with no recipe in it.
+    val gaps = if (state.area == null) findGaps(presentDecades) else emptyMap()
 
-    if (decades.isEmpty()) {
+    if (!state.anyAtAll) {
         // Every other tab root has an empty state; this one rendered a blank white screen
         // to a family that just onboarded. The timeline is also the most natural place to
         // start, because it is the screen that asks what is missing.
@@ -99,6 +130,18 @@ fun TimelineScreen(
         contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        item(key = "archives") {
+            ArchiveRow(chosen = state.area, onChoose = viewModel::chooseArea)
+        }
+        if (decades.isEmpty()) {
+            item(key = "empty-archive") {
+                Text(
+                    "Nothing in ${state.area?.label() ?: "the archive"} yet.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         decades.forEach { (decade, stories) ->
             item(key = "head-${decade ?: "unknown"}") {
                 Text(
@@ -119,7 +162,7 @@ fun TimelineScreen(
                         ) {
                             Text(story.title, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                story.eraLabel,
+                                story.eraLabel + "  \u00b7  " + story.area.label(),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -133,6 +176,29 @@ fun TimelineScreen(
                     item(key = "gap-$missing") { GapCard(missing, onRecord = onRecord) }
                 }
             }
+        }
+    }
+}
+
+/** Every archive, then the four. One row, the same names as the pickers use. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ArchiveRow(chosen: ArchiveArea?, onChoose: (ArchiveArea?) -> Unit) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        FilterChip(
+            selected = chosen == null,
+            onClick = { onChoose(null) },
+            label = { Text("Everything") }
+        )
+        ArchiveArea.values().forEach { area ->
+            FilterChip(
+                selected = chosen == area,
+                onClick = { onChoose(area) },
+                label = { Text(area.label()) }
+            )
         }
     }
 }

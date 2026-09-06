@@ -62,7 +62,7 @@ class LibrarianHive(
         }
 
         val matched = blendedScore.keys.map { storiesById.getValue(it) }
-        val (usable, withheldCount) = MemoryAccess.partition(matched, viewer, scope)
+        val (usable, withheldCount) = MemoryAccess.partition(matched, viewer, scope, people)
         if (usable.isEmpty()) return LibrarianOutcome.AllWithheld(withheldCount)
 
         val byScore = usable.sortedWith(

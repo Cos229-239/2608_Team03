@@ -127,6 +127,212 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate3To4_addsPromptsAndLeavesEverythingElseAlone() {
+        helper.createDatabase(TEST_DB, 3).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO people
+                  (personId, familyId, displayName, alsoKnownAs, birthYear, deathYear,
+                   birthPlace, relationLabel, linkedUserId, state, memoryStewardUserId,
+                   consentGranted, postMortemOk, updatedAt, confidence, source, verifiedAt,
+                   deathYearEnd, note)
+                VALUES
+                  ('p_1', 'fam_1', 'Ruth Delaney', '', 1931, 2004, 'Chicago', 'Grandmother',
+                   'u_1', 'MEMORIAL', NULL, 1, 0, 100, 'DOCUMENTED', 'Death certificate',
+                   200, NULL, NULL)
+                """.trimIndent()
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB, 4, true, ArvDatabase.MIGRATION_3_4
+        )
+
+        // The new table exists and starts empty. Questions arrive by seeding, not by a
+        // schema bump inventing them.
+        db.query("SELECT COUNT(*) FROM prompts").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("no questions invented by the migration", 0, c.getInt(0))
+        }
+
+        // A prompt round-trips through every column the entity declares.
+        db.execSQL(
+            """
+            INSERT INTO prompts
+              (promptId, familyId, text, category, targetPersonId, origin, rationale,
+               status, answeredStoryId, createdAt, updatedAt)
+            VALUES
+              ('q_1', 'fam_1', 'Who taught you to cook?', 'Food', NULL, 'LIBRARY',
+               'Often opens into migration stories', 'SUGGESTED', NULL, 1, 1)
+            """.trimIndent()
+        )
+        db.query("SELECT text, category, status, origin FROM prompts WHERE promptId = 'q_1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("Who taught you to cook?", c.getString(0))
+            assertEquals("Food", c.getString(1))
+            assertEquals("SUGGESTED", c.getString(2))
+            assertEquals("LIBRARY", c.getString(3))
+        }
+
+        // Adding a table must not disturb anyone already in the archive.
+        db.query("SELECT displayName, deathYear FROM people").use { c ->
+            assertTrue("the person survived the migration", c.moveToFirst())
+            assertEquals("Ruth Delaney", c.getString(0))
+            assertEquals(2004, c.getInt(1))
+            assertEquals("exactly one person, nothing duplicated", 1, c.count)
+        }
+    }
+
+    @Test
+    fun migrate4To5_addsMembersAndLeavesEverythingElseAlone() {
+        helper.createDatabase(TEST_DB, 4).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO people
+                  (personId, familyId, displayName, alsoKnownAs, birthYear, deathYear,
+                   birthPlace, relationLabel, linkedUserId, state, memoryStewardUserId,
+                   consentGranted, postMortemOk, updatedAt, confidence, source, verifiedAt,
+                   deathYearEnd, note)
+                VALUES
+                  ('p_1', 'fam_1', 'Ruth Delaney', '', 1931, 2004, 'Chicago', 'Grandmother',
+                   'u_1', 'MEMORIAL', NULL, 1, 0, 100, 'DOCUMENTED', 'Death certificate',
+                   200, NULL, NULL)
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                INSERT INTO prompts
+                  (promptId, familyId, text, category, targetPersonId, origin, rationale,
+                   status, answeredStoryId, createdAt, updatedAt)
+                VALUES
+                  ('q_1', 'fam_1', 'Who taught you to cook?', 'Food', NULL, 'LIBRARY',
+                   NULL, 'SAVED', NULL, 1, 1)
+                """.trimIndent()
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB, 5, true, ArvDatabase.MIGRATION_4_5
+        )
+
+        // The new table exists and starts empty. Standing in a family is written by the
+        // code that creates or joins one, never invented by a schema bump.
+        db.query("SELECT COUNT(*) FROM members").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("no members invented by the migration", 0, c.getInt(0))
+        }
+
+        // A member round-trips through every column, and a member with no profile yet is
+        // a legal row: that is how an invited account looks before it is placed in the tree.
+        db.execSQL(
+            """
+            INSERT INTO members
+              (familyId, userId, role, personId, branchRootPersonId, joinedAt, invitedBy)
+            VALUES
+              ('fam_1', 'u_1', 'OWNER', 'p_1', NULL, 100, NULL),
+              ('fam_1', 'u_2', 'VIEWER', NULL, 'p_1', 200, 'u_1')
+            """.trimIndent()
+        )
+        db.query("SELECT role, personId, invitedBy FROM members WHERE userId = 'u_1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("OWNER", c.getString(0))
+            assertEquals("p_1", c.getString(1))
+            assertTrue("nobody invited the owner", c.isNull(2))
+        }
+        db.query("SELECT role, personId, invitedBy FROM members WHERE userId = 'u_2'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("VIEWER", c.getString(0))
+            assertTrue("not placed in the tree yet", c.isNull(1))
+            assertEquals("u_1", c.getString(2))
+        }
+
+        // The key is family and user together: one account has one standing per family
+        // and can stand in more than one family.
+        db.execSQL(
+            "INSERT OR REPLACE INTO members (familyId, userId, role, personId, joinedAt) VALUES ('fam_1', 'u_1', 'KEEPER', 'p_1', 100)"
+        )
+        db.execSQL(
+            "INSERT INTO members (familyId, userId, role, personId, joinedAt) VALUES ('fam_2', 'u_1', 'CONTRIBUTOR', NULL, 300)"
+        )
+        db.query("SELECT COUNT(*) FROM members WHERE familyId = 'fam_1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("replacing a role does not duplicate the member", 2, c.getInt(0))
+        }
+        db.query("SELECT COUNT(*) FROM members WHERE userId = 'u_1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("one account, two families", 2, c.getInt(0))
+        }
+
+        // Adding a table must not disturb anyone, or any question, already in the archive.
+        db.query("SELECT displayName, deathYear FROM people").use { c ->
+            assertTrue("the person survived the migration", c.moveToFirst())
+            assertEquals("Ruth Delaney", c.getString(0))
+            assertEquals(2004, c.getInt(1))
+            assertEquals("exactly one person, nothing duplicated", 1, c.count)
+        }
+        db.query("SELECT status FROM prompts WHERE promptId = 'q_1'").use { c ->
+            assertTrue("the saved prompt survived the migration", c.moveToFirst())
+            assertEquals("SAVED", c.getString(0))
+        }
+    }
+
+    @Test
+    fun migrate5To6_letsConsentBeAnAnswerAndKeepsTheYesAlreadyGiven() {
+        helper.createDatabase(TEST_DB, 5).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO people
+                  (personId, familyId, displayName, alsoKnownAs, birthYear, deathYear,
+                   birthPlace, relationLabel, linkedUserId, state, memoryStewardUserId,
+                   consentGranted, postMortemOk, updatedAt, confidence, source, verifiedAt,
+                   deathYearEnd, note)
+                VALUES
+                  ('p_1', 'fam_1', 'Ruth Delaney', '', 1931, NULL, 'Chicago', 'Grandmother',
+                   'u_1', 'LIVING', NULL, 1, 1, 100, 'FAMILY_TOLD', NULL, NULL, NULL, NULL)
+                """.trimIndent()
+            )
+            db.execSQL(
+                "INSERT INTO members (familyId, userId, role, personId, joinedAt) VALUES ('fam_1', 'u_1', 'OWNER', 'p_1', 100)"
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB, 6, true, ArvDatabase.MIGRATION_5_6
+        )
+
+        // A yes given before the answer had a date keeps being a yes, and is not a no.
+        db.query(
+            "SELECT consentGranted, postMortemOk, consentDeclined, consentDecidedAt, consentMethod, consentRecordedBy FROM people WHERE personId = 'p_1'"
+        ).use { c ->
+            assertTrue("the person survived the migration", c.moveToFirst())
+            assertEquals("the yes survived", 1, c.getInt(0))
+            assertEquals("the post-mortem yes survived", 1, c.getInt(1))
+            assertEquals("nobody said no on their behalf", 0, c.getInt(2))
+            assertTrue("no date invented", c.isNull(3))
+            assertTrue("no method invented", c.isNull(4))
+            assertTrue("no recorder invented", c.isNull(5))
+        }
+
+        // A full answer round-trips through the new columns.
+        db.execSQL(
+            "UPDATE people SET consentGranted = 0, consentDeclined = 1, consentDecidedAt = 500, consentMethod = 'IN_PERSON', consentRecordedBy = 'u_1' WHERE personId = 'p_1'"
+        )
+        db.query("SELECT consentDeclined, consentDecidedAt, consentMethod, consentRecordedBy FROM people WHERE personId = 'p_1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(1, c.getInt(0))
+            assertEquals(500L, c.getLong(1))
+            assertEquals("IN_PERSON", c.getString(2))
+            assertEquals("u_1", c.getString(3))
+        }
+
+        // Adding columns to people must not disturb the membership beside it.
+        db.query("SELECT role FROM members WHERE familyId = 'fam_1' AND userId = 'u_1'").use { c ->
+            assertTrue("the member survived the migration", c.moveToFirst())
+            assertEquals("OWNER", c.getString(0))
+        }
+    }
+
     private companion object {
         const val TEST_DB = "migration-test"
     }

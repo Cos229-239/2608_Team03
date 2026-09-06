@@ -3,6 +3,31 @@ package com.arv.app.core.model
 /** Role inside a family. Enforced again in Firestore rules. The client copy is for UI only. */
 enum class MemberRole { OWNER, KEEPER, CONTRIBUTOR, VIEWER }
 
+/**
+ * One account's standing in one family. Mirrors families/{familyId}/members/{userId}.
+ *
+ * Accounts and people are different tables on purpose: a person in the tree may have no
+ * account (most of the dead, many of the living), and one account will stand in more than
+ * one family once joining exists. This row is the join between them, and it is the only
+ * place a role lives. A screen that wants to know what someone may do asks the member row,
+ * never the person row and never a constant.
+ */
+data class Member(
+    val userId: String,
+    val familyId: String,
+    val role: MemberRole,
+    /**
+     * Their own profile in the tree, once they have one. Null for an account that is in
+     * the family but not yet placed in it, which is how someone arrives by invitation.
+     */
+    val personId: String?,
+    /** Root of the branch BRANCH visibility scopes them to, when one is set. */
+    val branchRootPersonId: String? = null,
+    val joinedAt: Long,
+    /** Who let them in. Null for the owner, who let themselves in. */
+    val invitedBy: String? = null
+)
+
 enum class StoryKind { AUDIO, PHOTO_SET, DOCUMENT, COLLECTION, UPDATE }
 
 /**
@@ -108,6 +133,15 @@ enum class PromptStatus { SUGGESTED, SAVED, ANSWERED, SKIPPED }
 enum class ProfileState { LIVING, MEMORIAL }
 
 /**
+ * How a person's answer about their memories reached the archive.
+ *
+ * ON_THEIR_BEHALF is the family deciding for someone who cannot be asked, and it is
+ * stored as exactly that so a decision made about a person is never mistaken for one
+ * made by them.
+ */
+enum class ConsentMethod { IN_PERSON, ON_RECORDING, IN_WRITING, ON_THEIR_BEHALF }
+
+/**
  * How much anybody actually knows that this person is who the record says they are.
  *
  * Genealogy is where families most often store confident lies. A name copied from someone
@@ -179,7 +213,17 @@ data class Person(
     val note: String? = null,
     val confidence: Confidence = Confidence.FAMILY_TOLD,
     val source: String? = null,
-    val verifiedAt: Long? = null
+    val verifiedAt: Long? = null,
+    /**
+     * They said no, or the family said no for them. A no is a decision, not a missing
+     * one, and it restricts harder than silence: nothing asks again.
+     */
+    val consentDeclined: Boolean = false,
+    /** When the answer was written down. Null while there is no answer. */
+    val consentDecidedAt: Long? = null,
+    val consentMethod: ConsentMethod? = null,
+    /** The account that wrote the answer down. */
+    val consentRecordedBy: String? = null
 ) {
     val isDeceased: Boolean get() = deathYear != null || state == ProfileState.MEMORIAL
 
@@ -210,12 +254,20 @@ data class Person(
     val needsAConsentDecision: Boolean
         get() = when {
             isPublicRecord -> false
+            // A no is an answer. The list must stop asking, and the block must stay.
+            consentDeclined -> false
             // A living yes survives death, and postMortemOk records the decision a
             // family made on a dead person's behalf. This flag was stored and displayed
             // and never actually read, so recording the decision changed nothing.
             isDeceased -> !consentGranted && !postMortemOk
             else -> !consentGranted
         }
+
+    /**
+     * What enforcement reads: no answer yet, or an answer of no. The two are shown
+     * differently and restricted identically.
+     */
+    val consentRestricts: Boolean get() = consentDeclined || needsAConsentDecision
 }
 
 /** An edge in the family tree. Stored once, rendered from both directions. */

@@ -15,14 +15,18 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         RelationshipEntity::class,
         AssetEntity::class,
         TranscriptSegmentEntity::class,
-        OutboxEntity::class
+        OutboxEntity::class,
+        PromptEntity::class,
+        MemberEntity::class
     ],
-    version = 3,
+    version = 6,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class ArvDatabase : RoomDatabase() {
 
+    abstract fun promptDao(): PromptDao
+    abstract fun memberDao(): MemberDao
     abstract fun storyDao(): StoryDao
     abstract fun personDao(): PersonDao
     abstract fun relationshipDao(): RelationshipDao
@@ -69,6 +73,83 @@ abstract class ArvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Gives the prompt library somewhere to keep its questions.
+         *
+         * Additive: one new table, nothing existing is touched. Prompts carry state
+         * because a question already answered should stop being asked, and one somebody
+         * deliberately skipped should not resurface as if the archive forgot.
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS prompts (
+                        promptId TEXT NOT NULL PRIMARY KEY,
+                        familyId TEXT NOT NULL,
+                        text TEXT NOT NULL,
+                        category TEXT NOT NULL,
+                        targetPersonId TEXT,
+                        origin TEXT NOT NULL,
+                        rationale TEXT,
+                        status TEXT NOT NULL,
+                        answeredStoryId TEXT,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_prompts_familyId ON prompts(familyId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_prompts_targetPersonId ON prompts(targetPersonId)")
+            }
+        }
+
+        /**
+         * Gives each account a standing in each family it belongs to.
+         *
+         * Additive: one new table, nothing existing is touched. Before this the only member
+         * a device knew about was whoever created the archive, and their role was a
+         * constant in code. The row makes the role a fact that can differ per person, which
+         * is what invitations need before they can exist at all.
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS members (
+                        familyId TEXT NOT NULL,
+                        userId TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        personId TEXT,
+                        branchRootPersonId TEXT,
+                        joinedAt INTEGER NOT NULL,
+                        invitedBy TEXT,
+                        PRIMARY KEY(familyId, userId)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_members_userId ON members(userId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_members_personId ON members(personId)")
+            }
+        }
+
+        /**
+         * Lets a person's consent be an answer instead of a flag.
+         *
+         * Additive: four nullable-or-defaulted columns on people, nothing rewritten. The
+         * two booleans that existed said yes or nothing. These say who wrote the answer
+         * down, when, how it reached them, and whether the answer was no, which the old
+         * shape could not store at all and so could never stop asking for.
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE people ADD COLUMN consentDeclined INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE people ADD COLUMN consentDecidedAt INTEGER")
+                db.execSQL("ALTER TABLE people ADD COLUMN consentMethod TEXT")
+                db.execSQL("ALTER TABLE people ADD COLUMN consentRecordedBy TEXT")
+            }
+        }
+
         fun get(context: Context): ArvDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -79,7 +160,9 @@ abstract class ArvDatabase : RoomDatabase() {
                     // No destructive migration. This database holds recordings that may be
                     // the only copy of someone's voice; losing it to a schema bump is not
                     // an acceptable failure mode. Write real migrations.
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(
+                        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6
+                    )
                     .build()
                     .also { instance = it }
             }

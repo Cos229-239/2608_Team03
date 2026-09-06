@@ -6,7 +6,9 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Upsert
+import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.UploadState
+import com.arv.app.core.model.PromptStatus
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -242,6 +244,17 @@ interface TranscriptDao {
     )
     suspend fun correct(segmentId: Long, newText: String)
 
+    /** The story a line belongs to, so a correction can be checked against it. */
+    @Query(
+        """
+        SELECT s.* FROM stories s
+        JOIN assets a ON a.storyId = s.storyId
+        JOIN transcript_segments t ON t.assetId = a.assetId
+        WHERE t.id = :segmentId
+        """
+    )
+    suspend fun storyForSegment(segmentId: Long): StoryEntity?
+
     @Query("DELETE FROM transcript_segments WHERE assetId = :assetId")
     suspend fun clearForAsset(assetId: String)
 }
@@ -267,4 +280,62 @@ interface OutboxDao {
     /** A deleted story's queued uploads must die with it, or the queue uploads ghosts. */
     @Query("DELETE FROM outbox WHERE docId = :docId")
     suspend fun deleteForDoc(docId: String)
+}
+
+@Dao
+interface PromptDao {
+
+    /** Everything still worth showing: suggested and saved, newest first. */
+    @Query(
+        """
+        SELECT * FROM prompts
+        WHERE familyId = :familyId AND status IN ('SUGGESTED', 'SAVED')
+        ORDER BY updatedAt DESC
+        """
+    )
+    fun observeOpen(familyId: String): Flow<List<PromptEntity>>
+
+    @Query("SELECT * FROM prompts WHERE familyId = :familyId AND status = :status ORDER BY updatedAt DESC")
+    fun observeByStatus(familyId: String, status: PromptStatus): Flow<List<PromptEntity>>
+
+    @Query("SELECT * FROM prompts WHERE familyId = :familyId AND category = :category AND status IN ('SUGGESTED', 'SAVED') ORDER BY updatedAt DESC")
+    fun observeByCategory(familyId: String, category: String): Flow<List<PromptEntity>>
+
+    @Query("SELECT * FROM prompts WHERE promptId = :promptId")
+    suspend fun byId(promptId: String): PromptEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(prompt: PromptEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAllIgnoring(prompts: List<PromptEntity>)
+
+    @Query("UPDATE prompts SET status = :status, answeredStoryId = :storyId, updatedAt = :now WHERE promptId = :promptId")
+    suspend fun setStatus(promptId: String, status: PromptStatus, storyId: String?, now: Long)
+
+    @Query("SELECT COUNT(*) FROM prompts WHERE familyId = :familyId")
+    suspend fun countFor(familyId: String): Int
+}
+
+@Dao
+interface MemberDao {
+
+    @Query("SELECT * FROM members WHERE familyId = :familyId AND userId = :userId")
+    suspend fun forUser(familyId: String, userId: String): MemberEntity?
+
+    @Query("SELECT * FROM members WHERE familyId = :familyId ORDER BY joinedAt ASC")
+    fun observeAll(familyId: String): Flow<List<MemberEntity>>
+
+    /** Every family this account belongs to. The archive picker, once there is one. */
+    @Query("SELECT * FROM members WHERE userId = :userId ORDER BY joinedAt ASC")
+    suspend fun familiesFor(userId: String): List<MemberEntity>
+
+    @Upsert
+    suspend fun upsert(member: MemberEntity)
+
+    @Query("UPDATE members SET role = :role WHERE familyId = :familyId AND userId = :userId")
+    suspend fun setRole(familyId: String, userId: String, role: MemberRole)
+
+    @Query("SELECT COUNT(*) FROM members WHERE familyId = :familyId")
+    suspend fun countFor(familyId: String): Int
 }

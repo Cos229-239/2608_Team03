@@ -82,12 +82,12 @@ object MemoryAccess {
     }
 
     /**
-     * Does a missing consent record stand between this viewer and this memory?
+     * Does consent stand between this viewer and this memory?
      *
      * Consent follows the voice: a story is blocked while any of its narrators has no
-     * consent decision on file. The person page has promised exactly this in writing
-     * ("their memories stay restricted until one exists") since the flag was added, and
-     * until now nothing enforced it, so the sentence was a bluff.
+     * decision on file, or a decision of no. The person page has promised exactly this in
+     * writing ("their memories stay restricted until one exists") since the flag was
+     * added, and until now nothing enforced it, so the sentence was a bluff.
      *
      * Who still reads a blocked story: its creator, who holds the recording and the
      * responsibility of getting the consent, and the narrator themselves or their memory
@@ -95,12 +95,24 @@ object MemoryAccess {
      * person's answer, the same stance PRIVATE takes.
      */
     fun consentBlocks(story: Story, people: List<Person>, viewer: Viewer): Boolean {
-        val undecided = people.filter {
-            it.personId in story.narratorIds && it.needsAConsentDecision
+        val restricted = people.filter {
+            it.personId in story.narratorIds && it.consentRestricts
         }
-        if (undecided.isEmpty()) return false
+        if (restricted.isEmpty()) return false
         if (story.createdBy == viewer.userId) return false
-        return !undecided.all { it.personId in viewer.personIds }
+        return !restricted.all { it.personId in viewer.personIds }
+    }
+
+    /**
+     * Who may write down what a person said about their memories being kept.
+     *
+     * The person themselves and their memory steward, always. Otherwise anyone who can put
+     * a memory in the archive, because whoever recorded grandma is whoever asked her.
+     * A viewer cannot: they add nothing and they answer for nobody.
+     */
+    fun canRecordConsent(person: Person, viewer: Viewer): Boolean {
+        if (person.personId in viewer.personIds) return true
+        return viewer.role != MemberRole.VIEWER
     }
 
     /**
@@ -138,6 +150,11 @@ object MemoryAccess {
      * and the subject would have no standing to remove it.
      */
     fun canEdit(story: Story, viewer: Viewer): Boolean {
+        // The family boundary, before anything else, exactly as [canRead] checks it.
+        // Reading somebody else's archive was closed off; editing and deleting it was
+        // left open, which is the more dangerous half of the same hole.
+        if (story.familyId != viewer.familyId) return false
+
         if (story.area == ArchiveArea.HEALTH) {
             val isSubject = story.subjectPersonIds.any { it in viewer.personIds }
             return isSubject || story.createdBy == viewer.userId

@@ -7,6 +7,7 @@ import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.ai.Viewer
 import com.arv.app.core.data.local.ArvDatabase
 import com.arv.app.core.data.local.AssetEntity
+import com.arv.app.core.data.local.MemberEntity
 import com.arv.app.core.data.local.OutboxEntity
 import com.arv.app.core.data.local.PersonEntity
 import com.arv.app.core.data.local.RelationshipEntity
@@ -17,14 +18,20 @@ import com.arv.app.core.session.ActiveSession
 import com.arv.app.core.data.local.toDomain
 import com.arv.app.core.model.ArchiveArea
 import com.arv.app.core.model.Confidence
+import com.arv.app.core.model.ConsentMethod
 import com.arv.app.core.model.AssetType
 import com.arv.app.core.model.OutboxOp
 import java.io.File
 import java.util.UUID
 import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.EraPrecision
+import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.ProfileState
+import com.arv.app.core.data.local.PromptEntity
+import com.arv.app.core.model.Prompt
+import com.arv.app.core.model.PromptOrigin
+import com.arv.app.core.model.PromptStatus
 import com.arv.app.core.model.Provenance
 import com.arv.app.core.model.Story
 import com.arv.app.core.model.StoryKind
@@ -62,27 +69,43 @@ class StoryRepository(
         db.storyDao().observeDocuments(familyId).map { rows -> rows.map { it.toDomain() } }
 
     /**
-     * Recomputes who the signed-in user is and who they descend from, and caches it on
-     * the session.
+     * Recomputes who the signed-in user is in this family, what they may do there, and who
+     * they descend from, and caches all three on the session.
      *
-     * BRANCH visibility reads that cache, so this has to run before any screen filters,
-     * and again whenever the tree changes. It fails to an empty set rather than throwing:
-     * an archive whose owner is not yet linked to a person should show nothing
-     * branch-scoped, not everything.
+     * The member row is the authority for the first two. BRANCH visibility reads the
+     * third, so this has to run before any screen filters, and again whenever the tree
+     * changes. It fails to an empty set rather than throwing: an account not yet placed in
+     * the tree should see nothing branch-scoped, not everything.
+     *
+     * An archive from before member rows existed has none. See [Membership.backfill] for
+     * the one case where a row is written here, and why it says nothing new.
      */
-    suspend fun refreshLineage(familyId: String, userId: String) {
+    suspend fun refreshLineage(
+        familyId: String,
+        userId: String,
+        nowMillis: Long = System.currentTimeMillis()
+    ) {
         val people = db.personDao().all(familyId)
-        val me = people.firstOrNull { it.linkedUserId == userId }
+        val member = db.memberDao().forUser(familyId, userId)
+            ?: Membership.backfill(familyId, userId, people, nowMillis)
+                ?.also { db.memberDao().upsert(it) }
 
         val steward = people.filter { it.memoryStewardUserId == userId }.map { it.personId }
-        ActiveSession.setPersonIds((listOfNotNull(me?.personId) + steward).toSet())
+        ActiveSession.setPersonIds((listOfNotNull(member?.personId) + steward).toSet())
 
-        if (me == null) {
+        if (member == null) {
+            ActiveSession.setLineage(emptySet())
+            return
+        }
+        ActiveSession.setRole(member.role)
+
+        val personId = member.personId
+        if (personId == null) {
             ActiveSession.setLineage(emptySet())
             return
         }
         val edges = db.relationshipDao().observeAll(familyId).first().map { it.toDomain() }
-        ActiveSession.setLineage(Lineage.ancestorsOf(me.personId, edges))
+        ActiveSession.setLineage(Lineage.ancestorsOf(personId, edges))
     }
 
     /**
@@ -244,6 +267,41 @@ class StoryRepository(
     }
 
     /**
+     * Writes down a person's answer about their memories being kept and shared here.
+     *
+     * A yes opens their memories to the family under the usual rules. A no restricts
+     * them and stops the archive asking. Both carry when, how, and by whose account, so
+     * the record can say what it knows and no more. ON_THEIR_BEHALF is the family
+     * deciding for someone who cannot be asked; it writes the post-mortem decision and
+     * leaves the living consent alone, because nobody can grant that for another person.
+     *
+     * Returns false when the caller may not answer for this person, and writes nothing.
+     */
+    suspend fun recordConsent(
+        personId: String,
+        granted: Boolean,
+        postMortemOk: Boolean,
+        method: ConsentMethod,
+        viewer: Viewer,
+        nowMillis: Long
+    ): Boolean {
+        val p = db.personDao().byId(personId) ?: return false
+        if (!MemoryAccess.canRecordConsent(p.toDomain(), viewer)) return false
+        db.personDao().upsert(
+            p.copy(
+                consentGranted = if (method == ConsentMethod.ON_THEIR_BEHALF) p.consentGranted else granted,
+                postMortemOk = postMortemOk,
+                consentDeclined = !granted,
+                consentDecidedAt = nowMillis,
+                consentMethod = method,
+                consentRecordedBy = viewer.userId,
+                updatedAt = nowMillis
+            )
+        )
+        return true
+    }
+
+    /**
      * Somebody looked at an uncertain link and said it is right.
      *
      * The question mark on a chip is a question, and until now the app had no way to
@@ -368,36 +426,57 @@ class StoryRepository(
     // --- Making an archive real (DAT-1 groundwork) ---
 
     /**
-     * Creates a family and the person who owns it.
+     * Creates a family, the person who owns it, and the record that says so.
      *
-     * The owner is written as a [PersonEntity] as well as a user id, because in this app
-     * the person keeping the archive is also in it. Their consent is set at creation:
-     * they are the one choosing to record, and asking someone to consent to their own
-     * archive would be theater.
+     * The owner is written as a [PersonEntity] as well as a [MemberEntity], because in
+     * this app the person keeping the archive is also in it. Their consent is set at
+     * creation: they are the one choosing to record, and asking someone to consent to
+     * their own archive would be theater. The member row is what every later permission
+     * check reads; it is the one row that makes OWNER a fact instead of an assumption.
      */
     suspend fun createFamily(
         familyName: String,
         ownerDisplayName: String,
-        nowMillis: Long
+        nowMillis: Long,
+        /**
+         * The Firebase uid of whoever is creating this, so the owner's person row links
+         * to a real account. Null only for paths with no account behind them (the sample
+         * family, tests), which mint a local id the way every family did before accounts.
+         */
+        userId: String? = null
     ): NewFamily {
         val familyId = "fam_" + UUID.randomUUID().toString().take(8)
-        val userId = "u_" + UUID.randomUUID().toString().take(8)
+        val userId = userId ?: ("u_" + UUID.randomUUID().toString().take(8))
         val personId = "p_" + UUID.randomUUID().toString().take(8)
 
-        db.personDao().upsert(
-            PersonEntity(
-                personId = personId,
-                familyId = familyId,
-                displayName = ownerDisplayName.trim(),
-                relationLabel = "You",
-                linkedUserId = userId,
-                state = ProfileState.LIVING,
-                consentGranted = true,
-                updatedAt = nowMillis
+        // Person and member land together or not at all. An owner with no standing in
+        // their own archive, or standing with no profile, is a state nothing downstream
+        // knows how to read.
+        db.withTransaction {
+            db.personDao().upsert(
+                PersonEntity(
+                    personId = personId,
+                    familyId = familyId,
+                    displayName = ownerDisplayName.trim(),
+                    relationLabel = "You",
+                    linkedUserId = userId,
+                    state = ProfileState.LIVING,
+                    consentGranted = true,
+                    updatedAt = nowMillis
+                )
             )
-        )
+            db.memberDao().upsert(
+                MemberEntity(
+                    familyId = familyId,
+                    userId = userId,
+                    role = MemberRole.OWNER,
+                    personId = personId,
+                    joinedAt = nowMillis
+                )
+            )
+        }
 
-        return NewFamily(familyId, userId, personId, familyName.trim())
+        return NewFamily(familyId, userId, personId, familyName.trim(), MemberRole.OWNER)
     }
 
     /**
@@ -479,8 +558,22 @@ class StoryRepository(
             }
             .flowOn(Dispatchers.IO)
 
-    suspend fun correctSegment(segmentId: Long, newText: String) =
+    /**
+     * Correcting a line is editing the memory, so it answers to [MemoryAccess.canEdit]
+     * like every other edit does.
+     *
+     * Read access is not write access to what somebody is recorded as having said. This
+     * matters most for health recordings, where the subject controls the record: gating
+     * the title while leaving the words open would enforce that rule everywhere except
+     * the place it means something. The correction is also marked human verified, so an
+     * unchecked one launders a stranger's words into the speaker's own.
+     */
+    suspend fun correctSegment(segmentId: Long, viewer: Viewer, newText: String): Boolean {
+        val story = db.transcriptDao().storyForSegment(segmentId) ?: return false
+        if (!MemoryAccess.canEdit(story.toDomain(), viewer)) return false
         db.transcriptDao().correct(segmentId, newText)
+        return true
+    }
 
     /**
      * AI-3, local edition. Runs the transcription service against a story's audio and
@@ -614,6 +707,13 @@ class StoryRepository(
         if (!MemoryAccess.canEdit(entity.toDomain(), viewer)) return false
         if (visibility == Visibility.BRANCH && branchRootPersonId == null) return false
 
+        // Visibility runs PRIVATE, SELECTED, BRANCH, FAMILY, narrowest to widest.
+        // A keeper may fix a title or a date on somebody else's memory. Deciding that
+        // more people may read it is the creator's call and nobody else's.
+        if (visibility.ordinal > entity.visibility.ordinal && entity.createdBy != viewer.userId) {
+            return false
+        }
+
         val era = if (eraUnknown) EraText.Parsed(null, null, EraPrecision.UNKNOWN)
         else EraText.parse(eraText)
 
@@ -641,6 +741,237 @@ class StoryRepository(
      * standing in a kitchen with someone's grandmother and cannot wait on a network call,
      * and the recording must be safe the instant they tap save.
      */
+    /**
+     * Attach a recording to a story that already exists.
+     *
+     * A story is not always born as a recording. A photograph goes in first, and the
+     * voice that explains it arrives later, sometimes years later. Without this the only
+     * way to hold both was two separate stories that happen to share a title, which is
+     * exactly the kind of bookkeeping a family should not have to do.
+     *
+     * The story keeps its own title, era, visibility and policy. Those were decided when
+     * it was made and adding audio is not a reason to reopen them. Returns the new asset
+     * id, or null when the viewer may not edit this story or it no longer exists.
+     */
+    // ---- Prompts ----------------------------------------------------------
+    //
+    // The prompt library's storage, kept behind these five calls so the screen never
+    // touches a DAO. Everything is family scoped; a question written in one archive is
+    // not a question in another.
+
+    /**
+     * The questions to show for the chip the screen currently has selected.
+     *
+     * Takes the category string the screen already holds, so nothing has to be
+     * translated at the call site. "Suggested" is not a category, it is the mixed view
+     * across all of them, which is how the screen has always treated it.
+     *
+     * A Flow so the list updates itself when a question is saved or answered. Reading it
+     * needs one line in the composable and no view model:
+     *
+     *     val prompts by repo.observePromptsFor(familyId, selectedCategory)
+     *         .collectAsStateWithLifecycle(emptyList())
+     */
+    fun observePromptsFor(familyId: String, category: String): Flow<List<Prompt>> {
+        val rows =
+            if (category == SUGGESTED_VIEW) db.promptDao().observeOpen(familyId)
+            else db.promptDao().observeByCategory(familyId, category)
+        return rows.map { list -> list.map { it.toDomain() } }.flowOn(Dispatchers.IO)
+    }
+
+    /** Only what somebody chose to keep for later. */
+    fun observeSavedPrompts(familyId: String): Flow<List<Prompt>> =
+        db.promptDao().observeByStatus(familyId, PromptStatus.SAVED)
+            .map { rows -> rows.map { it.toDomain() } }
+            .flowOn(Dispatchers.IO)
+
+    /**
+     * A question somebody wrote themselves.
+     *
+     * Origin is USER and stays USER. Where a question came from is part of what it is:
+     * one the family thought to ask carries different weight from one the app suggested,
+     * and flattening the two would lose that.
+     */
+    suspend fun addUserPrompt(
+        familyId: String,
+        text: String,
+        category: String,
+        targetPersonId: String? = null,
+        now: Long
+    ): String? {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return null
+        val promptId = "q_" + UUID.randomUUID().toString().take(12)
+        db.promptDao().upsert(
+            PromptEntity(
+                promptId = promptId,
+                familyId = familyId,
+                text = trimmed,
+                category = category,
+                targetPersonId = targetPersonId,
+                origin = PromptOrigin.USER,
+                status = PromptStatus.SUGGESTED,
+                createdAt = now,
+                updatedAt = now
+            )
+        )
+        return promptId
+    }
+
+    /**
+     * Move a question along: saved for later, answered, or skipped.
+     *
+     * Pass [storyId] when a recording answered it, so the question and the memory that
+     * came from it stay connected.
+     */
+    suspend fun setPromptStatus(
+        promptId: String,
+        status: PromptStatus,
+        storyId: String? = null,
+        now: Long
+    ): Boolean {
+        db.promptDao().byId(promptId) ?: return false
+        db.promptDao().setStatus(promptId, status, storyId, now)
+        return true
+    }
+
+    /**
+     * Puts the starting questions in an archive that has none.
+     *
+     * These are the prompt library's own questions, its own categories, and its own
+     * reasons for asking, lifted from the screen rather than invented here. The screen
+     * stays the author of what the archive asks; this only gives them somewhere to live
+     * so a saved or answered one is still saved and answered tomorrow.
+     *
+     * Ignores conflicts, so running it twice cannot duplicate a question or undo a
+     * decision somebody already made about one.
+     */
+    suspend fun seedPromptsIfEmpty(familyId: String, now: Long) {
+        if (db.promptDao().countFor(familyId) > 0) return
+        db.promptDao().insertAllIgnoring(
+            STARTING_PROMPTS.mapIndexed { index, seed ->
+                PromptEntity(
+                    promptId = "q_seed_$index",
+                    familyId = familyId,
+                    text = seed.text,
+                    category = seed.category,
+                    rationale = seed.rationale,
+                    origin = PromptOrigin.LIBRARY,
+                    status = PromptStatus.SUGGESTED,
+                    createdAt = now,
+                    updatedAt = now
+                )
+            }
+        )
+    }
+
+    private data class SeedPrompt(val text: String, val category: String, val rationale: String)
+
+    companion object {
+        /** The chip that means "everything", not a category of its own. */
+        const val SUGGESTED_VIEW = "Suggested"
+
+        private val STARTING_PROMPTS = listOf(
+            SeedPrompt(
+                "Who taught you to cook?",
+                "Food",
+                "Often opens into migration stories"
+            ),
+            SeedPrompt(
+                "What did your street sound like at night?",
+                "Childhood",
+                "Sounds can unlock vivid memories"
+            ),
+            SeedPrompt(
+                "What's a word your family used that nobody else did?",
+                "Childhood",
+                "Family language holds unique memories"
+            ),
+            SeedPrompt(
+                // Filed under Childhood because that is the chip it appears on in the
+                // screen. Its note calls it reflection, which is a description of the
+                // question, not the category it filters into.
+                "Tell me about a day you'd live again.",
+                "Childhood",
+                "Revisit a memory worth reliving"
+            ),
+            SeedPrompt(
+                "What was your first job, and what do you remember most about it?",
+                "Work",
+                "Early jobs can reveal family responsibilities and life changes"
+            ),
+            SeedPrompt(
+                "What was one difficult time your family made it through together?",
+                "Hard Things",
+                "Challenges can reveal strength, support, and resilience"
+            ),
+            SeedPrompt(
+                "Was there a tradition, prayer, or belief that brought your family comfort?",
+                "Faith",
+                "Beliefs and traditions can preserve meaningful family memories"
+            )
+        )
+    }
+
+    suspend fun addRecordingToStory(
+        storyId: String,
+        viewer: Viewer,
+        localAudioPath: String,
+        durationMs: Long,
+        now: Long
+    ): String? {
+        val entity = db.storyDao().observeById(storyId).first() ?: return null
+        if (!MemoryAccess.canEdit(entity.toDomain(), viewer)) return null
+
+        val assetId = "a_" + UUID.randomUUID().toString().take(12)
+        val asset = AssetEntity(
+            assetId = assetId,
+            storyId = storyId,
+            familyId = entity.familyId,
+            type = AssetType.AUDIO,
+            localPath = localAudioPath,
+            mimeType = "audio/mp4",
+            bytes = runCatching { File(localAudioPath).length() }.getOrDefault(0L),
+            uploadState = UploadState.LOCAL_ONLY,
+            createdAt = now
+        )
+
+        // A story holding both photographs and a voice is a collection. Audio-only
+        // stories keep the kind they were born with.
+        val kind = when (entity.kind) {
+            StoryKind.AUDIO -> StoryKind.AUDIO
+            else -> StoryKind.COLLECTION
+        }
+
+        db.withTransaction {
+            db.assetDao().upsert(asset)
+            db.storyDao().upsert(
+                entity.copy(
+                    kind = kind,
+                    // The first voice on a story becomes the one it plays.
+                    primaryAssetId = entity.primaryAssetId ?: assetId,
+                    durationMs = entity.durationMs ?: durationMs,
+                    assetCount = entity.assetCount + 1,
+                    // There are words to find now, so the story owes a transcript again.
+                    transcriptStatus = TranscriptStatus.PENDING,
+                    updatedAt = now
+                )
+            )
+            db.outboxDao().enqueue(
+                OutboxEntity(
+                    op = OutboxOp.UPLOAD,
+                    collectionPath = "families/${entity.familyId}/assets",
+                    docId = assetId,
+                    payloadJson = "{\"assetId\":\"$assetId\"}",
+                    localFilePath = localAudioPath,
+                    createdAt = now
+                )
+            )
+        }
+
+        return assetId
+    }
+
     suspend fun saveRecording(
         familyId: String,
         createdByUserId: String,
@@ -656,6 +987,12 @@ class StoryRepository(
         visibility: Visibility,
         aiUsePolicy: AiUsePolicy,
         area: ArchiveArea,
+        /**
+         * Who the record is about, when that is not whoever is speaking. Health records
+         * need this because control follows the subject; for everything else the
+         * narrators are the subjects, which is what null means.
+         */
+        subjectPersonIds: List<String>? = null,
         branchRootPersonId: String? = null,
         now: Long
     ): String {
@@ -669,7 +1006,7 @@ class StoryRepository(
             kind = StoryKind.AUDIO,
             area = area,
             narratorIds = narratorIds,
-            subjectPersonIds = narratorIds,
+            subjectPersonIds = subjectPersonIds ?: narratorIds,
             eraStart = eraStart,
             eraEnd = eraEnd,
             eraPrecision = eraPrecision,
@@ -815,28 +1152,33 @@ class StoryRepository(
             createdAt = now
         )
 
-        db.storyDao().upsert(story)
-        db.assetDao().upsert(asset)
+        // All four writes land or none do. A crash between the story and its asset
+        // leaves a document the archive lists and can never open, which is the same
+        // defect saveRecording already closed.
+        db.withTransaction {
+            db.storyDao().upsert(story)
+            db.assetDao().upsert(asset)
 
-        db.outboxDao().enqueue(
-            OutboxEntity(
-                op = OutboxOp.CREATE,
-                collectionPath = "families/$familyId/stories",
-                docId = storyId,
-                payloadJson = "{\"storyId\":\"$storyId\"}",
-                createdAt = now
+            db.outboxDao().enqueue(
+                OutboxEntity(
+                    op = OutboxOp.CREATE,
+                    collectionPath = "families/$familyId/stories",
+                    docId = storyId,
+                    payloadJson = "{\"storyId\":\"$storyId\"}",
+                    createdAt = now
+                )
             )
-        )
-        db.outboxDao().enqueue(
-            OutboxEntity(
-                op = OutboxOp.UPLOAD,
-                collectionPath = "families/$familyId/assets",
-                docId = assetId,
-                payloadJson = "{\"assetId\":\"$assetId\"}",
-                localFilePath = localPath,
-                createdAt = now
+            db.outboxDao().enqueue(
+                OutboxEntity(
+                    op = OutboxOp.UPLOAD,
+                    collectionPath = "families/$familyId/assets",
+                    docId = assetId,
+                    payloadJson = "{\"assetId\":\"$assetId\"}",
+                    localFilePath = localPath,
+                    createdAt = now
+                )
             )
-        )
+        }
 
         return storyId
     }
@@ -847,6 +1189,21 @@ class StoryRepository(
      * Delete this once DAT-2 lands real sync.
      */
     suspend fun seedDemoDataIfEmpty(familyId: String) {
+        // The sample family's one account is its owner by the same record a real family
+        // uses, not by exception. Written ahead of the early return so an archive seeded
+        // before member rows existed picks its row up on the next open. The demo has no
+        // profile for this account in its tree, and that is unchanged: nothing in the
+        // sample is "you".
+        db.memberDao().upsert(
+            MemberEntity(
+                familyId = familyId,
+                userId = "u_dana",
+                role = MemberRole.OWNER,
+                personId = null,
+                joinedAt = 0L
+            )
+        )
+
         val dao = db.storyDao()
         if (dao.count(familyId) > 0) return
 
@@ -1164,5 +1521,7 @@ data class NewFamily(
     val familyId: String,
     val userId: String,
     val ownerPersonId: String,
-    val familyName: String
+    val familyName: String,
+    /** Always OWNER for a family you just created. Carried so the caller never assumes it. */
+    val role: MemberRole
 )

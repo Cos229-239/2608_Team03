@@ -2,6 +2,7 @@ package com.arv.app.core.session
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.arv.app.core.model.MemberRole
 
 /**
  * Who is using the app, and whose archive they are standing in.
@@ -10,9 +11,17 @@ import android.content.SharedPreferences
  * answer is needed before the first frame, to decide whether onboarding runs at all.
  * A suspending read would mean rendering the family feed before knowing which family.
  *
- * DAT-1 replaces the two ids with Firebase Auth's uid and the family that user belongs
- * to. Every screen already reads the family from [com.arv.app.core.di.ServiceLocator],
- * so that swap lands in [set] and [restore] and touches no UI.
+ * Two questions live here and they are deliberately not the same question:
+ *
+ *  - [isAuthenticated]: does Firebase know who this is. Set by the auth screen.
+ *  - [isSignedIn]: is an archive open. Set by onboarding when a family is created or joined.
+ *
+ * Conflating them was the trap. A person can be authenticated with no family yet (fresh
+ * account), and the sample family can be open with nobody authenticated at all (the build
+ * review path, kept on purpose). Routing reads both and never infers one from the other.
+ *
+ * [userId] is the Firebase uid once an account exists. The sample family still uses its
+ * fixed demo id, which is how the two never mix.
  */
 object ActiveSession {
 
@@ -20,6 +29,9 @@ object ActiveSession {
     private const val KEY_FAMILY = "familyId"
     private const val KEY_USER = "userId"
     private const val KEY_FAMILY_NAME = "familyName"
+    private const val KEY_AUTH_UID = "authUid"
+    private const val KEY_AUTH_EMAIL = "authEmail"
+    private const val KEY_ROLE = "role"
 
     private var prefs: SharedPreferences? = null
 
@@ -34,6 +46,34 @@ object ActiveSession {
     /** Shown in the app bar so it is always obvious whose archive is open. */
     @Volatile
     var familyName: String? = null
+        private set
+
+    /**
+     * What this account may do in the open archive, from its member row.
+     *
+     * Persisted alongside the family rather than derived like [ancestorIds], because every
+     * screen's ViewModel captures the viewer at construction and the first ones are built
+     * before any database read completes. A role that arrived late would be a role the
+     * feed never saw. [com.arv.app.core.data.StoryRepository.refreshLineage] keeps it true
+     * to the row; sign-in paths set it from what they just created or opened.
+     */
+    @Volatile
+    var role: MemberRole? = null
+        private set
+
+    fun setRole(role: MemberRole) {
+        this.role = role
+        prefs?.edit()?.putString(KEY_ROLE, role.name)?.apply()
+    }
+
+    /** Firebase Auth's uid for the account that is signed in, or null when nobody is. */
+    @Volatile
+    var authUid: String? = null
+        private set
+
+    /** Shown in settings so the person can see which account they are signed in as. */
+    @Volatile
+    var authEmail: String? = null
         private set
 
     /**
@@ -62,8 +102,11 @@ object ActiveSession {
 
     fun setPersonIds(ids: Set<String>) { personIds = ids }
 
-    /** False on a fresh install, which is the only trigger for onboarding. */
+    /** An archive is open. This alone decides whether the family shell renders. */
     val isSignedIn: Boolean get() = familyId != null
+
+    /** An account exists. This alone decides whether the auth screen is skipped. */
+    val isAuthenticated: Boolean get() = authUid != null
 
     fun restore(context: Context) {
         val p = context.applicationContext
@@ -72,16 +115,41 @@ object ActiveSession {
         familyId = p.getString(KEY_FAMILY, null)
         userId = p.getString(KEY_USER, null)
         familyName = p.getString(KEY_FAMILY_NAME, null)
+        authUid = p.getString(KEY_AUTH_UID, null)
+        authEmail = p.getString(KEY_AUTH_EMAIL, null)
+        role = p.getString(KEY_ROLE, null)?.let { runCatching { MemberRole.valueOf(it) }.getOrNull() }
+
+        // A session saved before roles existed has a family open and no role stored. The
+        // only way into a family back then was to create it, so this person owns it, and
+        // the member row written on the next refresh says the same. Joining always stores
+        // a role at the moment of joining, so a missing one never means "joined".
+        if (familyId != null && role == null) setRole(MemberRole.OWNER)
     }
 
-    fun set(familyId: String, userId: String, familyName: String) {
+    /** Called by the auth screen once Firebase has confirmed who this is. */
+    fun setAuth(uid: String, email: String?) {
+        authUid = uid
+        authEmail = email
+        prefs?.edit()
+            ?.putString(KEY_AUTH_UID, uid)
+            ?.putString(KEY_AUTH_EMAIL, email)
+            ?.apply()
+    }
+
+    /**
+     * Opens an archive. The role is required, not defaulted, because every caller knows
+     * it: it just created the family, joined one, or opened the sample.
+     */
+    fun set(familyId: String, userId: String, familyName: String, role: MemberRole) {
         this.familyId = familyId
         this.userId = userId
         this.familyName = familyName
+        this.role = role
         prefs?.edit()
             ?.putString(KEY_FAMILY, familyId)
             ?.putString(KEY_USER, userId)
             ?.putString(KEY_FAMILY_NAME, familyName)
+            ?.putString(KEY_ROLE, role.name)
             ?.apply()
     }
 
@@ -94,8 +162,26 @@ object ActiveSession {
         familyId = null
         userId = null
         familyName = null
+        role = null
         ancestorIds = emptySet()
         personIds = emptySet()
-        prefs?.edit()?.clear()?.apply()
+        prefs?.edit()
+            ?.remove(KEY_FAMILY)
+            ?.remove(KEY_USER)
+            ?.remove(KEY_FAMILY_NAME)
+            ?.remove(KEY_ROLE)
+            ?.apply()
+    }
+
+    /**
+     * Signs out of the account. Closes the archive too, because an open archive with no
+     * account behind it is a state nothing else in the app knows how to reason about.
+     * Still touches no rows: the family's stories stay in Room for whoever signs in next.
+     */
+    fun clearAuth() {
+        clear()
+        authUid = null
+        authEmail = null
+        prefs?.edit()?.remove(KEY_AUTH_UID)?.remove(KEY_AUTH_EMAIL)?.apply()
     }
 }
