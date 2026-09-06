@@ -9,6 +9,8 @@ import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.ArchiveArea
 import com.arv.app.core.model.AssetType
 import com.arv.app.core.model.EraPrecision
+import com.arv.app.core.model.Member
+import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.OutboxOp
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.ProfileState
@@ -227,6 +229,9 @@ class Converters {
     @TypeConverter fun relationshipKindToString(v: RelationshipKind): String = v.name
     @TypeConverter fun stringToRelationshipKind(v: String): RelationshipKind =
         RelationshipKind.valueOf(v)
+
+    @TypeConverter fun memberRoleToString(v: MemberRole): String = v.name
+    @TypeConverter fun stringToMemberRole(v: String): MemberRole = MemberRole.valueOf(v)
 }
 
 // --- mapping to domain ---
@@ -333,5 +338,36 @@ data class PromptEntity(
         origin = origin,
         rationale = rationale,
         status = status
+    )
+}
+
+/**
+ * One account's membership in one family. See [Member] for why this is its own table.
+ *
+ * Keyed by family and user together: the same account will be in more than one family
+ * once joining exists, and a family has each account at most once.
+ */
+@Entity(
+    tableName = "members",
+    primaryKeys = ["familyId", "userId"],
+    indices = [Index("userId"), Index("personId")]
+)
+data class MemberEntity(
+    val familyId: String,
+    val userId: String,
+    val role: MemberRole,
+    val personId: String? = null,
+    val branchRootPersonId: String? = null,
+    val joinedAt: Long,
+    val invitedBy: String? = null
+) {
+    fun toDomain() = Member(
+        userId = userId,
+        familyId = familyId,
+        role = role,
+        personId = personId,
+        branchRootPersonId = branchRootPersonId,
+        joinedAt = joinedAt,
+        invitedBy = invitedBy
     )
 }

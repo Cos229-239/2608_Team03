@@ -42,27 +42,36 @@ object ServiceLocator {
      * The family every screen reads. One property, ten call sites, so switching archives
      * is a session change rather than a refactor.
      *
-     * Falls back to the sample family only when nothing is signed in, which onboarding
-     * makes impossible in practice. The fallback exists so a Compose preview or a test
-     * that skips onboarding still renders something instead of crashing.
+     * Falls back to the sample family only when nobody is signed in at all: a Compose
+     * preview, a test that skips onboarding. An account with no archive open has no honest
+     * answer here, and handing it the sample family would let a real person's first story
+     * land in the demo. Routing keeps that state on the onboarding screen, which never
+     * asks; if something else asks, failing loudly beats writing into the wrong family.
      */
-    val familyId: String get() = ActiveSession.familyId ?: DEMO_FAMILY_ID
+    val familyId: String
+        get() = ActiveSession.familyId ?: run {
+            check(!ActiveSession.isAuthenticated) { "No archive is open for this account." }
+            DEMO_FAMILY_ID
+        }
 
-    val userId: String get() = ActiveSession.userId ?: DEMO_USER_ID
+    val userId: String get() = ActiveSession.userId ?: ActiveSession.authUid ?: DEMO_USER_ID
 
     /**
      * Who is asking, for the permission filter. Defined once on purpose: a screen that
      * builds its own [Viewer] is a screen that can quietly disagree with the others about
      * what someone is allowed to read, and this app's whole claim is that they never do.
      *
-     * TODO(DAT-1): role and branch root belong to the family membership record. Until that
-     * exists this is OWNER, which is true of the only member a device currently has.
+     * The role is this account's member row, cached on the session. Inside a real archive
+     * an unproven role is VIEWER, the one role that can only read what the family already
+     * shows everyone. With no archive open at all the viewer is the sample family's owner,
+     * the same fallback [familyId] and [userId] make, so a preview renders as the demo.
      */
     val viewer: Viewer
         get() = Viewer(
             userId = userId,
             familyId = familyId,
-            role = MemberRole.OWNER,
+            role = ActiveSession.role
+                ?: if (ActiveSession.isSignedIn) MemberRole.VIEWER else MemberRole.OWNER,
             ancestorIds = ActiveSession.ancestorIds,
             personIds = ActiveSession.personIds
         )

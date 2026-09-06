@@ -7,6 +7,7 @@ import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.ai.Viewer
 import com.arv.app.core.data.local.ArvDatabase
 import com.arv.app.core.data.local.AssetEntity
+import com.arv.app.core.data.local.MemberEntity
 import com.arv.app.core.data.local.OutboxEntity
 import com.arv.app.core.data.local.PersonEntity
 import com.arv.app.core.data.local.RelationshipEntity
@@ -23,6 +24,7 @@ import java.io.File
 import java.util.UUID
 import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.EraPrecision
+import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.ProfileState
 import com.arv.app.core.data.local.PromptEntity
@@ -66,27 +68,43 @@ class StoryRepository(
         db.storyDao().observeDocuments(familyId).map { rows -> rows.map { it.toDomain() } }
 
     /**
-     * Recomputes who the signed-in user is and who they descend from, and caches it on
-     * the session.
+     * Recomputes who the signed-in user is in this family, what they may do there, and who
+     * they descend from, and caches all three on the session.
      *
-     * BRANCH visibility reads that cache, so this has to run before any screen filters,
-     * and again whenever the tree changes. It fails to an empty set rather than throwing:
-     * an archive whose owner is not yet linked to a person should show nothing
-     * branch-scoped, not everything.
+     * The member row is the authority for the first two. BRANCH visibility reads the
+     * third, so this has to run before any screen filters, and again whenever the tree
+     * changes. It fails to an empty set rather than throwing: an account not yet placed in
+     * the tree should see nothing branch-scoped, not everything.
+     *
+     * An archive from before member rows existed has none. See [Membership.backfill] for
+     * the one case where a row is written here, and why it says nothing new.
      */
-    suspend fun refreshLineage(familyId: String, userId: String) {
+    suspend fun refreshLineage(
+        familyId: String,
+        userId: String,
+        nowMillis: Long = System.currentTimeMillis()
+    ) {
         val people = db.personDao().all(familyId)
-        val me = people.firstOrNull { it.linkedUserId == userId }
+        val member = db.memberDao().forUser(familyId, userId)
+            ?: Membership.backfill(familyId, userId, people, nowMillis)
+                ?.also { db.memberDao().upsert(it) }
 
         val steward = people.filter { it.memoryStewardUserId == userId }.map { it.personId }
-        ActiveSession.setPersonIds((listOfNotNull(me?.personId) + steward).toSet())
+        ActiveSession.setPersonIds((listOfNotNull(member?.personId) + steward).toSet())
 
-        if (me == null) {
+        if (member == null) {
+            ActiveSession.setLineage(emptySet())
+            return
+        }
+        ActiveSession.setRole(member.role)
+
+        val personId = member.personId
+        if (personId == null) {
             ActiveSession.setLineage(emptySet())
             return
         }
         val edges = db.relationshipDao().observeAll(familyId).first().map { it.toDomain() }
-        ActiveSession.setLineage(Lineage.ancestorsOf(me.personId, edges))
+        ActiveSession.setLineage(Lineage.ancestorsOf(personId, edges))
     }
 
     /**
@@ -372,12 +390,13 @@ class StoryRepository(
     // --- Making an archive real (DAT-1 groundwork) ---
 
     /**
-     * Creates a family and the person who owns it.
+     * Creates a family, the person who owns it, and the record that says so.
      *
-     * The owner is written as a [PersonEntity] as well as a user id, because in this app
-     * the person keeping the archive is also in it. Their consent is set at creation:
-     * they are the one choosing to record, and asking someone to consent to their own
-     * archive would be theater.
+     * The owner is written as a [PersonEntity] as well as a [MemberEntity], because in
+     * this app the person keeping the archive is also in it. Their consent is set at
+     * creation: they are the one choosing to record, and asking someone to consent to
+     * their own archive would be theater. The member row is what every later permission
+     * check reads; it is the one row that makes OWNER a fact instead of an assumption.
      */
     suspend fun createFamily(
         familyName: String,
@@ -394,20 +413,34 @@ class StoryRepository(
         val userId = userId ?: ("u_" + UUID.randomUUID().toString().take(8))
         val personId = "p_" + UUID.randomUUID().toString().take(8)
 
-        db.personDao().upsert(
-            PersonEntity(
-                personId = personId,
-                familyId = familyId,
-                displayName = ownerDisplayName.trim(),
-                relationLabel = "You",
-                linkedUserId = userId,
-                state = ProfileState.LIVING,
-                consentGranted = true,
-                updatedAt = nowMillis
+        // Person and member land together or not at all. An owner with no standing in
+        // their own archive, or standing with no profile, is a state nothing downstream
+        // knows how to read.
+        db.withTransaction {
+            db.personDao().upsert(
+                PersonEntity(
+                    personId = personId,
+                    familyId = familyId,
+                    displayName = ownerDisplayName.trim(),
+                    relationLabel = "You",
+                    linkedUserId = userId,
+                    state = ProfileState.LIVING,
+                    consentGranted = true,
+                    updatedAt = nowMillis
+                )
             )
-        )
+            db.memberDao().upsert(
+                MemberEntity(
+                    familyId = familyId,
+                    userId = userId,
+                    role = MemberRole.OWNER,
+                    personId = personId,
+                    joinedAt = nowMillis
+                )
+            )
+        }
 
-        return NewFamily(familyId, userId, personId, familyName.trim())
+        return NewFamily(familyId, userId, personId, familyName.trim(), MemberRole.OWNER)
     }
 
     /**
@@ -1114,6 +1147,21 @@ class StoryRepository(
      * Delete this once DAT-2 lands real sync.
      */
     suspend fun seedDemoDataIfEmpty(familyId: String) {
+        // The sample family's one account is its owner by the same record a real family
+        // uses, not by exception. Written ahead of the early return so an archive seeded
+        // before member rows existed picks its row up on the next open. The demo has no
+        // profile for this account in its tree, and that is unchanged: nothing in the
+        // sample is "you".
+        db.memberDao().upsert(
+            MemberEntity(
+                familyId = familyId,
+                userId = "u_dana",
+                role = MemberRole.OWNER,
+                personId = null,
+                joinedAt = 0L
+            )
+        )
+
         val dao = db.storyDao()
         if (dao.count(familyId) > 0) return
 
@@ -1431,5 +1479,7 @@ data class NewFamily(
     val familyId: String,
     val userId: String,
     val ownerPersonId: String,
-    val familyName: String
+    val familyName: String,
+    /** Always OWNER for a family you just created. Carried so the caller never assumes it. */
+    val role: MemberRole
 )

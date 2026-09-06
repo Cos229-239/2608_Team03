@@ -16,15 +16,17 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AssetEntity::class,
         TranscriptSegmentEntity::class,
         OutboxEntity::class,
-        PromptEntity::class
+        PromptEntity::class,
+        MemberEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class ArvDatabase : RoomDatabase() {
 
     abstract fun promptDao(): PromptDao
+    abstract fun memberDao(): MemberDao
     abstract fun storyDao(): StoryDao
     abstract fun personDao(): PersonDao
     abstract fun relationshipDao(): RelationshipDao
@@ -102,6 +104,35 @@ abstract class ArvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Gives each account a standing in each family it belongs to.
+         *
+         * Additive: one new table, nothing existing is touched. Before this the only member
+         * a device knew about was whoever created the archive, and their role was a
+         * constant in code. The row makes the role a fact that can differ per person, which
+         * is what invitations need before they can exist at all.
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS members (
+                        familyId TEXT NOT NULL,
+                        userId TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        personId TEXT,
+                        branchRootPersonId TEXT,
+                        joinedAt INTEGER NOT NULL,
+                        invitedBy TEXT,
+                        PRIMARY KEY(familyId, userId)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_members_userId ON members(userId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_members_personId ON members(personId)")
+            }
+        }
+
         fun get(context: Context): ArvDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -112,7 +143,7 @@ abstract class ArvDatabase : RoomDatabase() {
                     // No destructive migration. This database holds recordings that may be
                     // the only copy of someone's voice; losing it to a schema bump is not
                     // an acceptable failure mode. Write real migrations.
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { instance = it }
             }

@@ -28,6 +28,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arv.app.core.di.ServiceLocator
+import com.arv.app.core.model.MemberRole
 import com.arv.app.core.session.ActiveSession
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
@@ -197,7 +198,8 @@ fun AuthScreen(
                 ActiveSession.set(
                     familyId = ServiceLocator.DEMO_FAMILY_ID,
                     userId = ServiceLocator.DEMO_USER_ID,
-                    familyName = "Sample family"
+                    familyName = "Sample family",
+                    role = MemberRole.OWNER
                 )
                 onSampleFamily()
             },

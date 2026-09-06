@@ -3,6 +3,31 @@ package com.arv.app.core.model
 /** Role inside a family. Enforced again in Firestore rules. The client copy is for UI only. */
 enum class MemberRole { OWNER, KEEPER, CONTRIBUTOR, VIEWER }
 
+/**
+ * One account's standing in one family. Mirrors families/{familyId}/members/{userId}.
+ *
+ * Accounts and people are different tables on purpose: a person in the tree may have no
+ * account (most of the dead, many of the living), and one account will stand in more than
+ * one family once joining exists. This row is the join between them, and it is the only
+ * place a role lives. A screen that wants to know what someone may do asks the member row,
+ * never the person row and never a constant.
+ */
+data class Member(
+    val userId: String,
+    val familyId: String,
+    val role: MemberRole,
+    /**
+     * Their own profile in the tree, once they have one. Null for an account that is in
+     * the family but not yet placed in it, which is how someone arrives by invitation.
+     */
+    val personId: String?,
+    /** Root of the branch BRANCH visibility scopes them to, when one is set. */
+    val branchRootPersonId: String? = null,
+    val joinedAt: Long,
+    /** Who let them in. Null for the owner, who let themselves in. */
+    val invitedBy: String? = null
+)
+
 enum class StoryKind { AUDIO, PHOTO_SET, DOCUMENT, COLLECTION, UPDATE }
 
 /**

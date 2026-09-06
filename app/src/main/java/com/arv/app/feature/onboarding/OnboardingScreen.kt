@@ -25,6 +25,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arv.app.core.di.ServiceLocator
+import com.arv.app.core.model.MemberRole
 import com.arv.app.core.session.ActiveSession
 import kotlinx.coroutines.launch
 
@@ -57,7 +58,7 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
                     // The account that just signed in owns the family it creates.
                     userId = ActiveSession.authUid
                 )
-                ActiveSession.set(created.familyId, created.userId, created.familyName)
+                ActiveSession.set(created.familyId, created.userId, created.familyName, created.role)
                 // The archive now has exactly one person in it, and that person is the
                 // viewer. Without this their own ancestor set stays empty until the next
                 // launch, and BRANCH would deny them their own line.
@@ -80,7 +81,8 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
         ActiveSession.set(
             familyId = ServiceLocator.DEMO_FAMILY_ID,
             userId = ServiceLocator.DEMO_USER_ID,
-            familyName = "Sample family"
+            familyName = "Sample family",
+            role = MemberRole.OWNER
         )
     }
 }

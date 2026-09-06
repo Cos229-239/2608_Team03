@@ -2,6 +2,7 @@ package com.arv.app.core.session
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.arv.app.core.model.MemberRole
 
 /**
  * Who is using the app, and whose archive they are standing in.
@@ -30,6 +31,7 @@ object ActiveSession {
     private const val KEY_FAMILY_NAME = "familyName"
     private const val KEY_AUTH_UID = "authUid"
     private const val KEY_AUTH_EMAIL = "authEmail"
+    private const val KEY_ROLE = "role"
 
     private var prefs: SharedPreferences? = null
 
@@ -45,6 +47,24 @@ object ActiveSession {
     @Volatile
     var familyName: String? = null
         private set
+
+    /**
+     * What this account may do in the open archive, from its member row.
+     *
+     * Persisted alongside the family rather than derived like [ancestorIds], because every
+     * screen's ViewModel captures the viewer at construction and the first ones are built
+     * before any database read completes. A role that arrived late would be a role the
+     * feed never saw. [com.arv.app.core.data.StoryRepository.refreshLineage] keeps it true
+     * to the row; sign-in paths set it from what they just created or opened.
+     */
+    @Volatile
+    var role: MemberRole? = null
+        private set
+
+    fun setRole(role: MemberRole) {
+        this.role = role
+        prefs?.edit()?.putString(KEY_ROLE, role.name)?.apply()
+    }
 
     /** Firebase Auth's uid for the account that is signed in, or null when nobody is. */
     @Volatile
@@ -97,6 +117,13 @@ object ActiveSession {
         familyName = p.getString(KEY_FAMILY_NAME, null)
         authUid = p.getString(KEY_AUTH_UID, null)
         authEmail = p.getString(KEY_AUTH_EMAIL, null)
+        role = p.getString(KEY_ROLE, null)?.let { runCatching { MemberRole.valueOf(it) }.getOrNull() }
+
+        // A session saved before roles existed has a family open and no role stored. The
+        // only way into a family back then was to create it, so this person owns it, and
+        // the member row written on the next refresh says the same. Joining always stores
+        // a role at the moment of joining, so a missing one never means "joined".
+        if (familyId != null && role == null) setRole(MemberRole.OWNER)
     }
 
     /** Called by the auth screen once Firebase has confirmed who this is. */
@@ -109,14 +136,20 @@ object ActiveSession {
             ?.apply()
     }
 
-    fun set(familyId: String, userId: String, familyName: String) {
+    /**
+     * Opens an archive. The role is required, not defaulted, because every caller knows
+     * it: it just created the family, joined one, or opened the sample.
+     */
+    fun set(familyId: String, userId: String, familyName: String, role: MemberRole) {
         this.familyId = familyId
         this.userId = userId
         this.familyName = familyName
+        this.role = role
         prefs?.edit()
             ?.putString(KEY_FAMILY, familyId)
             ?.putString(KEY_USER, userId)
             ?.putString(KEY_FAMILY_NAME, familyName)
+            ?.putString(KEY_ROLE, role.name)
             ?.apply()
     }
 
@@ -129,12 +162,14 @@ object ActiveSession {
         familyId = null
         userId = null
         familyName = null
+        role = null
         ancestorIds = emptySet()
         personIds = emptySet()
         prefs?.edit()
             ?.remove(KEY_FAMILY)
             ?.remove(KEY_USER)
             ?.remove(KEY_FAMILY_NAME)
+            ?.remove(KEY_ROLE)
             ?.apply()
     }
 
