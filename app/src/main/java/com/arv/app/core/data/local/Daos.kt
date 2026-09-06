@@ -6,6 +6,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Upsert
+import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.UploadState
 import com.arv.app.core.model.PromptStatus
 import kotlinx.coroutines.flow.Flow
@@ -313,5 +314,28 @@ interface PromptDao {
     suspend fun setStatus(promptId: String, status: PromptStatus, storyId: String?, now: Long)
 
     @Query("SELECT COUNT(*) FROM prompts WHERE familyId = :familyId")
+    suspend fun countFor(familyId: String): Int
+}
+
+@Dao
+interface MemberDao {
+
+    @Query("SELECT * FROM members WHERE familyId = :familyId AND userId = :userId")
+    suspend fun forUser(familyId: String, userId: String): MemberEntity?
+
+    @Query("SELECT * FROM members WHERE familyId = :familyId ORDER BY joinedAt ASC")
+    fun observeAll(familyId: String): Flow<List<MemberEntity>>
+
+    /** Every family this account belongs to. The archive picker, once there is one. */
+    @Query("SELECT * FROM members WHERE userId = :userId ORDER BY joinedAt ASC")
+    suspend fun familiesFor(userId: String): List<MemberEntity>
+
+    @Upsert
+    suspend fun upsert(member: MemberEntity)
+
+    @Query("UPDATE members SET role = :role WHERE familyId = :familyId AND userId = :userId")
+    suspend fun setRole(familyId: String, userId: String, role: MemberRole)
+
+    @Query("SELECT COUNT(*) FROM members WHERE familyId = :familyId")
     suspend fun countFor(familyId: String): Int
 }
