@@ -22,7 +22,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.arv.app.core.model.ConsentMethod
+import java.text.DateFormat
+import java.util.Date
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -142,6 +153,18 @@ class PersonDetailViewModel(
             repo.removeRelationship(
                 familyId, edge.fromPersonId, edge.toPersonId, edge.kind,
                 ServiceLocator.viewer.userId, System.currentTimeMillis()
+            )
+        }
+    }
+
+    /** Whether this account may write down what the person said. One rule, in MemoryAccess. */
+    fun mayRecordConsent(p: Person): Boolean = MemoryAccess.canRecordConsent(p, viewer)
+
+    fun recordConsent(granted: Boolean, postMortemOk: Boolean, method: ConsentMethod) {
+        viewModelScope.launch {
+            repo.recordConsent(
+                personId, granted, postMortemOk, method,
+                ServiceLocator.viewer, System.currentTimeMillis()
             )
         }
     }
@@ -298,18 +321,13 @@ fun PersonDetailScreen(
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
-        } else if (p.needsAConsentDecision) {
+        } else {
             item {
-                Text(
-                    if (p.isDeceased) {
-                        // They cannot grant one. Demanding it in red implies they refused.
-                        "Nobody has recorded what they would have wanted. Their memories " +
-                            "stay restricted until somebody does."
-                    } else {
-                        "No consent record on file. Their memories stay restricted until one exists."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
+                ConsentCard(
+                    person = p,
+                    everyone = everyone,
+                    canRecord = viewModel.mayRecordConsent(p),
+                    onRecord = viewModel::recordConsent,
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
@@ -758,4 +776,199 @@ private fun claimSentence(
         com.arv.app.core.model.RelationshipKind.CHOSEN -> "$from is chosen family to $to?"
         com.arv.app.core.model.RelationshipKind.OTHER -> "$from and $to are connected?"
     }
+}
+
+/**
+ * Screen 14, the part that lives on the person: what they said about their memories being
+ * kept here, who wrote it down, and how. The label above this has promised since the flag
+ * was added that memories stay restricted until a decision exists. This is where the
+ * decision gets made, so the promise stops being a dead end.
+ */
+@Composable
+private fun ConsentCard(
+    person: Person,
+    everyone: List<Person>,
+    canRecord: Boolean,
+    onRecord: (granted: Boolean, postMortemOk: Boolean, method: ConsentMethod) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var asking by remember { mutableStateOf(false) }
+    val decided = !person.needsAConsentDecision
+
+    val headline: String
+    val detail: String?
+    val tone: Color
+    when {
+        person.consentDeclined -> {
+            headline = if (person.isDeceased) {
+                "The family decided their memories should not be shared. They stay restricted."
+            } else {
+                "They asked that their memories not be shared. They stay restricted."
+            }
+            detail = null
+            tone = MaterialTheme.colorScheme.error
+        }
+        decided -> {
+            headline = if (person.isDeceased) {
+                "The family decided their memories may be kept and shared here."
+            } else {
+                "They agreed to their memories being kept and shared here."
+            }
+            detail = when {
+                person.isDeceased -> null
+                person.postMortemOk -> "Sharing continues after their death."
+                else -> "Sharing stops at their death unless someone decides otherwise."
+            }
+            tone = MaterialTheme.colorScheme.onSurfaceVariant
+        }
+        else -> {
+            headline = if (person.isDeceased) {
+                // They cannot grant one. Demanding it in red implies they refused.
+                "Nobody has recorded what they would have wanted. Their memories " +
+                    "stay restricted until somebody does."
+            } else {
+                "No consent record on file. Their memories stay restricted until one exists."
+            }
+            detail = null
+            tone = MaterialTheme.colorScheme.error
+        }
+    }
+
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(headline, style = MaterialTheme.typography.bodySmall, color = tone)
+        detail?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        recordedLine(person, everyone)?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (canRecord) {
+            OutlinedButton(onClick = { asking = true }) {
+                Text(
+                    when {
+                        decided -> "Change their answer"
+                        person.isDeceased -> "Record what they would have wanted"
+                        else -> "Record their answer"
+                    }
+                )
+            }
+        }
+    }
+
+    if (asking) {
+        ConsentDialog(
+            person = person,
+            onDismiss = { asking = false },
+            onSave = { granted, postMortemOk, method ->
+                onRecord(granted, postMortemOk, method)
+                asking = false
+            }
+        )
+    }
+}
+
+/** "Recorded 5 Sep 2026, in person, by Dana." Only the parts the record actually holds. */
+private fun recordedLine(person: Person, everyone: List<Person>): String? {
+    val at = person.consentDecidedAt ?: return null
+    val how = when (person.consentMethod) {
+        ConsentMethod.IN_PERSON -> "in person"
+        ConsentMethod.ON_RECORDING -> "on a recording"
+        ConsentMethod.IN_WRITING -> "in writing"
+        ConsentMethod.ON_THEIR_BEHALF -> "on their behalf"
+        null -> null
+    }
+    val by = person.consentRecordedBy?.let { uid ->
+        everyone.firstOrNull { it.linkedUserId == uid }?.displayName
+    }
+    return buildString {
+        append("Recorded ").append(DateFormat.getDateInstance().format(Date(at)))
+        how?.let { append(", ").append(it) }
+        by?.let { append(", by ").append(it) }
+        append(".")
+    }
+}
+
+/**
+ * The question, asked once, in the words the person would recognise. Yes or no, how it
+ * reached the archive, and for the living whether sharing goes on after they die. For
+ * someone who cannot be asked the method is fixed to ON_THEIR_BEHALF and says so.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ConsentDialog(
+    person: Person,
+    onDismiss: () -> Unit,
+    onSave: (granted: Boolean, postMortemOk: Boolean, method: ConsentMethod) -> Unit
+) {
+    var answer by remember { mutableStateOf<Boolean?>(null) }
+    var method by remember {
+        mutableStateOf(if (person.isDeceased) ConsentMethod.ON_THEIR_BEHALF else null)
+    }
+    var afterDeath by remember { mutableStateOf(person.postMortemOk) }
+    val first = person.displayName.substringBefore(' ')
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(if (person.isDeceased) "What would $first have wanted?" else "What did $first say?")
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    if (person.isDeceased) {
+                        "Whether their memories may be kept here and shared with the family. " +
+                            "This is the family's decision on their behalf, and it is written down as that."
+                    } else {
+                        "Whether their memories may be kept here and shared with the family. " +
+                            "Write down what they said, not what you hope they meant."
+                    },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = answer == true, onClick = { answer = true }, label = { Text("Yes") })
+                    FilterChip(selected = answer == false, onClick = { answer = false }, label = { Text("No") })
+                }
+                if (!person.isDeceased) {
+                    Text("How did they tell you?", style = MaterialTheme.typography.labelLarge)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        MethodChip("In person", ConsentMethod.IN_PERSON, method) { method = it }
+                        MethodChip("On a recording", ConsentMethod.ON_RECORDING, method) { method = it }
+                        MethodChip("In writing", ConsentMethod.IN_WRITING, method) { method = it }
+                    }
+                    if (answer == true) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Switch(checked = afterDeath, onCheckedChange = { afterDeath = it })
+                            Text("Keep sharing after they die", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            val a = answer
+            val m = method
+            Button(
+                enabled = a != null && m != null,
+                onClick = {
+                    if (a != null && m != null) {
+                        onSave(a, if (person.isDeceased) a else (a && afterDeath), m)
+                    }
+                }
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun MethodChip(
+    label: String,
+    value: ConsentMethod,
+    selected: ConsentMethod?,
+    onPick: (ConsentMethod) -> Unit
+) {
+    FilterChip(selected = selected == value, onClick = { onPick(value) }, label = { Text(label) })
 }

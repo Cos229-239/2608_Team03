@@ -19,7 +19,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PromptEntity::class,
         MemberEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -133,6 +133,23 @@ abstract class ArvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Lets a person's consent be an answer instead of a flag.
+         *
+         * Additive: four nullable-or-defaulted columns on people, nothing rewritten. The
+         * two booleans that existed said yes or nothing. These say who wrote the answer
+         * down, when, how it reached them, and whether the answer was no, which the old
+         * shape could not store at all and so could never stop asking for.
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE people ADD COLUMN consentDeclined INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE people ADD COLUMN consentDecidedAt INTEGER")
+                db.execSQL("ALTER TABLE people ADD COLUMN consentMethod TEXT")
+                db.execSQL("ALTER TABLE people ADD COLUMN consentRecordedBy TEXT")
+            }
+        }
+
         fun get(context: Context): ArvDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -143,7 +160,9 @@ abstract class ArvDatabase : RoomDatabase() {
                     // No destructive migration. This database holds recordings that may be
                     // the only copy of someone's voice; losing it to a schema bump is not
                     // an acceptable failure mode. Write real migrations.
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(
+                        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6
+                    )
                     .build()
                     .also { instance = it }
             }

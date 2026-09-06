@@ -173,6 +173,11 @@ fun PeopleScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        person.consentDeclined -> Text(
+                            "Asked not to be shared",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
                         person.needsAConsentDecision -> Text(
                             if (person.isDeceased) "Nobody has said what they would have wanted"
                             else "No consent record on file",

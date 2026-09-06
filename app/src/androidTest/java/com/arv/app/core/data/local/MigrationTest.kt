@@ -277,6 +277,62 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate5To6_letsConsentBeAnAnswerAndKeepsTheYesAlreadyGiven() {
+        helper.createDatabase(TEST_DB, 5).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO people
+                  (personId, familyId, displayName, alsoKnownAs, birthYear, deathYear,
+                   birthPlace, relationLabel, linkedUserId, state, memoryStewardUserId,
+                   consentGranted, postMortemOk, updatedAt, confidence, source, verifiedAt,
+                   deathYearEnd, note)
+                VALUES
+                  ('p_1', 'fam_1', 'Ruth Delaney', '', 1931, NULL, 'Chicago', 'Grandmother',
+                   'u_1', 'LIVING', NULL, 1, 1, 100, 'FAMILY_TOLD', NULL, NULL, NULL, NULL)
+                """.trimIndent()
+            )
+            db.execSQL(
+                "INSERT INTO members (familyId, userId, role, personId, joinedAt) VALUES ('fam_1', 'u_1', 'OWNER', 'p_1', 100)"
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB, 6, true, ArvDatabase.MIGRATION_5_6
+        )
+
+        // A yes given before the answer had a date keeps being a yes, and is not a no.
+        db.query(
+            "SELECT consentGranted, postMortemOk, consentDeclined, consentDecidedAt, consentMethod, consentRecordedBy FROM people WHERE personId = 'p_1'"
+        ).use { c ->
+            assertTrue("the person survived the migration", c.moveToFirst())
+            assertEquals("the yes survived", 1, c.getInt(0))
+            assertEquals("the post-mortem yes survived", 1, c.getInt(1))
+            assertEquals("nobody said no on their behalf", 0, c.getInt(2))
+            assertTrue("no date invented", c.isNull(3))
+            assertTrue("no method invented", c.isNull(4))
+            assertTrue("no recorder invented", c.isNull(5))
+        }
+
+        // A full answer round-trips through the new columns.
+        db.execSQL(
+            "UPDATE people SET consentGranted = 0, consentDeclined = 1, consentDecidedAt = 500, consentMethod = 'IN_PERSON', consentRecordedBy = 'u_1' WHERE personId = 'p_1'"
+        )
+        db.query("SELECT consentDeclined, consentDecidedAt, consentMethod, consentRecordedBy FROM people WHERE personId = 'p_1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(1, c.getInt(0))
+            assertEquals(500L, c.getLong(1))
+            assertEquals("IN_PERSON", c.getString(2))
+            assertEquals("u_1", c.getString(3))
+        }
+
+        // Adding columns to people must not disturb the membership beside it.
+        db.query("SELECT role FROM members WHERE familyId = 'fam_1' AND userId = 'u_1'").use { c ->
+            assertTrue("the member survived the migration", c.moveToFirst())
+            assertEquals("OWNER", c.getString(0))
+        }
+    }
+
     private companion object {
         const val TEST_DB = "migration-test"
     }
