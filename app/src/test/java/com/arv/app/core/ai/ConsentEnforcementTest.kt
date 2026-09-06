@@ -38,11 +38,56 @@ class ConsentEnforcementTest {
         state: ProfileState = ProfileState.LIVING,
         postMortemOk: Boolean = false,
         confidence: Confidence = Confidence.FAMILY_TOLD,
-        source: String? = null
+        source: String? = null,
+        declined: Boolean = false
     ) = Person(
         personId = id, displayName = "Ruth Delaney", consentGranted = consent,
-        state = state, postMortemOk = postMortemOk, confidence = confidence, source = source
+        state = state, postMortemOk = postMortemOk, confidence = confidence, source = source,
+        consentDeclined = declined
     )
+
+    @Test
+    fun `a recorded no restricts exactly like no answer`() {
+        val ruth = person("p_ruth", declined = true)
+        assertTrue(MemoryAccess.consentBlocks(told("p_ruth"), listOf(ruth), viewer()))
+        assertTrue("a role is not a substitute for her answer", MemoryAccess.consentBlocks(told("p_ruth"), listOf(ruth), keeper()))
+        assertFalse("the recorder still holds what they recorded", MemoryAccess.consentBlocks(told("p_ruth"), listOf(ruth), viewer("u_recorder")))
+        assertFalse("she still reads her own voice", MemoryAccess.consentBlocks(told("p_ruth"), listOf(ruth), viewer("u_ruth", setOf("p_ruth"))))
+    }
+
+    @Test
+    fun `a no is an answer, so nothing asks again`() {
+        val ruth = person("p_ruth", declined = true)
+        assertFalse(ruth.needsAConsentDecision)
+        assertTrue(ruth.consentRestricts)
+    }
+
+    @Test
+    fun `a later yes replaces a no`() {
+        val ruth = person("p_ruth", consent = true, declined = false)
+        assertFalse(ruth.consentRestricts)
+        assertFalse(MemoryAccess.consentBlocks(told("p_ruth"), listOf(ruth), viewer()))
+    }
+
+    @Test
+    fun `the family's no on a dead person's behalf holds`() {
+        val ruth = person("p_ruth", state = ProfileState.MEMORIAL, postMortemOk = false, declined = true)
+        assertFalse(ruth.needsAConsentDecision)
+        assertTrue(MemoryAccess.consentBlocks(told("p_ruth"), listOf(ruth), keeper()))
+    }
+
+    @Test
+    fun `who may write the answer down`() {
+        val ruth = person("p_ruth")
+        val onlyViewing = Viewer(userId = "u_v", role = MemberRole.VIEWER, familyId = fam)
+        assertFalse("a viewer answers for nobody", MemoryAccess.canRecordConsent(ruth, onlyViewing))
+        assertTrue("whoever can record can ask", MemoryAccess.canRecordConsent(ruth, viewer()))
+        assertTrue("a keeper too", MemoryAccess.canRecordConsent(ruth, keeper()))
+        val herself = Viewer(userId = "u_ruth", role = MemberRole.VIEWER, familyId = fam, personIds = setOf("p_ruth"))
+        assertTrue("she always may, whatever her role", MemoryAccess.canRecordConsent(ruth, herself))
+        val steward = Viewer(userId = "u_kim", role = MemberRole.VIEWER, familyId = fam, personIds = setOf("p_ruth"))
+        assertTrue("and so may her steward", MemoryAccess.canRecordConsent(ruth, steward))
+    }
 
     @Test
     fun `a living narrator with no consent record blocks the family`() {

@@ -18,6 +18,7 @@ import com.arv.app.core.session.ActiveSession
 import com.arv.app.core.data.local.toDomain
 import com.arv.app.core.model.ArchiveArea
 import com.arv.app.core.model.Confidence
+import com.arv.app.core.model.ConsentMethod
 import com.arv.app.core.model.AssetType
 import com.arv.app.core.model.OutboxOp
 import java.io.File
@@ -263,6 +264,41 @@ class StoryRepository(
                 updatedAt = nowMillis
             )
         )
+    }
+
+    /**
+     * Writes down a person's answer about their memories being kept and shared here.
+     *
+     * A yes opens their memories to the family under the usual rules. A no restricts
+     * them and stops the archive asking. Both carry when, how, and by whose account, so
+     * the record can say what it knows and no more. ON_THEIR_BEHALF is the family
+     * deciding for someone who cannot be asked; it writes the post-mortem decision and
+     * leaves the living consent alone, because nobody can grant that for another person.
+     *
+     * Returns false when the caller may not answer for this person, and writes nothing.
+     */
+    suspend fun recordConsent(
+        personId: String,
+        granted: Boolean,
+        postMortemOk: Boolean,
+        method: ConsentMethod,
+        viewer: Viewer,
+        nowMillis: Long
+    ): Boolean {
+        val p = db.personDao().byId(personId) ?: return false
+        if (!MemoryAccess.canRecordConsent(p.toDomain(), viewer)) return false
+        db.personDao().upsert(
+            p.copy(
+                consentGranted = if (method == ConsentMethod.ON_THEIR_BEHALF) p.consentGranted else granted,
+                postMortemOk = postMortemOk,
+                consentDeclined = !granted,
+                consentDecidedAt = nowMillis,
+                consentMethod = method,
+                consentRecordedBy = viewer.userId,
+                updatedAt = nowMillis
+            )
+        )
+        return true
     }
 
     /**

@@ -133,6 +133,15 @@ enum class PromptStatus { SUGGESTED, SAVED, ANSWERED, SKIPPED }
 enum class ProfileState { LIVING, MEMORIAL }
 
 /**
+ * How a person's answer about their memories reached the archive.
+ *
+ * ON_THEIR_BEHALF is the family deciding for someone who cannot be asked, and it is
+ * stored as exactly that so a decision made about a person is never mistaken for one
+ * made by them.
+ */
+enum class ConsentMethod { IN_PERSON, ON_RECORDING, IN_WRITING, ON_THEIR_BEHALF }
+
+/**
  * How much anybody actually knows that this person is who the record says they are.
  *
  * Genealogy is where families most often store confident lies. A name copied from someone
@@ -204,7 +213,17 @@ data class Person(
     val note: String? = null,
     val confidence: Confidence = Confidence.FAMILY_TOLD,
     val source: String? = null,
-    val verifiedAt: Long? = null
+    val verifiedAt: Long? = null,
+    /**
+     * They said no, or the family said no for them. A no is a decision, not a missing
+     * one, and it restricts harder than silence: nothing asks again.
+     */
+    val consentDeclined: Boolean = false,
+    /** When the answer was written down. Null while there is no answer. */
+    val consentDecidedAt: Long? = null,
+    val consentMethod: ConsentMethod? = null,
+    /** The account that wrote the answer down. */
+    val consentRecordedBy: String? = null
 ) {
     val isDeceased: Boolean get() = deathYear != null || state == ProfileState.MEMORIAL
 
@@ -235,12 +254,20 @@ data class Person(
     val needsAConsentDecision: Boolean
         get() = when {
             isPublicRecord -> false
+            // A no is an answer. The list must stop asking, and the block must stay.
+            consentDeclined -> false
             // A living yes survives death, and postMortemOk records the decision a
             // family made on a dead person's behalf. This flag was stored and displayed
             // and never actually read, so recording the decision changed nothing.
             isDeceased -> !consentGranted && !postMortemOk
             else -> !consentGranted
         }
+
+    /**
+     * What enforcement reads: no answer yet, or an answer of no. The two are shown
+     * differently and restricted identically.
+     */
+    val consentRestricts: Boolean get() = consentDeclined || needsAConsentDecision
 }
 
 /** An edge in the family tree. Stored once, rendered from both directions. */

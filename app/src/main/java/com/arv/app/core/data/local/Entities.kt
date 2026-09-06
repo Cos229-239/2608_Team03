@@ -5,6 +5,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.TypeConverter
 import com.arv.app.core.model.Confidence
+import com.arv.app.core.model.ConsentMethod
 import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.ArchiveArea
 import com.arv.app.core.model.AssetType
@@ -67,7 +68,11 @@ data class PersonEntity(
      * the way in while the confident parts survived.
      */
     val note: String? = null,
-    val updatedAt: Long = 0L
+    val updatedAt: Long = 0L,
+    val consentDeclined: Boolean = false,
+    val consentDecidedAt: Long? = null,
+    val consentMethod: ConsentMethod? = null,
+    val consentRecordedBy: String? = null
 )
 
 /**
@@ -232,6 +237,9 @@ class Converters {
 
     @TypeConverter fun memberRoleToString(v: MemberRole): String = v.name
     @TypeConverter fun stringToMemberRole(v: String): MemberRole = MemberRole.valueOf(v)
+
+    @TypeConverter fun consentMethodToString(v: ConsentMethod?): String? = v?.name
+    @TypeConverter fun stringToConsentMethod(v: String?): ConsentMethod? = v?.let { ConsentMethod.valueOf(it) }
 }
 
 // --- mapping to domain ---
@@ -283,7 +291,11 @@ fun PersonEntity.toDomain() = Person(
     source = source,
     verifiedAt = verifiedAt,
     deathYearEnd = deathYearEnd,
-    note = note
+    note = note,
+    consentDeclined = consentDeclined,
+    consentDecidedAt = consentDecidedAt,
+    consentMethod = consentMethod,
+    consentRecordedBy = consentRecordedBy
 )
 
 fun RelationshipEntity.toDomain() = Relationship(
