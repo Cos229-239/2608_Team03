@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Upsert
 import com.arv.app.core.model.UploadState
+import com.arv.app.core.model.PromptStatus
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -278,4 +279,39 @@ interface OutboxDao {
     /** A deleted story's queued uploads must die with it, or the queue uploads ghosts. */
     @Query("DELETE FROM outbox WHERE docId = :docId")
     suspend fun deleteForDoc(docId: String)
+}
+
+@Dao
+interface PromptDao {
+
+    /** Everything still worth showing: suggested and saved, newest first. */
+    @Query(
+        """
+        SELECT * FROM prompts
+        WHERE familyId = :familyId AND status IN ('SUGGESTED', 'SAVED')
+        ORDER BY updatedAt DESC
+        """
+    )
+    fun observeOpen(familyId: String): Flow<List<PromptEntity>>
+
+    @Query("SELECT * FROM prompts WHERE familyId = :familyId AND status = :status ORDER BY updatedAt DESC")
+    fun observeByStatus(familyId: String, status: PromptStatus): Flow<List<PromptEntity>>
+
+    @Query("SELECT * FROM prompts WHERE familyId = :familyId AND category = :category AND status IN ('SUGGESTED', 'SAVED') ORDER BY updatedAt DESC")
+    fun observeByCategory(familyId: String, category: String): Flow<List<PromptEntity>>
+
+    @Query("SELECT * FROM prompts WHERE promptId = :promptId")
+    suspend fun byId(promptId: String): PromptEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(prompt: PromptEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAllIgnoring(prompts: List<PromptEntity>)
+
+    @Query("UPDATE prompts SET status = :status, answeredStoryId = :storyId, updatedAt = :now WHERE promptId = :promptId")
+    suspend fun setStatus(promptId: String, status: PromptStatus, storyId: String?, now: Long)
+
+    @Query("SELECT COUNT(*) FROM prompts WHERE familyId = :familyId")
+    suspend fun countFor(familyId: String): Int
 }

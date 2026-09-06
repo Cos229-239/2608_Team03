@@ -12,6 +12,9 @@ import com.arv.app.core.model.EraPrecision
 import com.arv.app.core.model.OutboxOp
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.ProfileState
+import com.arv.app.core.model.Prompt
+import com.arv.app.core.model.PromptOrigin
+import com.arv.app.core.model.PromptStatus
 import com.arv.app.core.model.Provenance
 import com.arv.app.core.model.Relationship
 import com.arv.app.core.model.RelationshipKind
@@ -294,3 +297,41 @@ fun TranscriptSegmentEntity.toDomain() = TranscriptSegment(
     confidence = confidence,
     humanVerified = humanVerified
 )
+
+/**
+ * A question the archive is holding for somebody to answer.
+ *
+ * Prompts are per family and they are stateful: suggested, saved for later, answered, or
+ * skipped. The state is the point. A question somebody already answered should stop being
+ * asked, and one they deliberately skipped should not keep resurfacing as if the archive
+ * forgot.
+ */
+@Entity(
+    tableName = "prompts",
+    indices = [Index("familyId"), Index("targetPersonId")]
+)
+data class PromptEntity(
+    @PrimaryKey val promptId: String,
+    val familyId: String,
+    val text: String,
+    val category: String,
+    val targetPersonId: String? = null,
+    val origin: PromptOrigin = PromptOrigin.LIBRARY,
+    /** Why the app is asking this now. Shown to the user, never a black box. */
+    val rationale: String? = null,
+    val status: PromptStatus = PromptStatus.SUGGESTED,
+    /** The story that answered it, when one did. */
+    val answeredStoryId: String? = null,
+    val createdAt: Long,
+    val updatedAt: Long
+) {
+    fun toDomain() = Prompt(
+        promptId = promptId,
+        text = text,
+        category = category,
+        targetPersonId = targetPersonId,
+        origin = origin,
+        rationale = rationale,
+        status = status
+    )
+}

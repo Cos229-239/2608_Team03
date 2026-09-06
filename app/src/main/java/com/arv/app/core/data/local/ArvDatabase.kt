@@ -15,14 +15,16 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         RelationshipEntity::class,
         AssetEntity::class,
         TranscriptSegmentEntity::class,
-        OutboxEntity::class
+        OutboxEntity::class,
+        PromptEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
 abstract class ArvDatabase : RoomDatabase() {
 
+    abstract fun promptDao(): PromptDao
     abstract fun storyDao(): StoryDao
     abstract fun personDao(): PersonDao
     abstract fun relationshipDao(): RelationshipDao
@@ -69,6 +71,37 @@ abstract class ArvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Gives the prompt library somewhere to keep its questions.
+         *
+         * Additive: one new table, nothing existing is touched. Prompts carry state
+         * because a question already answered should stop being asked, and one somebody
+         * deliberately skipped should not resurface as if the archive forgot.
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS prompts (
+                        promptId TEXT NOT NULL PRIMARY KEY,
+                        familyId TEXT NOT NULL,
+                        text TEXT NOT NULL,
+                        category TEXT NOT NULL,
+                        targetPersonId TEXT,
+                        origin TEXT NOT NULL,
+                        rationale TEXT,
+                        status TEXT NOT NULL,
+                        answeredStoryId TEXT,
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_prompts_familyId ON prompts(familyId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_prompts_targetPersonId ON prompts(targetPersonId)")
+            }
+        }
+
         fun get(context: Context): ArvDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -79,7 +112,7 @@ abstract class ArvDatabase : RoomDatabase() {
                     // No destructive migration. This database holds recordings that may be
                     // the only copy of someone's voice; losing it to a schema bump is not
                     // an acceptable failure mode. Write real migrations.
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { instance = it }
             }
