@@ -51,6 +51,7 @@ import com.arv.app.feature.documents.DocumentsScreen
 import com.arv.app.feature.feed.FeedScreen
 import com.arv.app.feature.librarian.LibrarianScreen
 import com.arv.app.feature.record.AttachRecordingScreen
+import com.arv.app.feature.auth.AuthScreen
 import com.arv.app.feature.onboarding.OnboardingScreen
 import com.arv.app.feature.people.AddPersonScreen
 import com.arv.app.feature.people.PeopleScreen
@@ -67,7 +68,10 @@ import com.arv.app.feature.promptlibrary.PromptLibraryScreen
 import com.arv.app.ui.theme.ArvHero
 
 sealed class Destination(val route: String) {
-    /** Screen 01. Only reachable before an archive exists on this phone. */
+    /** Screen 00. Who is this. Reached only while nobody is signed in to an account. */
+    data object Auth : Destination("auth")
+
+    /** Screen 01. Reached once an account exists but no archive is open on this phone. */
     data object Onboarding : Destination("onboarding")
 
     /** Adding a relative by hand, reached from the Tree tab. */
@@ -203,7 +207,8 @@ fun ArvAppRoot() {
             // invisible, and a 78-year-old storyteller will never find it. Screen 04's
             // full-attention layout earns its own top bar; everything else shares this.
             val onOnboarding =
-                currentDestination?.route == Destination.Onboarding.route
+                currentDestination?.route == Destination.Onboarding.route ||
+                    currentDestination?.route == Destination.Auth.route
             if (!onATab && !onOnboarding) {
                 // Just the arrow. This was a full app bar with an empty title, which
                 // painted a wide band across the top of every page to hold one icon;
@@ -279,12 +284,29 @@ fun ArvAppRoot() {
         Box(Modifier.padding(innerPadding)) {
             NavHost(
                 navController = navController,
-                startDestination = if (ActiveSession.isSignedIn) {
-                    Destination.Family.route
-                } else {
-                    Destination.Onboarding.route
+                // Two questions, asked in order. An open archive wins outright, which is
+                // what lets the sample family run with no account behind it. Otherwise an
+                // account with no family goes to onboarding, and no account goes to auth.
+                startDestination = when {
+                    ActiveSession.isSignedIn -> Destination.Family.route
+                    ActiveSession.isAuthenticated -> Destination.Onboarding.route
+                    else -> Destination.Auth.route
                 }
             ) {
+                composable(Destination.Auth.route) {
+                    AuthScreen(
+                        onAuthenticated = {
+                            navController.navigate(Destination.Onboarding.route) {
+                                popUpTo(Destination.Auth.route) { inclusive = true }
+                            }
+                        },
+                        onSampleFamily = {
+                            navController.navigate(Destination.Family.route) {
+                                popUpTo(Destination.Auth.route) { inclusive = true }
+                            }
+                        }
+                    )
+                }
                 composable(Destination.Onboarding.route) {
                     OnboardingScreen(
                         onReady = {
@@ -354,6 +376,11 @@ fun ArvAppRoot() {
                 }
                 composable(Destination.Settings.route) {
                     SettingsScreen(
+                        onAccountSignedOut = {
+                            navController.navigate(Destination.Auth.route) {
+                                popUpTo(navController.graph.id) { inclusive = true }
+                            }
+                        },
                         onSignedOut = {
                             // Back to the first screen with nothing behind it. Leaving an
                             // archive must not leave its screens on the back stack for a

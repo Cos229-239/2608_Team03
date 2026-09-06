@@ -10,9 +10,17 @@ import android.content.SharedPreferences
  * answer is needed before the first frame, to decide whether onboarding runs at all.
  * A suspending read would mean rendering the family feed before knowing which family.
  *
- * DAT-1 replaces the two ids with Firebase Auth's uid and the family that user belongs
- * to. Every screen already reads the family from [com.arv.app.core.di.ServiceLocator],
- * so that swap lands in [set] and [restore] and touches no UI.
+ * Two questions live here and they are deliberately not the same question:
+ *
+ *  - [isAuthenticated]: does Firebase know who this is. Set by the auth screen.
+ *  - [isSignedIn]: is an archive open. Set by onboarding when a family is created or joined.
+ *
+ * Conflating them was the trap. A person can be authenticated with no family yet (fresh
+ * account), and the sample family can be open with nobody authenticated at all (the build
+ * review path, kept on purpose). Routing reads both and never infers one from the other.
+ *
+ * [userId] is the Firebase uid once an account exists. The sample family still uses its
+ * fixed demo id, which is how the two never mix.
  */
 object ActiveSession {
 
@@ -20,6 +28,8 @@ object ActiveSession {
     private const val KEY_FAMILY = "familyId"
     private const val KEY_USER = "userId"
     private const val KEY_FAMILY_NAME = "familyName"
+    private const val KEY_AUTH_UID = "authUid"
+    private const val KEY_AUTH_EMAIL = "authEmail"
 
     private var prefs: SharedPreferences? = null
 
@@ -34,6 +44,16 @@ object ActiveSession {
     /** Shown in the app bar so it is always obvious whose archive is open. */
     @Volatile
     var familyName: String? = null
+        private set
+
+    /** Firebase Auth's uid for the account that is signed in, or null when nobody is. */
+    @Volatile
+    var authUid: String? = null
+        private set
+
+    /** Shown in settings so the person can see which account they are signed in as. */
+    @Volatile
+    var authEmail: String? = null
         private set
 
     /**
@@ -62,8 +82,11 @@ object ActiveSession {
 
     fun setPersonIds(ids: Set<String>) { personIds = ids }
 
-    /** False on a fresh install, which is the only trigger for onboarding. */
+    /** An archive is open. This alone decides whether the family shell renders. */
     val isSignedIn: Boolean get() = familyId != null
+
+    /** An account exists. This alone decides whether the auth screen is skipped. */
+    val isAuthenticated: Boolean get() = authUid != null
 
     fun restore(context: Context) {
         val p = context.applicationContext
@@ -72,6 +95,18 @@ object ActiveSession {
         familyId = p.getString(KEY_FAMILY, null)
         userId = p.getString(KEY_USER, null)
         familyName = p.getString(KEY_FAMILY_NAME, null)
+        authUid = p.getString(KEY_AUTH_UID, null)
+        authEmail = p.getString(KEY_AUTH_EMAIL, null)
+    }
+
+    /** Called by the auth screen once Firebase has confirmed who this is. */
+    fun setAuth(uid: String, email: String?) {
+        authUid = uid
+        authEmail = email
+        prefs?.edit()
+            ?.putString(KEY_AUTH_UID, uid)
+            ?.putString(KEY_AUTH_EMAIL, email)
+            ?.apply()
     }
 
     fun set(familyId: String, userId: String, familyName: String) {
@@ -96,6 +131,22 @@ object ActiveSession {
         familyName = null
         ancestorIds = emptySet()
         personIds = emptySet()
-        prefs?.edit()?.clear()?.apply()
+        prefs?.edit()
+            ?.remove(KEY_FAMILY)
+            ?.remove(KEY_USER)
+            ?.remove(KEY_FAMILY_NAME)
+            ?.apply()
+    }
+
+    /**
+     * Signs out of the account. Closes the archive too, because an open archive with no
+     * account behind it is a state nothing else in the app knows how to reason about.
+     * Still touches no rows: the family's stories stay in Room for whoever signs in next.
+     */
+    fun clearAuth() {
+        clear()
+        authUid = null
+        authEmail = null
+        prefs?.edit()?.remove(KEY_AUTH_UID)?.remove(KEY_AUTH_EMAIL)?.apply()
     }
 }

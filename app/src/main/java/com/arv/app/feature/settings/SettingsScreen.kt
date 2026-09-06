@@ -194,6 +194,17 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun signOut() {
         ActiveSession.clear()
     }
+
+    /**
+     * Signs out of the account, which also closes the archive. Still deletes nothing:
+     * every story stays in Room for whoever signs in next. Firebase's own sign-out is
+     * wrapped because a build without the config file has no FirebaseApp to sign out of,
+     * and the local session should clear either way.
+     */
+    fun signOutOfAccount() {
+        runCatching { com.google.firebase.auth.FirebaseAuth.getInstance().signOut() }
+        ActiveSession.clearAuth()
+    }
 }
 
 /**
@@ -207,11 +218,13 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 @Composable
 fun SettingsScreen(
     onSignedOut: () -> Unit,
+    onAccountSignedOut: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = viewModel()
 ) {
     val model by viewModel.model.collectAsStateWithLifecycle()
     var confirmSignOut by remember { mutableStateOf(false) }
+    var confirmAccountSignOut by remember { mutableStateOf(false) }
 
     val exportPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip")
@@ -242,6 +255,31 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmSignOut = false }) { Text("Stay") }
+            }
+        )
+    }
+
+    if (confirmAccountSignOut) {
+        AlertDialog(
+            onDismissRequest = { confirmAccountSignOut = false },
+            title = { Text("Sign out of your account?") },
+            text = {
+                Text(
+                    "Nothing on this phone is deleted. Every story and recording stays " +
+                        "here. You will need your password to get back in."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.signOutOfAccount()
+                        confirmAccountSignOut = false
+                        onAccountSignedOut()
+                    }
+                ) { Text("Sign out") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmAccountSignOut = false }) { Text("Stay") }
             }
         )
     }
@@ -469,6 +507,21 @@ fun SettingsScreen(
                     .heightIn(min = 52.dp)
             ) {
                 Text("Leave this archive")
+            }
+        }
+
+        // Only an account can be signed out of. The sample family has none, and offering
+        // the button there would be a promise the screen cannot keep.
+        if (ActiveSession.isAuthenticated) {
+            item {
+                OutlinedButton(
+                    onClick = { confirmAccountSignOut = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 52.dp)
+                ) {
+                    Text("Sign out of " + (ActiveSession.authEmail ?: "your account"))
+                }
             }
         }
 
