@@ -70,6 +70,7 @@ import com.arv.app.core.session.ActiveSession
 import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.Story
+import com.arv.app.ui.label
 import com.arv.app.core.model.StoryKind
 import com.arv.app.ui.components.formatElapsed
 import kotlinx.coroutines.flow.SharingStarted
@@ -863,7 +864,7 @@ private fun RecentMemoryCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    post.kind.label(),
+                    post.kind.label() + "  \u00b7  " + post.area.label(),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
