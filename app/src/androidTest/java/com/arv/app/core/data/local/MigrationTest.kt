@@ -127,6 +127,63 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate3To4_addsPromptsAndLeavesEverythingElseAlone() {
+        helper.createDatabase(TEST_DB, 3).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO people
+                  (personId, familyId, displayName, alsoKnownAs, birthYear, deathYear,
+                   birthPlace, relationLabel, linkedUserId, state, memoryStewardUserId,
+                   consentGranted, postMortemOk, updatedAt, confidence, source, verifiedAt,
+                   deathYearEnd, note)
+                VALUES
+                  ('p_1', 'fam_1', 'Ruth Delaney', '', 1931, 2004, 'Chicago', 'Grandmother',
+                   'u_1', 'MEMORIAL', NULL, 1, 0, 100, 'DOCUMENTED', 'Death certificate',
+                   200, NULL, NULL)
+                """.trimIndent()
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB, 4, true, ArvDatabase.MIGRATION_3_4
+        )
+
+        // The new table exists and starts empty. Questions arrive by seeding, not by a
+        // schema bump inventing them.
+        db.query("SELECT COUNT(*) FROM prompts").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("no questions invented by the migration", 0, c.getInt(0))
+        }
+
+        // A prompt round-trips through every column the entity declares.
+        db.execSQL(
+            """
+            INSERT INTO prompts
+              (promptId, familyId, text, category, targetPersonId, origin, rationale,
+               status, answeredStoryId, createdAt, updatedAt)
+            VALUES
+              ('q_1', 'fam_1', 'Who taught you to cook?', 'Food', NULL, 'LIBRARY',
+               'Often opens into migration stories', 'SUGGESTED', NULL, 1, 1)
+            """.trimIndent()
+        )
+        db.query("SELECT text, category, status, origin FROM prompts WHERE promptId = 'q_1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("Who taught you to cook?", c.getString(0))
+            assertEquals("Food", c.getString(1))
+            assertEquals("SUGGESTED", c.getString(2))
+            assertEquals("LIBRARY", c.getString(3))
+        }
+
+        // Adding a table must not disturb anyone already in the archive.
+        db.query("SELECT displayName, deathYear FROM people").use { c ->
+            assertTrue("the person survived the migration", c.moveToFirst())
+            assertEquals("Ruth Delaney", c.getString(0))
+            assertEquals(2004, c.getInt(1))
+            assertEquals("exactly one person, nothing duplicated", 1, c.count)
+        }
+    }
+
     private companion object {
         const val TEST_DB = "migration-test"
     }

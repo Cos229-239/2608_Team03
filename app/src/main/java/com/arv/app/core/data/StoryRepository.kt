@@ -25,6 +25,10 @@ import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.EraPrecision
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.ProfileState
+import com.arv.app.core.data.local.PromptEntity
+import com.arv.app.core.model.Prompt
+import com.arv.app.core.model.PromptOrigin
+import com.arv.app.core.model.PromptStatus
 import com.arv.app.core.model.Provenance
 import com.arv.app.core.model.Story
 import com.arv.app.core.model.StoryKind
@@ -674,6 +678,166 @@ class StoryRepository(
      * it was made and adding audio is not a reason to reopen them. Returns the new asset
      * id, or null when the viewer may not edit this story or it no longer exists.
      */
+    // ---- Prompts ----------------------------------------------------------
+    //
+    // The prompt library's storage, kept behind these five calls so the screen never
+    // touches a DAO. Everything is family scoped; a question written in one archive is
+    // not a question in another.
+
+    /**
+     * The questions to show for the chip the screen currently has selected.
+     *
+     * Takes the category string the screen already holds, so nothing has to be
+     * translated at the call site. "Suggested" is not a category, it is the mixed view
+     * across all of them, which is how the screen has always treated it.
+     *
+     * A Flow so the list updates itself when a question is saved or answered. Reading it
+     * needs one line in the composable and no view model:
+     *
+     *     val prompts by repo.observePromptsFor(familyId, selectedCategory)
+     *         .collectAsStateWithLifecycle(emptyList())
+     */
+    fun observePromptsFor(familyId: String, category: String): Flow<List<Prompt>> {
+        val rows =
+            if (category == SUGGESTED_VIEW) db.promptDao().observeOpen(familyId)
+            else db.promptDao().observeByCategory(familyId, category)
+        return rows.map { list -> list.map { it.toDomain() } }.flowOn(Dispatchers.IO)
+    }
+
+    /** Only what somebody chose to keep for later. */
+    fun observeSavedPrompts(familyId: String): Flow<List<Prompt>> =
+        db.promptDao().observeByStatus(familyId, PromptStatus.SAVED)
+            .map { rows -> rows.map { it.toDomain() } }
+            .flowOn(Dispatchers.IO)
+
+    /**
+     * A question somebody wrote themselves.
+     *
+     * Origin is USER and stays USER. Where a question came from is part of what it is:
+     * one the family thought to ask carries different weight from one the app suggested,
+     * and flattening the two would lose that.
+     */
+    suspend fun addUserPrompt(
+        familyId: String,
+        text: String,
+        category: String,
+        targetPersonId: String? = null,
+        now: Long
+    ): String? {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return null
+        val promptId = "q_" + UUID.randomUUID().toString().take(12)
+        db.promptDao().upsert(
+            PromptEntity(
+                promptId = promptId,
+                familyId = familyId,
+                text = trimmed,
+                category = category,
+                targetPersonId = targetPersonId,
+                origin = PromptOrigin.USER,
+                status = PromptStatus.SUGGESTED,
+                createdAt = now,
+                updatedAt = now
+            )
+        )
+        return promptId
+    }
+
+    /**
+     * Move a question along: saved for later, answered, or skipped.
+     *
+     * Pass [storyId] when a recording answered it, so the question and the memory that
+     * came from it stay connected.
+     */
+    suspend fun setPromptStatus(
+        promptId: String,
+        status: PromptStatus,
+        storyId: String? = null,
+        now: Long
+    ): Boolean {
+        db.promptDao().byId(promptId) ?: return false
+        db.promptDao().setStatus(promptId, status, storyId, now)
+        return true
+    }
+
+    /**
+     * Puts the starting questions in an archive that has none.
+     *
+     * These are the prompt library's own questions, its own categories, and its own
+     * reasons for asking, lifted from the screen rather than invented here. The screen
+     * stays the author of what the archive asks; this only gives them somewhere to live
+     * so a saved or answered one is still saved and answered tomorrow.
+     *
+     * Ignores conflicts, so running it twice cannot duplicate a question or undo a
+     * decision somebody already made about one.
+     */
+    suspend fun seedPromptsIfEmpty(familyId: String, now: Long) {
+        if (db.promptDao().countFor(familyId) > 0) return
+        db.promptDao().insertAllIgnoring(
+            STARTING_PROMPTS.mapIndexed { index, seed ->
+                PromptEntity(
+                    promptId = "q_seed_$index",
+                    familyId = familyId,
+                    text = seed.text,
+                    category = seed.category,
+                    rationale = seed.rationale,
+                    origin = PromptOrigin.LIBRARY,
+                    status = PromptStatus.SUGGESTED,
+                    createdAt = now,
+                    updatedAt = now
+                )
+            }
+        )
+    }
+
+    private data class SeedPrompt(val text: String, val category: String, val rationale: String)
+
+    companion object {
+        /** The chip that means "everything", not a category of its own. */
+        const val SUGGESTED_VIEW = "Suggested"
+
+        private val STARTING_PROMPTS = listOf(
+            SeedPrompt(
+                "Who taught you to cook?",
+                "Food",
+                "Often opens into migration stories"
+            ),
+            SeedPrompt(
+                "What did your street sound like at night?",
+                "Childhood",
+                "Sounds can unlock vivid memories"
+            ),
+            SeedPrompt(
+                "What's a word your family used that nobody else did?",
+                "Childhood",
+                "Family language holds unique memories"
+            ),
+            SeedPrompt(
+                // Filed under Childhood because that is the chip it appears on in the
+                // screen. Its note calls it reflection, which is a description of the
+                // question, not the category it filters into.
+                "Tell me about a day you'd live again.",
+                "Childhood",
+                "Revisit a memory worth reliving"
+            ),
+            SeedPrompt(
+                "What was your first job, and what do you remember most about it?",
+                "Work",
+                "Early jobs can reveal family responsibilities and life changes"
+            ),
+            SeedPrompt(
+                "What was one difficult time your family made it through together?",
+                "Hard Things",
+                "Challenges can reveal strength, support, and resilience"
+            ),
+            SeedPrompt(
+                "Was there a tradition, prayer, or belief that brought your family comfort?",
+                "Faith",
+                "Beliefs and traditions can preserve meaningful family memories"
+            )
+        )
+    }
+
     suspend fun addRecordingToStory(
         storyId: String,
         viewer: Viewer,
