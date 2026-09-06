@@ -44,6 +44,7 @@ import coil.compose.AsyncImage
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.ArchiveArea
+import com.arv.app.ui.hint
 import com.arv.app.core.model.EraPrecision
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.Visibility
@@ -340,7 +341,15 @@ fun AddDocumentScreen(
                 AreaChip(state, viewModel, ArchiveArea.LINEAGE, "Lineage")
                 AreaChip(state, viewModel, ArchiveArea.CULTURE, "Culture")
                 AreaChip(state, viewModel, ArchiveArea.STORIES, "Stories")
+                AreaChip(state, viewModel, ArchiveArea.HEALTH, "Health")
             }
+        }
+        item {
+            Text(
+                state.area.hint(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         item { SectionLabel("Who is in it") }

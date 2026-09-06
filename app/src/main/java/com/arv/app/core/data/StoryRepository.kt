@@ -987,6 +987,12 @@ class StoryRepository(
         visibility: Visibility,
         aiUsePolicy: AiUsePolicy,
         area: ArchiveArea,
+        /**
+         * Who the record is about, when that is not whoever is speaking. Health records
+         * need this because control follows the subject; for everything else the
+         * narrators are the subjects, which is what null means.
+         */
+        subjectPersonIds: List<String>? = null,
         branchRootPersonId: String? = null,
         now: Long
     ): String {
@@ -1000,7 +1006,7 @@ class StoryRepository(
             kind = StoryKind.AUDIO,
             area = area,
             narratorIds = narratorIds,
-            subjectPersonIds = narratorIds,
+            subjectPersonIds = subjectPersonIds ?: narratorIds,
             eraStart = eraStart,
             eraEnd = eraEnd,
             eraPrecision = eraPrecision,

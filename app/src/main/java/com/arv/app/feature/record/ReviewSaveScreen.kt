@@ -47,6 +47,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.ArchiveArea
+import com.arv.app.ui.hint
+import com.arv.app.ui.label
 import com.arv.app.core.model.EraPrecision
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.Visibility
@@ -73,6 +75,8 @@ data class ReviewSaveUiState(
     val visibility: Visibility = Visibility.FAMILY,
     val aiUsePolicy: AiUsePolicy = AiUsePolicy.SUMMARY_OK,
     val area: ArchiveArea = ArchiveArea.STORIES,
+    /** Only asked for Health. Empty means the narrators, which the save path applies. */
+    val subjectIds: List<String> = emptyList(),
     val saving: Boolean = false,
     val savedStoryId: String? = null,
     /** Which ancestor's line, when visibility is BRANCH. */
@@ -190,6 +194,15 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
+    fun onArea(v: ArchiveArea) { _state.value = _state.value.copy(area = v) }
+
+    fun toggleSubject(personId: String) {
+        val current = _state.value.subjectIds
+        _state.value = _state.value.copy(
+            subjectIds = if (personId in current) current - personId else current + personId
+        )
+    }
+
     // One parser for save and edit both, so the same text can never mean different
     // years depending on which screen it was typed into.
     private fun parseEra(text: String): Triple<Int?, Int?, EraPrecision> {
@@ -253,6 +266,11 @@ class ReviewSaveViewModel(app: Application) : AndroidViewModel(app) {
                     visibility = s.visibility,
                     aiUsePolicy = s.aiUsePolicy,
                     area = s.area,
+                    subjectPersonIds = if (s.area == ArchiveArea.HEALTH) {
+                        s.subjectIds.ifEmpty { s.narratorIds }
+                    } else {
+                        null
+                    },
                     branchRootPersonId = s.branchRootPersonId,
                     now = nowMillis
                 )
@@ -422,6 +440,55 @@ fun ReviewSaveScreen(
                 label = { Text("Tags, comma separated") },
                 modifier = Modifier.fillMaxWidth()
             )
+        }
+
+        item { HorizontalDivider() }
+
+        item { SectionLabel("Which archive") }
+        item {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ArchiveArea.values().forEach { area ->
+                    FilterChip(
+                        selected = state.area == area,
+                        onClick = { viewModel.onArea(area) },
+                        label = { Text(area.label()) }
+                    )
+                }
+            }
+        }
+        item {
+            Text(
+                state.area.hint(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (state.area == ArchiveArea.HEALTH) {
+            item { SectionLabel("Who is this about?") }
+            item {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    people.forEach { person ->
+                        FilterChip(
+                            selected = person.personId in state.subjectIds,
+                            onClick = { viewModel.toggleSubject(person.personId) },
+                            label = { Text(person.displayName) }
+                        )
+                    }
+                }
+            }
+            item {
+                Text(
+                    "They will control this record. If nobody is picked, it is about whoever is speaking.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         item { HorizontalDivider() }
