@@ -3,9 +3,10 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
-    // Uncomment once app/google-services.json exists (DAT-1).
-    // Leaving it off means the project builds and runs on day one, before Firebase is set up.
-    // alias(libs.plugins.google.services)
+    // Reads app/google-services.json, which is gitignored. A clone without that file
+    // fails here at configuration time, so it has to be handed to a teammate out of band
+    // before their first build. The file is in the team channel, not the repo.
+    alias(libs.plugins.google.services)
 }
 
 android {

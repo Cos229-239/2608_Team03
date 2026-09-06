@@ -53,7 +53,9 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
                 val created = repo.createFamily(
                     familyName = familyName,
                     ownerDisplayName = yourName,
-                    nowMillis = System.currentTimeMillis()
+                    nowMillis = System.currentTimeMillis(),
+                    // The account that just signed in owns the family it creates.
+                    userId = ActiveSession.authUid
                 )
                 ActiveSession.set(created.familyId, created.userId, created.familyName)
                 // The archive now has exactly one person in it, and that person is the

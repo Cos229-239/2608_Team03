@@ -382,10 +382,16 @@ class StoryRepository(
     suspend fun createFamily(
         familyName: String,
         ownerDisplayName: String,
-        nowMillis: Long
+        nowMillis: Long,
+        /**
+         * The Firebase uid of whoever is creating this, so the owner's person row links
+         * to a real account. Null only for paths with no account behind them (the sample
+         * family, tests), which mint a local id the way every family did before accounts.
+         */
+        userId: String? = null
     ): NewFamily {
         val familyId = "fam_" + UUID.randomUUID().toString().take(8)
-        val userId = "u_" + UUID.randomUUID().toString().take(8)
+        val userId = userId ?: ("u_" + UUID.randomUUID().toString().take(8))
         val personId = "p_" + UUID.randomUUID().toString().take(8)
 
         db.personDao().upsert(
