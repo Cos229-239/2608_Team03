@@ -347,28 +347,17 @@ fun ReviewSaveScreen(
             DraftPlayer(localAudioPath = localAudioPath, durationMs = durationMs)
         }
         item {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = state.eraText,
-                    onValueChange = viewModel::onEra,
-                    enabled = !state.eraUnknown,
-                    isError = state.eraError != null,
-                    label = { Text("Year or range") },
-                    placeholder = { Text("1958 to 1964") },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            state.eraError?.let { error ->
-                Text(
-                    text = error,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
+            // The one field every story is found by later. This slot held a second copy
+            // of the year field, so onTitle was never called and every recording saved
+            // with an empty title.
+            OutlinedTextField(
+                value = state.title,
+                onValueChange = viewModel::onTitle,
+                label = { Text("What is this story called?") },
+                placeholder = { Text("The night the levee broke") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
 
         item { SectionLabel("Whose voice is this?") }
@@ -412,6 +401,13 @@ fun ReviewSaveScreen(
                         { Text("No year found here. It will save as undated unless one is added, like 1958.") }
                     } else null,
                     modifier = Modifier.weight(1f)
+                )
+            }
+            state.eraError?.let { error ->
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
         }
