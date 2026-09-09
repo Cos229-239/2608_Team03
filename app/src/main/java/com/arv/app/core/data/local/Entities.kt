@@ -72,7 +72,21 @@ data class PersonEntity(
     val consentDeclined: Boolean = false,
     val consentDecidedAt: Long? = null,
     val consentMethod: ConsentMethod? = null,
-    val consentRecordedBy: String? = null
+    val consentRecordedBy: String? = null,
+    /**
+     * The photograph shown as this person's face, as a pointer into [AssetEntity].
+     *
+     * A pointer rather than a path, because an asset belongs to a story and that story is
+     * what carries the provenance: who filed the picture, when, what the record said, who
+     * may see it. A bare path here would put a photograph of somebody's dead mother in the
+     * database with no story behind it, outside the permission filter, which is the one
+     * thing this archive's rules refuse.
+     *
+     * It follows that a portrait is not always renderable. The story it came from can be
+     * private, or its narrator's consent can be missing, or somebody can delete it. See
+     * [com.arv.app.core.data.Portrait] for what happens then; the short answer is initials.
+     */
+    val portraitAssetId: String? = null
 )
 
 /**
@@ -295,7 +309,8 @@ fun PersonEntity.toDomain() = Person(
     consentDeclined = consentDeclined,
     consentDecidedAt = consentDecidedAt,
     consentMethod = consentMethod,
-    consentRecordedBy = consentRecordedBy
+    consentRecordedBy = consentRecordedBy,
+    portraitAssetId = portraitAssetId
 )
 
 fun RelationshipEntity.toDomain() = Relationship(

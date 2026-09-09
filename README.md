@@ -22,7 +22,10 @@ Working end to end:
 - Invitations. One code per person, spent on first use, recording who admitted whom.
 - Permission rules on every read and every edit, unit tested.
 - Consent enforced on reads, including the decision a family made after a death.
-- Room schema at version 8 with real migrations and no destructive fallback.
+- Profile pictures, chosen from photographs already in the archive, so a face keeps the
+  record that says who filed it and who may see it. Withheld ones fall back to initials.
+- Dark mode, plus eight named palettes and an auto setting that follows the system.
+- Room schema at version 9 with real migrations and no destructive fallback.
 
 Partly built:
 
@@ -37,7 +40,6 @@ Partly built:
 Not started:
 
 - Family forest, the zoomed out view across households.
-- Dark mode.
 - Compose UI tests. `androidTest` holds the migration tests only.
 
 ## Team

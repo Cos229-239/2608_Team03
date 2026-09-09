@@ -20,7 +20,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MemberEntity::class,
         InviteEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -199,6 +199,21 @@ abstract class ArvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Lets a person have a face.
+         *
+         * One nullable column holding an asset id, not a file path. The photograph stays
+         * where it already is, attached to the story that says who filed it and who may
+         * see it, and this points at it. A path column would have been a picture of
+         * somebody's dead mother sitting outside the permission filter with no record of
+         * where it came from.
+         */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE people ADD COLUMN portraitAssetId TEXT")
+            }
+        }
+
         fun get(context: Context): ArvDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -211,7 +226,7 @@ abstract class ArvDatabase : RoomDatabase() {
                     // an acceptable failure mode. Write real migrations.
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
-                        MIGRATION_6_7, MIGRATION_7_8
+                        MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9
                     )
                     .build()
                     .also { instance = it }

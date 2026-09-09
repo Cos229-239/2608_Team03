@@ -481,6 +481,120 @@ class StoryRepository(
         return NewFamily(familyId, userId, personId, familyName.trim(), MemberRole.OWNER)
     }
 
+    // --- Portraits ---
+
+    /**
+     * A photograph this person could wear as a face: one the viewer can already see.
+     *
+     * Drawn only from stories that pass the permission filter, so the picker cannot become
+     * a way of discovering that a private photograph of somebody exists. A picture already
+     * in the archive is the only source offered, because a portrait has to keep the story
+     * that says who filed it and who may look at it.
+     */
+    fun observePortraitChoices(
+        familyId: String,
+        personId: String,
+        viewer: Viewer
+    ): Flow<List<PortraitChoice>> =
+        combine(
+            db.storyDao().observeRecent(familyId),
+            db.assetDao().observeForFamily(familyId),
+            db.personDao().observeAll(familyId)
+        ) { storyRows, assetRows, personRows ->
+            val people = personRows.map { it.toDomain() }
+            val stories = storyRows.map { it.toDomain() }
+                .filter { story ->
+                    (personId in story.subjectPersonIds || personId in story.narratorIds) &&
+                        MemoryAccess.canRead(story, viewer, people)
+                }
+                .associateBy { it.storyId }
+
+            assetRows
+                .filter { it.type == AssetType.IMAGE || it.mimeType.startsWith("image/") }
+                .filter { it.storyId in stories && File(it.localPath).exists() }
+                .map { asset ->
+                    PortraitChoice(
+                        assetId = asset.assetId,
+                        localPath = asset.localPath,
+                        storyId = asset.storyId,
+                        storyTitle = stories.getValue(asset.storyId).title
+                    )
+                }
+        }.flowOn(Dispatchers.IO)
+
+    /**
+     * Every face this viewer is allowed to see, for the screens that draw a row of them.
+     *
+     * One query set for the whole list rather than one per avatar, the same reason
+     * [observeImagePaths] exists. People missing from the map draw initials, and the map
+     * deliberately cannot say whether that is because nobody chose a photograph or because
+     * this viewer may not see the one that was chosen.
+     */
+    fun observePortraits(familyId: String, viewer: Viewer): Flow<Map<String, String>> =
+        combine(
+            db.personDao().observeAll(familyId),
+            db.assetDao().observeForFamily(familyId),
+            db.storyDao().observeRecent(familyId)
+        ) { personRows, assetRows, storyRows ->
+            val people = personRows.map { it.toDomain() }
+            val assets = assetRows.associateBy { it.assetId }
+            val stories = storyRows.map { it.toDomain() }.associateBy { it.storyId }
+
+            people.mapNotNull { person ->
+                val assetId = person.portraitAssetId ?: return@mapNotNull null
+                val asset = assets[assetId]
+                val result = Portrait.resolve(
+                    portraitAssetId = assetId,
+                    asset = asset,
+                    story = asset?.let { stories[it.storyId] },
+                    viewer = viewer,
+                    people = people,
+                    fileExists = { File(it).exists() }
+                )
+                (result as? Portrait.Result.Show)?.let { person.personId to it.localPath }
+            }.toMap()
+        }.flowOn(Dispatchers.IO)
+
+    /**
+     * Chooses the photograph that stands for somebody, or clears it with a null.
+     *
+     * Gated the same way writing down a person's consent is: anyone who can put something
+     * in the archive may do this, and a viewer may not, because a viewer reads what the
+     * family already shows and answers for nobody.
+     *
+     * Refuses an asset the viewer cannot read, so a guessed id cannot promote a private
+     * photograph onto the people list.
+     */
+    suspend fun setPortrait(
+        personId: String,
+        assetId: String?,
+        viewer: Viewer,
+        nowMillis: Long
+    ): Boolean {
+        val person = db.personDao().byId(personId) ?: return false
+        if (person.familyId != viewer.familyId) return false
+        if (!MemoryAccess.canRecordConsent(person.toDomain(), viewer)) return false
+
+        if (assetId != null) {
+            val asset = db.assetDao().byId(assetId) ?: return false
+            if (asset.familyId != viewer.familyId) return false
+            val story = db.storyDao().observeById(asset.storyId).first()?.toDomain() ?: return false
+            val people = db.personDao().all(viewer.familyId).map { it.toDomain() }
+            if (!MemoryAccess.canRead(story, viewer, people)) return false
+        }
+
+        db.personDao().setPortrait(personId, assetId, nowMillis)
+        return true
+    }
+
+    /** One photograph the picker offers, with the story it came from so it can be named. */
+    data class PortraitChoice(
+        val assetId: String,
+        val localPath: String,
+        val storyId: String,
+        val storyTitle: String
+    )
+
     // --- Invitations ---
 
     /**

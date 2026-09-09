@@ -141,6 +141,16 @@ interface PersonDao {
 
     @Upsert
     suspend fun upsertAll(people: List<PersonEntity>)
+
+    /**
+     * Points a person at the photograph that stands for their face, or clears it.
+     *
+     * A single column write rather than a whole-row upsert, because a portrait is chosen
+     * from a screen that is showing a person somebody else may be editing, and rewriting
+     * every field from a stale copy would quietly undo their work.
+     */
+    @Query("UPDATE people SET portraitAssetId = :assetId, updatedAt = :nowMillis WHERE personId = :personId")
+    suspend fun setPortrait(personId: String, assetId: String?, nowMillis: Long)
 }
 
 @Dao

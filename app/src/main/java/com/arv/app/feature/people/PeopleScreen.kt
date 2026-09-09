@@ -22,6 +22,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import com.arv.app.ui.components.PersonAvatar
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -41,6 +44,11 @@ class PeopleViewModel(app: Application) : AndroidViewModel(app) {
     val people: StateFlow<List<Person>> =
         repo.observePeople(ServiceLocator.familyId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Faces this viewer may see, filtered in the repository. Absent means initials. */
+    val portraits: StateFlow<Map<String, String>> =
+        repo.observePortraits(ServiceLocator.familyId, ServiceLocator.viewer)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 }
 
 /** Screen 11 list. UX-6 builds the detail view with the hours-preserved meter. */
@@ -54,6 +62,7 @@ fun PeopleScreen(
     viewModel: PeopleViewModel = viewModel()
 ) {
     val people by viewModel.people.collectAsStateWithLifecycle()
+    val portraits by viewModel.portraits.collectAsStateWithLifecycle()
 
     LazyColumn(
         // Below the clock, not under it. The first card here sat half beneath the
@@ -147,8 +156,17 @@ fun PeopleScreen(
                 onClick = { onOpenPerson(person.personId) },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
+                Row(
                     Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                PersonAvatar(
+                    displayName = person.displayName,
+                    localPath = portraits[person.personId],
+                    size = 44.dp
+                )
+                Spacer(Modifier.width(14.dp))
+                Column(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(person.displayName, style = MaterialTheme.typography.titleMedium)
@@ -185,6 +203,7 @@ fun PeopleScreen(
                             color = MaterialTheme.colorScheme.error
                         )
                     }
+                }
                 }
             }
         }

@@ -66,6 +66,7 @@ import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.ai.Viewer
 import com.arv.app.ui.theme.ArvHero
 import com.arv.app.core.di.ServiceLocator
+import com.arv.app.ui.components.PersonAvatar
 import com.arv.app.core.session.ActiveSession
 import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.Person
@@ -107,6 +108,11 @@ data class FeedUiState(
     val audioPaths: Map<String, String> = emptyMap(),
     /** storyId to its photograph, for cards about pictures rather than voices. */
     val imagePaths: Map<String, String> = emptyMap(),
+    /**
+     * personId to the face this viewer may see. Absent means initials, and the map cannot
+     * say whether that is because nobody chose one or because this one is not theirs to see.
+     */
+    val portraits: Map<String, String> = emptyMap(),
     val lenses: List<FeedLens> = listOf(FeedLens.Whole),
     val lens: FeedLens = FeedLens.Whole
 ) {
@@ -164,8 +170,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
             },
             repo.observePendingSyncCount(),
             repo.observeAudioPaths(familyId),
-            repo.observeImagePaths(familyId)
-        ) { (posts, people, lensPair), pending, paths, images ->
+            repo.observeImagePaths(familyId),
+            repo.observePortraits(familyId, viewer)
+        ) { (posts, people, lensPair), pending, paths, images, portraits ->
             FeedUiState(
                 posts = posts,
                 people = people,
@@ -173,6 +180,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 loading = false,
                 audioPaths = paths,
                 imagePaths = images,
+                portraits = portraits,
                 lenses = lensPair.first,
                 lens = lensPair.second
             )
@@ -279,6 +287,7 @@ fun FeedScreen(
             HomeHeader(
                 familyName = viewModel.familyName,
                 people = state.people,
+                portraits = state.portraits,
                 pendingSyncCount = state.posts.size,
                 lenses = state.lenses,
                 lens = state.lens,
@@ -386,6 +395,7 @@ fun FeedScreen(
 @Composable
 private fun HomeHeader(
     people: List<Person>,
+    portraits: Map<String, String>,
     familyName: String,
     pendingSyncCount: Int,
     lenses: List<FeedLens>,
@@ -495,22 +505,17 @@ private fun HomeHeader(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.clickable { onOpenPerson(person.personId) }
                 ) {
-                    Box(
-                        Modifier
-                            .size(64.dp)
-                            .clip(CircleShape)
-                            .background(ArvHero.on.copy(alpha = 0.12f))
-                            .border(2.dp, ArvHero.accent, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            person.displayName.split(" ")
-                                .mapNotNull { it.firstOrNull()?.uppercase() }
-                                .take(2).joinToString(""),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = ArvHero.on
-                        )
-                    }
+                    // Their face if this viewer may see it, their initials otherwise. The
+                    // decision was made in the repository by Portrait; nothing here is
+                    // allowed to reach for an asset path on its own.
+                    PersonAvatar(
+                        displayName = person.displayName,
+                        localPath = portraits[person.personId],
+                        size = 64.dp,
+                        ringColor = ArvHero.accent,
+                        background = ArvHero.on.copy(alpha = 0.12f),
+                        initialsColor = ArvHero.on
+                    )
                     Spacer(Modifier.height(6.dp))
                     // Who am I in here? Nothing on the home screen answered it, so the
                     // strip now says so under your own face rather than making you open

@@ -455,6 +455,50 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate8To9_givesAPersonAFaceAndLeavesTheirRecordAlone() {
+        helper.createDatabase(TEST_DB, 8).use { db ->
+            db.execSQL(
+                "INSERT INTO people (personId, familyId, displayName, alsoKnownAs, state, " +
+                    "consentGranted, postMortemOk, updatedAt, confidence, source, verifiedAt, " +
+                    "deathYearEnd, note, consentDeclined, consentDecidedAt, consentMethod, " +
+                    "consentRecordedBy) " +
+                    "VALUES ('p_1', 'fam_1', 'Ruth Delaney', '', 'LIVING', 1, 0, 100, " +
+                    "'FAMILY_TOLD', NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL)"
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB, 9, true, ArvDatabase.MIGRATION_8_9
+        )
+
+        // A column about how somebody is displayed must not disturb what is recorded
+        // about them. Consent especially: this archive's whole claim rests on it.
+        db.query(
+            "SELECT displayName, consentGranted, portraitAssetId FROM people WHERE personId = 'p_1'"
+        ).use { c ->
+            assertTrue("the person survived the migration", c.moveToFirst())
+            assertEquals("Ruth Delaney", c.getString(0))
+            assertEquals("the yes survived", 1, c.getInt(1))
+            assertTrue("nobody has chosen a face yet", c.isNull(2))
+        }
+
+        // And a face can be pointed at afterwards. The column holds an asset id rather
+        // than a path, so the photograph keeps the story that says who may see it.
+        db.execSQL("UPDATE people SET portraitAssetId = 'a_1' WHERE personId = 'p_1'")
+        db.query("SELECT portraitAssetId FROM people WHERE personId = 'p_1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("a_1", c.getString(0))
+        }
+
+        // Clearing it goes back to initials rather than to a broken image.
+        db.execSQL("UPDATE people SET portraitAssetId = NULL WHERE personId = 'p_1'")
+        db.query("SELECT portraitAssetId FROM people WHERE personId = 'p_1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue("cleared back to no face", c.isNull(0))
+        }
+    }
+
     private companion object {
         const val TEST_DB = "migration-test"
     }
