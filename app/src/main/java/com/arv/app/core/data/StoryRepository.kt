@@ -7,6 +7,7 @@ import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.ai.Viewer
 import com.arv.app.core.data.local.ArvDatabase
 import com.arv.app.core.data.local.AssetEntity
+import com.arv.app.core.data.local.InviteEntity
 import com.arv.app.core.data.local.MemberEntity
 import com.arv.app.core.data.local.OutboxEntity
 import com.arv.app.core.data.local.PersonEntity
@@ -23,6 +24,7 @@ import com.arv.app.core.model.AssetType
 import com.arv.app.core.model.OutboxOp
 import java.io.File
 import java.util.UUID
+import kotlin.random.Random
 import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.EraPrecision
 import com.arv.app.core.model.MemberRole
@@ -478,6 +480,130 @@ class StoryRepository(
 
         return NewFamily(familyId, userId, personId, familyName.trim(), MemberRole.OWNER)
     }
+
+    // --- Invitations ---
+
+    /**
+     * The code this person hands out, minted on first ask and kept until it is spent.
+     *
+     * Reused rather than regenerated on every visit, because the code gets written on the
+     * back of an envelope and read down a phone line a day later. A screen that showed a
+     * different code each time it opened would invalidate the one already travelling.
+     */
+    suspend fun inviteCodeFor(
+        familyId: String,
+        userId: String,
+        familyName: String?,
+        nowMillis: Long,
+        grantsRole: MemberRole = MemberRole.CONTRIBUTOR,
+        random: Random = Random.Default
+    ): InviteEntity =
+        db.inviteDao().liveFor(familyId, userId)
+            ?: mintInvite(familyId, userId, familyName, nowMillis, grantsRole, random)
+
+    /**
+     * Retires the live code and mints a fresh one.
+     *
+     * For the case the product has to answer: a code was read out to the wrong person, or
+     * written somewhere it should not have been. Revoking rather than deleting keeps the
+     * row, so an archive can still say a code existed and was pulled.
+     */
+    suspend fun replaceInviteCode(
+        familyId: String,
+        userId: String,
+        familyName: String?,
+        nowMillis: Long,
+        grantsRole: MemberRole = MemberRole.CONTRIBUTOR,
+        random: Random = Random.Default
+    ): InviteEntity {
+        db.inviteDao().liveFor(familyId, userId)?.let { db.inviteDao().revoke(it.code, nowMillis) }
+        return mintInvite(familyId, userId, familyName, nowMillis, grantsRole, random)
+    }
+
+    /**
+     * A code nobody is holding yet.
+     *
+     * The retry is not about the odds, which are nothing at 31^6 across a family. It is
+     * that the code is a primary key, so a collision would surface as a crash on upsert
+     * rather than as a second draw, and a crash while inviting someone is a bad way to
+     * find that out.
+     */
+    private suspend fun mintInvite(
+        familyId: String,
+        userId: String,
+        familyName: String?,
+        nowMillis: Long,
+        grantsRole: MemberRole,
+        random: Random
+    ): InviteEntity {
+        require(grantsRole != MemberRole.OWNER) {
+            "An invitation cannot grant OWNER. An archive has one, and it is not transferable by code."
+        }
+        repeat(8) {
+            val code = InviteCode.normalize(InviteCode.generate(random))
+            if (code != null && db.inviteDao().byCode(code) == null) {
+                val invite = InviteEntity(
+                    code = code,
+                    familyId = familyId,
+                    issuedByUserId = userId,
+                    grantsRole = grantsRole,
+                    createdAt = nowMillis,
+                    familyName = familyName?.trim()?.takeIf { it.isNotBlank() }
+                )
+                db.inviteDao().upsert(invite)
+                return invite
+            }
+        }
+        error("Could not mint an unused invite code in eight attempts.")
+    }
+
+    /** Everything this person has issued in this archive, spent, revoked or live. */
+    fun observeInvitesIssuedBy(familyId: String, userId: String) =
+        db.inviteDao().observeIssuedBy(familyId, userId)
+
+    /** What a code opens, before anyone agrees to it. Null when it is not a live code. */
+    suspend fun previewInvite(typed: String?): InviteEntity? {
+        val code = InviteCode.normalize(typed) ?: return null
+        return db.inviteDao().byCode(code)
+    }
+
+    /**
+     * Types a code in and, if it stands up, joins the archive.
+     *
+     * The decision itself is [Invitation.redeem], which is pure and tested without a
+     * database. This method does the two things that need one: fetch what the decision
+     * needs, and write the outcome. Member row and spent code land in a single
+     * transaction, because a person admitted to a family on a code that still works is
+     * exactly the forgeable trail the single-use rule exists to prevent.
+     */
+    suspend fun redeemInvite(
+        typed: String?,
+        userId: String,
+        nowMillis: Long
+    ): Invitation.Result {
+        val code = InviteCode.normalize(typed) ?: return Invitation.Result.NotACode
+        val invite = db.inviteDao().byCode(code)
+        val existingMember = invite?.let { db.memberDao().forUser(it.familyId, userId) }
+
+        val result = Invitation.redeem(typed, invite, existingMember, userId, nowMillis)
+        if (result is Invitation.Result.Accepted) {
+            db.withTransaction {
+                db.memberDao().upsert(result.member)
+                db.inviteDao().markUsed(result.spent.code, userId, nowMillis)
+            }
+        }
+        return result
+    }
+
+    /**
+     * How much of this archive is actually on this phone.
+     *
+     * Joining writes a standing, not a library. Until sync exists (TODO(DAT-2)) a code
+     * redeemed on a second device opens an archive with nothing in it, and the join screen
+     * says so rather than letting someone think the recordings failed to load.
+     */
+    suspend fun archiveWeight(familyId: String): Int =
+        db.personDao().all(familyId).size + db.storyDao().all(familyId).size
 
     /**
      * Adds someone to the archive.

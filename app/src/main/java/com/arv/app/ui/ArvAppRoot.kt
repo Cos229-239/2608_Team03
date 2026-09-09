@@ -52,6 +52,7 @@ import com.arv.app.feature.feed.FeedScreen
 import com.arv.app.feature.librarian.LibrarianScreen
 import com.arv.app.feature.record.AttachRecordingScreen
 import com.arv.app.feature.auth.AuthScreen
+import com.arv.app.feature.invite.JoinFamilyScreen
 import com.arv.app.feature.onboarding.OnboardingScreen
 import com.arv.app.feature.people.AddPersonScreen
 import com.arv.app.feature.people.PeopleScreen
@@ -73,6 +74,14 @@ sealed class Destination(val route: String) {
 
     /** Screen 01. Reached once an account exists but no archive is open on this phone. */
     data object Onboarding : Destination("onboarding")
+
+    /**
+     * The other way into an archive: somebody read you a code.
+     *
+     * Reached from onboarding rather than replacing it, because creating and joining are
+     * the two halves of the same question and neither is the default.
+     */
+    data object JoinFamily : Destination("joinFamily")
 
     /** Adding a relative by hand, reached from the Tree tab. */
     data object AddPerson : Destination("addPerson")
@@ -313,7 +322,20 @@ fun ArvAppRoot() {
                             navController.navigate(Destination.Family.route) {
                                 popUpTo(Destination.Onboarding.route) { inclusive = true }
                             }
-                        }
+                        },
+                        onJoinWithCode = { navController.navigate(Destination.JoinFamily.route) }
+                    )
+                }
+                composable(Destination.JoinFamily.route) {
+                    JoinFamilyScreen(
+                        onJoined = {
+                            navController.navigate(Destination.Family.route) {
+                                // Nothing of the join is left behind. A back gesture from
+                                // inside the archive must not land on a spent code.
+                                popUpTo(navController.graph.id) { inclusive = true }
+                            }
+                        },
+                        onBack = { navController.popBackStack() }
                     )
                 }
                 composable(Destination.AddPerson.route) {

@@ -409,6 +409,52 @@ class MigrationTest {
         assertTrue("a code cannot be issued twice", rejected)
     }
 
+    @Test
+    fun migrate7To8_letsACodeSayWhichFamilyItOpensWithoutInventingOne() {
+        helper.createDatabase(TEST_DB, 7).use { db ->
+            db.execSQL(
+                "INSERT INTO people (personId, familyId, displayName, alsoKnownAs, state, " +
+                    "consentGranted, postMortemOk, updatedAt, confidence, source, verifiedAt, " +
+                    "deathYearEnd, note, consentDeclined, consentDecidedAt, consentMethod, " +
+                    "consentRecordedBy) " +
+                    "VALUES ('p_1', 'fam_1', 'Ruth Delaney', '', 'LIVING', 1, 0, 100, " +
+                    "'FAMILY_TOLD', NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL)"
+            )
+            // A code minted before the column existed. It was never told a name.
+            db.execSQL(
+                "INSERT INTO invites (code, familyId, issuedByUserId, grantsRole, createdAt) " +
+                    "VALUES ('K7M2QX', 'fam_1', 'u_1', 'CONTRIBUTOR', 200)"
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB, 8, true, ArvDatabase.MIGRATION_7_8
+        )
+
+        db.query("SELECT displayName FROM people WHERE personId = 'p_1'").use { c ->
+            assertTrue("the person survived the migration", c.moveToFirst())
+            assertEquals("Ruth Delaney", c.getString(0))
+        }
+
+        // The old code still works and still says it does not know. Backfilling a name
+        // here would be the archive making one up, which is the one thing it does not do.
+        db.query("SELECT familyId, familyName FROM invites WHERE code = 'K7M2QX'").use { c ->
+            assertTrue("the invitation survived the migration", c.moveToFirst())
+            assertEquals("fam_1", c.getString(0))
+            assertTrue("a code minted before the column knows no name", c.isNull(1))
+        }
+
+        // A code minted after it does.
+        db.execSQL(
+            "INSERT INTO invites (code, familyId, issuedByUserId, grantsRole, createdAt, familyName) " +
+                "VALUES ('P4RT9Y', 'fam_1', 'u_1', 'CONTRIBUTOR', 300, 'The Delaney family')"
+        )
+        db.query("SELECT familyName FROM invites WHERE code = 'P4RT9Y'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("The Delaney family", c.getString(0))
+        }
+    }
+
     private companion object {
         const val TEST_DB = "migration-test"
     }

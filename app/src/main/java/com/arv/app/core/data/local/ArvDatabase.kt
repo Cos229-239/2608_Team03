@@ -20,7 +20,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MemberEntity::class,
         InviteEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -184,6 +184,21 @@ abstract class ArvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Lets an invitation say which family it opens.
+         *
+         * A code is read down a phone line to somebody who has never seen this app. Before
+         * this column the join screen could confirm the code was real and still not say
+         * what accepting it would put them in, which is not a thing to ask anyone to agree
+         * to. Nullable on purpose: a row written before this migration was never told a
+         * name, and filling one in now would be the archive making it up.
+         */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE invites ADD COLUMN familyName TEXT")
+            }
+        }
+
         fun get(context: Context): ArvDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -196,7 +211,7 @@ abstract class ArvDatabase : RoomDatabase() {
                     // an acceptable failure mode. Write real migrations.
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
-                        MIGRATION_6_7
+                        MIGRATION_6_7, MIGRATION_7_8
                     )
                     .build()
                     .also { instance = it }

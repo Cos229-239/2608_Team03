@@ -414,5 +414,18 @@ data class InviteEntity(
     /** Set when it is spent. A live code is one with no usedAt and no revokedAt. */
     val usedAt: Long? = null,
     val usedByUserId: String? = null,
-    val revokedAt: Long? = null
+    val revokedAt: Long? = null,
+    /**
+     * The name of the family this code opens, as it read at the moment it was minted.
+     *
+     * Carried on the invitation because nothing else can carry it. There is no families
+     * table; a family's name lives in the session of whoever has it open, so a person
+     * typing a code has no way to find out what they are joining. The code is the only
+     * thing that travels between two people, so the name travels on it.
+     *
+     * Nullable rather than defaulted, because a code minted before this column existed
+     * genuinely does not know, and "" would be the archive claiming a name it was never
+     * told. The join screen says so out loud instead of inventing one.
+     */
+    val familyName: String? = null
 )
