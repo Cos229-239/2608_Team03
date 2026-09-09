@@ -499,6 +499,60 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate9To10_movesAFaceOntoThePersonAndKeepsWhereItCameFrom() {
+        helper.createDatabase(TEST_DB, 9).use { db ->
+            db.execSQL(
+                "INSERT INTO people (personId, familyId, displayName, alsoKnownAs, state, " +
+                    "consentGranted, postMortemOk, updatedAt, confidence, source, verifiedAt, " +
+                    "deathYearEnd, note, consentDeclined, consentDecidedAt, consentMethod, " +
+                    "consentRecordedBy, portraitAssetId) " +
+                    "VALUES ('p_1', 'fam_1', 'Ruth Delaney', '', 'LIVING', 1, 0, 100, " +
+                    "'FAMILY_TOLD', NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, 'a_old')"
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB, 10, true, ArvDatabase.MIGRATION_9_10
+        )
+
+        // Additive, so the row that pointed at an asset under 9 is untouched. It simply
+        // has no path yet and draws initials until somebody picks a face again, which is
+        // the honest outcome of changing our minds about the design.
+        db.query(
+            "SELECT displayName, consentGranted, portraitPath, portraitAssetId " +
+                "FROM people WHERE personId = 'p_1'"
+        ).use { c ->
+            assertTrue("the person survived the migration", c.moveToFirst())
+            assertEquals("Ruth Delaney", c.getString(0))
+            assertEquals("the yes survived", 1, c.getInt(1))
+            assertTrue("no face yet", c.isNull(2))
+            assertEquals("and where the old one came from was kept", "a_old", c.getString(3))
+        }
+
+        // An uploaded face carries a path and no source record.
+        db.execSQL(
+            "UPDATE people SET portraitPath = '/f/portraits/x.jpg', portraitAssetId = NULL " +
+                "WHERE personId = 'p_1'"
+        )
+        db.query("SELECT portraitPath, portraitAssetId FROM people WHERE personId = 'p_1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("/f/portraits/x.jpg", c.getString(0))
+            assertTrue("an upload came from no record", c.isNull(1))
+        }
+
+        // One taken from the archive carries both.
+        db.execSQL(
+            "UPDATE people SET portraitPath = '/f/portraits/y.jpg', portraitAssetId = 'a_1' " +
+                "WHERE personId = 'p_1'"
+        )
+        db.query("SELECT portraitPath, portraitAssetId FROM people WHERE personId = 'p_1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("/f/portraits/y.jpg", c.getString(0))
+            assertEquals("a_1", c.getString(1))
+        }
+    }
+
     private companion object {
         const val TEST_DB = "migration-test"
     }

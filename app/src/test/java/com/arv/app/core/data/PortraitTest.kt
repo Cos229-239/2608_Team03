@@ -1,8 +1,6 @@
 package com.arv.app.core.data
 
 import com.arv.app.core.ai.Viewer
-import com.arv.app.core.data.local.AssetEntity
-import com.arv.app.core.model.AssetType
 import com.arv.app.core.model.ConsentMethod
 import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.Person
@@ -10,17 +8,19 @@ import com.arv.app.core.model.Story
 import com.arv.app.core.model.StoryKind
 import com.arv.app.core.model.Visibility
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * A portrait is a permission decision that looks like a decoration, which is what makes it
- * dangerous. An avatar is drawn on the feed, the people list and a profile header, so a
- * portrait that skipped the filter would leak one photograph onto three screens inside a
- * circle nobody thinks to audit.
+ * A face belongs to the person whose circle it fills, so drawing one is not a permission
+ * question and [Portrait.resolve] is deliberately dumb about it.
  *
- * Every refusal here has to end in initials rather than an error, because failing closed is
- * only cheap if the fallback is a real design.
+ * The permission question moved to where it actually lives: taking a photograph out of the
+ * archive and making it somebody's face. A portrait shows on the feed, the people list and
+ * a profile header, so choosing a private photograph as one would publish it to all three.
+ * [Portrait.mayTakeFromArchive] is that gate, checked once when somebody decides, and the
+ * cases below are the ones that must not get through.
  */
 class PortraitTest {
 
@@ -30,27 +30,20 @@ class PortraitTest {
     private val theo = Viewer("u_theo", MemberRole.CONTRIBUTOR, familyId = FAMILY)
     private val keeper = Viewer("u_keeper", MemberRole.KEEPER, familyId = FAMILY)
 
-    private fun person(
-        id: String = "p_ruth",
-        name: String = "Ruth Delaney",
-        portrait: String? = "a1",
-        consentGranted: Boolean = true
-    ) = Person(
-        personId = id,
-        displayName = name,
+    private fun person(consentGranted: Boolean = true) = Person(
+        personId = "p_ruth",
+        displayName = "Ruth Delaney",
         consentGranted = consentGranted,
         consentDecidedAt = if (consentGranted) 1L else null,
-        consentMethod = if (consentGranted) ConsentMethod.IN_PERSON else null,
-        portraitAssetId = portrait
+        consentMethod = if (consentGranted) ConsentMethod.IN_PERSON else null
     )
 
     private fun story(
-        id: String = "s1",
         visibility: Visibility = Visibility.FAMILY,
         createdBy: String = "u_theo",
         narrators: List<String> = emptyList()
     ) = Story(
-        storyId = id,
+        storyId = "s1",
         familyId = FAMILY,
         title = "A photograph of Ruth",
         kind = StoryKind.PHOTO_SET,
@@ -60,110 +53,83 @@ class PortraitTest {
         createdBy = createdBy
     )
 
-    private fun asset(id: String = "a1", storyId: String = "s1", path: String = "/f/ruth.jpg") =
-        AssetEntity(
-            assetId = id,
-            storyId = storyId,
-            familyId = FAMILY,
-            type = AssetType.IMAGE,
-            localPath = path,
-            mimeType = "image/jpeg"
-        )
-
     private val onDisk: (String) -> Boolean = { true }
     private val notOnDisk: (String) -> Boolean = { false }
 
+    // --- drawing a face, which is not a permission question ---
+
     @Test
-    fun `a family photograph is drawn`() {
-        val result = Portrait.resolve("a1", asset(), story(), dana, listOf(person()), onDisk)
-        assertEquals(Portrait.Result.Show("/f/ruth.jpg"), result)
+    fun `a face on file is drawn`() {
+        assertEquals(
+            Portrait.Result.Show("/f/portraits/ruth.jpg"),
+            Portrait.resolve("/f/portraits/ruth.jpg", onDisk)
+        )
     }
 
     @Test
-    fun `nobody has chosen a face`() {
-        val result = Portrait.resolve(null, null, null, dana, listOf(person(portrait = null)), onDisk)
-        assertEquals(Portrait.Result.NotSet, result)
+    fun `nobody has given them a face`() {
+        assertEquals(Portrait.Result.NotSet, Portrait.resolve(null, onDisk))
+    }
+
+    @Test
+    fun `a file that has gone is missing rather than unset`() {
+        // Kept distinct so a vanished file reads as repairable rather than as a choice
+        // nobody made.
+        assertEquals(Portrait.Result.Missing, Portrait.resolve("/f/portraits/gone.jpg", notOnDisk))
+    }
+
+    @Test
+    fun `every answer that is not Show is one the circle can render`() {
+        val refusals = listOf(
+            Portrait.resolve(null, onDisk),
+            Portrait.resolve("/f/portraits/gone.jpg", notOnDisk)
+        )
+        assertTrue(refusals.none { it is Portrait.Result.Show })
+    }
+
+    // --- taking a face out of the archive, which is ---
+
+    @Test
+    fun `a family photograph may be taken as a face`() {
+        assertTrue(Portrait.mayTakeFromArchive(story(), dana, listOf(person())))
     }
 
     /**
-     * The one that matters. A private photograph must not reach the people list because
-     * somebody set it as a face, and the owner of the archive is not an exception.
+     * The one that matters. A portrait is shown to the whole family, so if this returned
+     * true for a private photograph the circle would be a laundry for material the
+     * permission filter withheld.
      */
     @Test
-    fun `a private photograph is withheld from everyone but whoever filed it`() {
+    fun `a private photograph cannot be promoted into somebody's circle`() {
         val private = story(visibility = Visibility.PRIVATE, createdBy = "u_theo")
 
-        assertEquals(
-            Portrait.Result.Withheld,
-            Portrait.resolve("a1", asset(), private, dana, listOf(person()), onDisk)
-        )
-        assertEquals(
-            Portrait.Result.Withheld,
-            Portrait.resolve("a1", asset(), private, keeper, listOf(person()), onDisk)
-        )
-        // And the person who recorded it still sees their own.
-        assertEquals(
-            Portrait.Result.Show("/f/ruth.jpg"),
-            Portrait.resolve("a1", asset(), private, theo, listOf(person()), onDisk)
-        )
+        assertFalse(Portrait.mayTakeFromArchive(private, dana, listOf(person())))
+        // Not even by a keeper, and not by the owner of the archive.
+        assertFalse(Portrait.mayTakeFromArchive(private, keeper, listOf(person())))
+        // Whoever recorded it may use their own.
+        assertTrue(Portrait.mayTakeFromArchive(private, theo, listOf(person())))
     }
 
     @Test
-    fun `a consent block on the narrator withholds their face too`() {
-        // The photograph is a family photograph, but the person speaking in that record has
-        // no consent on file, so the record is restricted and the face goes with it.
+    fun `a consent block on the narrator blocks their photograph too`() {
         val undecided = person(consentGranted = false)
         val told = story(narrators = listOf("p_ruth"), createdBy = "u_theo")
 
-        assertEquals(
-            Portrait.Result.Withheld,
-            Portrait.resolve("a1", asset(), told, dana, listOf(undecided), onDisk)
-        )
+        assertFalse(Portrait.mayTakeFromArchive(told, dana, listOf(undecided)))
     }
 
     @Test
-    fun `another family's photograph is never drawn`() {
+    fun `another family's photograph is never available`() {
         val theirs = story().copy(familyId = "fam_2")
-        assertEquals(
-            Portrait.Result.Withheld,
-            Portrait.resolve("a1", asset(), theirs, dana, listOf(person()), onDisk)
-        )
+        assertFalse(Portrait.mayTakeFromArchive(theirs, dana, listOf(person())))
     }
 
     @Test
-    fun `a deleted story or asset is missing rather than withheld`() {
-        // Distinguished on purpose: treating a deletion as a permission failure would hide
-        // a dangling pointer the app could offer to repair.
-        assertEquals(
-            Portrait.Result.Missing,
-            Portrait.resolve("a1", null, story(), dana, listOf(person()), onDisk)
-        )
-        assertEquals(
-            Portrait.Result.Missing,
-            Portrait.resolve("a1", asset(), null, dana, listOf(person()), onDisk)
-        )
+    fun `a deleted record is not available either`() {
+        assertFalse(Portrait.mayTakeFromArchive(null, dana, listOf(person())))
     }
 
-    @Test
-    fun `a file gone from disk is missing`() {
-        assertEquals(
-            Portrait.Result.Missing,
-            Portrait.resolve("a1", asset(), story(), dana, listOf(person()), notOnDisk)
-        )
-    }
-
-    /**
-     * Ordering check. Permission is read before the disk, so repairing a missing file can
-     * never be a route to finding out what a private photograph held.
-     */
-    @Test
-    fun `permission is decided before the file is looked for`() {
-        val private = story(visibility = Visibility.PRIVATE, createdBy = "u_theo")
-        assertEquals(
-            Portrait.Result.Withheld,
-            Portrait.resolve("a1", asset(), private, dana, listOf(person()), notOnDisk)
-        )
-    }
+    // --- initials ---
 
     @Test
     fun `initials take two letters however many names somebody has`() {
@@ -172,18 +138,5 @@ class PortraitTest {
         assertEquals("R", Portrait.initialsOf("Ruth"))
         assertEquals("ME", Portrait.initialsOf("Mary Ellen van der Berg Delaney"))
         assertEquals("", Portrait.initialsOf(""))
-    }
-
-    @Test
-    fun `every refusal is a state the circle can render`() {
-        // The contract the avatar depends on: nothing here throws, and anything that is not
-        // Show means initials.
-        val refusals = listOf(
-            Portrait.resolve(null, null, null, dana, emptyList(), onDisk),
-            Portrait.resolve("a1", null, null, dana, emptyList(), onDisk),
-            Portrait.resolve("a1", asset(), story(visibility = Visibility.PRIVATE, createdBy = "u_x"), dana, listOf(person()), onDisk),
-            Portrait.resolve("a1", asset(), story(), dana, listOf(person()), notOnDisk)
-        )
-        assertTrue(refusals.none { it is Portrait.Result.Show })
     }
 }

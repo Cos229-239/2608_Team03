@@ -22,10 +22,13 @@ Working end to end:
 - Invitations. One code per person, spent on first use, recording who admitted whom.
 - Permission rules on every read and every edit, unit tested.
 - Consent enforced on reads, including the decision a family made after a death.
-- Profile pictures, chosen from photographs already in the archive, so a face keeps the
-  record that says who filed it and who may see it. Withheld ones fall back to initials.
+- Profile pictures. Upload one into the circle, or take one from a photograph already
+  filed under that person. A face belongs to the person, like their name, so it needs no
+  record behind it. The permission check happens once, when a photograph is taken out of
+  the archive, so a private one cannot be promoted onto the people list. Pictures are
+  downscaled on the way in, and no face means initials, which is a design not a blank.
 - Dark mode, plus eight named palettes and an auto setting that follows the system.
-- Room schema at version 9 with real migrations and no destructive fallback.
+- Room schema at version 10 with real migrations and no destructive fallback.
 
 Partly built:
 

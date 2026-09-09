@@ -149,8 +149,18 @@ interface PersonDao {
      * from a screen that is showing a person somebody else may be editing, and rewriting
      * every field from a stale copy would quietly undo their work.
      */
-    @Query("UPDATE people SET portraitAssetId = :assetId, updatedAt = :nowMillis WHERE personId = :personId")
-    suspend fun setPortrait(personId: String, assetId: String?, nowMillis: Long)
+    @Query(
+        """
+        UPDATE people SET portraitPath = :path, portraitAssetId = :fromAssetId,
+            updatedAt = :nowMillis
+        WHERE personId = :personId
+        """
+    )
+    suspend fun setPortrait(personId: String, path: String?, fromAssetId: String?, nowMillis: Long)
+
+    /** The file currently standing as this person's face, so a replacement can delete it. */
+    @Query("SELECT portraitPath FROM people WHERE personId = :personId")
+    suspend fun portraitPathOf(personId: String): String?
 }
 
 @Dao

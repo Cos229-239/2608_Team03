@@ -1,5 +1,8 @@
 package com.arv.app.core.data
 
+import android.content.Context
+import android.net.Uri
+import kotlinx.coroutines.withContext
 import androidx.room.withTransaction
 import com.arv.app.core.ai.Lineage
 import com.arv.app.core.ai.TranscriptionService
@@ -487,9 +490,7 @@ class StoryRepository(
      * A photograph this person could wear as a face: one the viewer can already see.
      *
      * Drawn only from stories that pass the permission filter, so the picker cannot become
-     * a way of discovering that a private photograph of somebody exists. A picture already
-     * in the archive is the only source offered, because a portrait has to keep the story
-     * that says who filed it and who may look at it.
+     * a way of discovering that a private photograph of somebody exists.
      */
     fun observePortraitChoices(
         familyId: String,
@@ -505,7 +506,7 @@ class StoryRepository(
             val stories = storyRows.map { it.toDomain() }
                 .filter { story ->
                     (personId in story.subjectPersonIds || personId in story.narratorIds) &&
-                        MemoryAccess.canRead(story, viewer, people)
+                        Portrait.mayTakeFromArchive(story, viewer, people)
                 }
                 .associateBy { it.storyId }
 
@@ -523,51 +524,35 @@ class StoryRepository(
         }.flowOn(Dispatchers.IO)
 
     /**
-     * Every face this viewer is allowed to see, for the screens that draw a row of them.
+     * Every face this viewer may see, for the screens that draw a row of them.
      *
-     * One query set for the whole list rather than one per avatar, the same reason
-     * [observeImagePaths] exists. People missing from the map draw initials, and the map
-     * deliberately cannot say whether that is because nobody chose a photograph or because
-     * this viewer may not see the one that was chosen.
+     * One query for the whole list rather than one per avatar. Simply reads the column now:
+     * a face belongs to its person, so there is no story to join and no permission to
+     * re-decide per render. The check happened when the face was chosen.
      */
     fun observePortraits(familyId: String, viewer: Viewer): Flow<Map<String, String>> =
-        combine(
-            db.personDao().observeAll(familyId),
-            db.assetDao().observeForFamily(familyId),
-            db.storyDao().observeRecent(familyId)
-        ) { personRows, assetRows, storyRows ->
-            val people = personRows.map { it.toDomain() }
-            val assets = assetRows.associateBy { it.assetId }
-            val stories = storyRows.map { it.toDomain() }.associateBy { it.storyId }
-
-            people.mapNotNull { person ->
-                val assetId = person.portraitAssetId ?: return@mapNotNull null
-                val asset = assets[assetId]
-                val result = Portrait.resolve(
-                    portraitAssetId = assetId,
-                    asset = asset,
-                    story = asset?.let { stories[it.storyId] },
-                    viewer = viewer,
-                    people = people,
-                    fileExists = { File(it).exists() }
-                )
+        db.personDao().observeAll(familyId).map { rows ->
+            rows.mapNotNull { person ->
+                val result = Portrait.resolve(person.portraitPath) { File(it).exists() }
                 (result as? Portrait.Result.Show)?.let { person.personId to it.localPath }
             }.toMap()
         }.flowOn(Dispatchers.IO)
 
     /**
-     * Chooses the photograph that stands for somebody, or clears it with a null.
+     * Puts a picture straight into somebody's circle.
      *
-     * Gated the same way writing down a person's consent is: anyone who can put something
-     * in the archive may do this, and a viewer may not, because a viewer reads what the
-     * family already shows and answers for nobody.
+     * The thing the first version of this could not do. No story is filed, because a face
+     * is not a record: requiring one meant a feed card and a timeline entry behind every
+     * profile picture. Somebody who wants the photograph in the archive as a record adds it
+     * through Documents, and can then pick it here.
      *
-     * Refuses an asset the viewer cannot read, so a guessed id cannot promote a private
-     * photograph onto the people list.
+     * Gated like recording consent, so a viewer cannot do it. Returns false rather than
+     * throwing when the picture could not be read, which is an ordinary mis-tap.
      */
-    suspend fun setPortrait(
+    suspend fun uploadPortrait(
+        context: Context,
         personId: String,
-        assetId: String?,
+        uri: Uri,
         viewer: Viewer,
         nowMillis: Long
     ): Boolean {
@@ -575,16 +560,84 @@ class StoryRepository(
         if (person.familyId != viewer.familyId) return false
         if (!MemoryAccess.canRecordConsent(person.toDomain(), viewer)) return false
 
-        if (assetId != null) {
-            val asset = db.assetDao().byId(assetId) ?: return false
-            if (asset.familyId != viewer.familyId) return false
-            val story = db.storyDao().observeById(asset.storyId).first()?.toDomain() ?: return false
-            val people = db.personDao().all(viewer.familyId).map { it.toDomain() }
-            if (!MemoryAccess.canRead(story, viewer, people)) return false
-        }
+        val path = withContext(Dispatchers.IO) { PortraitStore.intake(context, uri) }
+            ?: return false
 
-        db.personDao().setPortrait(personId, assetId, nowMillis)
+        replace(context, personId, path, fromAssetId = null, nowMillis = nowMillis)
         return true
+    }
+
+    /**
+     * Takes a face from a photograph already in the archive.
+     *
+     * This is the path that needs the permission check, and it is the only one: a portrait
+     * is shown to the whole family, so choosing a private photograph as one would publish
+     * it. Checked here, once, rather than on every render.
+     *
+     * The file is copied. From this moment the face is the person's, so deleting the record
+     * it came from does not blank their circle. [PersonEntity.portraitAssetId] keeps the
+     * note about where it came from.
+     */
+    suspend fun setPortraitFromArchive(
+        context: Context,
+        personId: String,
+        assetId: String,
+        viewer: Viewer,
+        nowMillis: Long
+    ): Boolean {
+        val person = db.personDao().byId(personId) ?: return false
+        if (person.familyId != viewer.familyId) return false
+        if (!MemoryAccess.canRecordConsent(person.toDomain(), viewer)) return false
+
+        val asset = db.assetDao().byId(assetId) ?: return false
+        if (asset.familyId != viewer.familyId) return false
+
+        val story = db.storyDao().observeById(asset.storyId).first()?.toDomain()
+        val people = db.personDao().all(viewer.familyId).map { it.toDomain() }
+        if (!Portrait.mayTakeFromArchive(story, viewer, people)) return false
+
+        val path = withContext(Dispatchers.IO) {
+            PortraitStore.copyFromArchive(context, asset.localPath)
+        } ?: return false
+
+        replace(context, personId, path, fromAssetId = assetId, nowMillis = nowMillis)
+        return true
+    }
+
+    /** Back to initials, and the file goes with it. */
+    suspend fun clearPortrait(
+        context: Context,
+        personId: String,
+        viewer: Viewer,
+        nowMillis: Long
+    ): Boolean {
+        val person = db.personDao().byId(personId) ?: return false
+        if (person.familyId != viewer.familyId) return false
+        if (!MemoryAccess.canRecordConsent(person.toDomain(), viewer)) return false
+
+        replace(context, personId, null, fromAssetId = null, nowMillis = nowMillis)
+        return true
+    }
+
+    /**
+     * Points a person at a new face and deletes the one it replaced.
+     *
+     * The delete comes after the write, not before. A crash between the two leaves an
+     * orphaned file, which costs a few kilobytes; the other order leaves a person pointing
+     * at a file that is gone, which costs them their grandmother's face.
+     */
+    private suspend fun replace(
+        context: Context,
+        personId: String,
+        path: String?,
+        fromAssetId: String?,
+        nowMillis: Long
+    ) {
+        val previous = db.personDao().portraitPathOf(personId)
+        db.personDao().setPortrait(personId, path, fromAssetId, nowMillis)
+        if (previous != null && previous != path) {
+            withContext(Dispatchers.IO) { PortraitStore.discard(context, previous) }
+        }
     }
 
     /** One photograph the picker offers, with the story it came from so it can be named. */

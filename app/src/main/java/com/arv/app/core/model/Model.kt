@@ -224,11 +224,9 @@ data class Person(
     val consentMethod: ConsentMethod? = null,
     /** The account that wrote the answer down. */
     val consentRecordedBy: String? = null,
-    /**
-     * The asset holding this person's face, or null for the initials circle.
-     *
-     * Null and unreadable are different states and both draw initials. See [Portrait].
-     */
+    /** The file holding this person's face, or null for the initials circle. */
+    val portraitPath: String? = null,
+    /** The archive photograph it was copied from, when it came from one. Provenance only. */
     val portraitAssetId: String? = null
 ) {
     val isDeceased: Boolean get() = deathYear != null || state == ProfileState.MEMORIAL

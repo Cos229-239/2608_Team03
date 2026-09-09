@@ -74,17 +74,29 @@ data class PersonEntity(
     val consentMethod: ConsentMethod? = null,
     val consentRecordedBy: String? = null,
     /**
-     * The photograph shown as this person's face, as a pointer into [AssetEntity].
+     * The face drawn in this person's circle. A file under `filesDir/portraits`, or null
+     * for their initials.
      *
-     * A pointer rather than a path, because an asset belongs to a story and that story is
-     * what carries the provenance: who filed the picture, when, what the record said, who
-     * may see it. A bare path here would put a photograph of somebody's dead mother in the
-     * database with no story behind it, outside the permission filter, which is the one
-     * thing this archive's rules refuse.
+     * The first cut of this pointed at an [AssetEntity] instead, so that a portrait would
+     * inherit the permissions of the story its photograph belonged to. That was the wrong
+     * rule for this field. A face is identification, not testimony: [displayName],
+     * [birthYear] and [relationLabel] all sit here with no story behind them and nobody
+     * asks those for provenance. Requiring one meant a person could not simply be given a
+     * face without also filing a record, which put a feed card and a timeline entry behind
+     * every profile picture.
      *
-     * It follows that a portrait is not always renderable. The story it came from can be
-     * private, or its narrator's consent can be missing, or somebody can delete it. See
-     * [com.arv.app.core.data.Portrait] for what happens then; the short answer is initials.
+     * So the portrait belongs to the person. Where it came from is a separate question,
+     * answered by [portraitAssetId].
+     */
+    val portraitPath: String? = null,
+    /**
+     * The archive photograph this face was taken from, when it was taken from one.
+     *
+     * Null for a picture uploaded straight into the circle. Kept when somebody chose an
+     * existing record, because "this face came from the 1952 wedding photograph" is worth
+     * being able to answer later. It is provenance, not the thing that renders: the
+     * permission check on that record happens once, at the moment of choosing, and the
+     * face is a copy from then on.
      */
     val portraitAssetId: String? = null
 )
@@ -310,6 +322,7 @@ fun PersonEntity.toDomain() = Person(
     consentDecidedAt = consentDecidedAt,
     consentMethod = consentMethod,
     consentRecordedBy = consentRecordedBy,
+    portraitPath = portraitPath,
     portraitAssetId = portraitAssetId
 )
 

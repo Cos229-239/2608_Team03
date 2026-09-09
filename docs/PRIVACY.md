@@ -23,6 +23,8 @@ All of this is written to the app's private storage and never sent anywhere:
 - **People and relationships.** Names, nicknames, birth and death years, birthplaces, notes,
   how people are related, and how certain the archive is about each of those.
 - **Stories, documents and photographs**, and anything you wrote about them.
+- **Profile pictures.** A picture you put in somebody's circle is copied into the app's
+  own storage, downscaled, and kept there. It is not uploaded and it is not shared.
 - **Health information** a family chose to record.
 - **Consent records.** Whether a person agreed to be archived, who wrote that answer down,
   when, and how it reached them.

@@ -17,6 +17,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import com.arv.app.core.data.StoryRepository
 import com.arv.app.ui.components.PersonAvatar
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -178,9 +183,27 @@ class PersonDetailViewModel(
         repo.observePortraitChoices(familyId, personId, viewer)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun choosePortrait(assetId: String?) {
+    /** A picture picked out of the gallery, straight into the circle. */
+    fun uploadPortrait(uri: Uri) {
         viewModelScope.launch {
-            repo.setPortrait(personId, assetId, viewer, System.currentTimeMillis())
+            repo.uploadPortrait(
+                getApplication(), personId, uri, viewer, System.currentTimeMillis()
+            )
+        }
+    }
+
+    /** A photograph already in the archive, permission checked here rather than on render. */
+    fun takePortraitFrom(assetId: String) {
+        viewModelScope.launch {
+            repo.setPortraitFromArchive(
+                getApplication(), personId, assetId, viewer, System.currentTimeMillis()
+            )
+        }
+    }
+
+    fun clearPortrait() {
+        viewModelScope.launch {
+            repo.clearPortrait(getApplication(), personId, viewer, System.currentTimeMillis())
         }
     }
 
@@ -222,13 +245,27 @@ fun PersonDetailScreen(
 
     val p = person ?: return
 
+    // Images only, through the system document picker, which hands back a grant for the
+    // one file the person chose. This is why the app holds no media permission at all.
+    val picturePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) viewModel.uploadPortrait(uri)
+        pickingPortrait = false
+    }
+
     if (pickingPortrait) {
         PortraitPicker(
             displayName = p.displayName,
             choices = portraitChoices,
-            current = p.portraitAssetId,
-            onChoose = {
-                viewModel.choosePortrait(it)
+            hasFace = p.portraitPath != null,
+            onUpload = { picturePicker.launch(arrayOf("image/*")) },
+            onTakeFromArchive = {
+                viewModel.takePortraitFrom(it)
+                pickingPortrait = false
+            },
+            onClear = {
+                viewModel.clearPortrait()
                 pickingPortrait = false
             },
             onDismiss = { pickingPortrait = false }
@@ -1018,41 +1055,50 @@ private fun MethodChip(
 }
 
 /**
- * Choosing which photograph stands for somebody.
+ * Giving somebody a face.
  *
- * Only offers pictures already in the archive, and only the ones this viewer can already
- * see. That is not a limitation, it is the point: a portrait keeps the story it came from,
- * which is what says who filed it, when, and who may look at it. A fresh file picked here
- * would be a photograph of somebody's dead mother with no provenance and no permission,
- * which is the one thing this archive's rules refuse.
+ * Upload first, because that is what people expect a profile picture to be and it was the
+ * thing the first version of this could not do. Below it, the photographs already filed
+ * under this person, which is the better choice when the picture is itself a record worth
+ * keeping: those carry the story that says who filed it and when.
  *
- * When there are none, the dialog says how to get one rather than showing an empty grid.
+ * Only pictures this viewer can already see are offered, so the list cannot become a way of
+ * discovering that a private photograph of somebody exists.
  */
 @Composable
 private fun PortraitPicker(
     displayName: String,
     choices: List<StoryRepository.PortraitChoice>,
-    current: String?,
-    onChoose: (String?) -> Unit,
+    hasFace: Boolean,
+    onUpload: () -> Unit,
+    onTakeFromArchive: (String) -> Unit,
+    onClear: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val firstName = displayName.split(" ").first()
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("A face for ${displayName.split(" ").first()}") },
+        title = { Text("A face for $firstName") },
         text = {
-            if (choices.isEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(
+                    onClick = onUpload,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                ) { Text("Upload a picture") }
+
                 Text(
-                    "No photographs of them in the archive yet. Add one through Documents, " +
-                        "with them named as who it is about, and it will show up here.",
-                    style = MaterialTheme.typography.bodyMedium
+                    "Stays on this phone like everything else, and is not filed as a record. " +
+                        "To keep the photograph itself in the archive, add it through Documents.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+
+                if (choices.isNotEmpty()) {
+                    HorizontalDivider()
                     Text(
-                        "Pictures already filed under them. The photograph keeps the record " +
-                            "it came from, so whoever cannot see that record cannot see this face.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        "Or use a photograph already filed under $firstName",
+                        style = MaterialTheme.typography.labelLarge
                     )
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(choices, key = { it.assetId }) { choice ->
@@ -1060,17 +1106,12 @@ private fun PortraitPicker(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier
                                     .width(96.dp)
-                                    .clickable { onChoose(choice.assetId) }
+                                    .clickable { onTakeFromArchive(choice.assetId) }
                             ) {
                                 PersonAvatar(
                                     displayName = displayName,
                                     localPath = choice.localPath,
-                                    size = 72.dp,
-                                    ringColor = if (choice.assetId == current) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.outlineVariant
-                                    }
+                                    size = 72.dp
                                 )
                                 Spacer(Modifier.size(6.dp))
                                 Text(
@@ -1090,10 +1131,10 @@ private fun PortraitPicker(
             TextButton(onClick = onDismiss) { Text("Done") }
         },
         dismissButton = {
-            // Only offered when there is something to undo. Clearing goes back to initials,
-            // which is a design rather than a blank.
-            if (current != null) {
-                TextButton(onClick = { onChoose(null) }) { Text("Use initials") }
+            // Only offered when there is something to undo. Initials are a design rather
+            // than a blank, so going back to them is not a loss.
+            if (hasFace) {
+                TextButton(onClick = onClear) { Text("Use initials") }
             }
         }
     )
