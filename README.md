@@ -7,7 +7,7 @@ Arv is the Swedish word for inheritance.
 
 ## Where the build stands
 
-Updated 2026-08-28. 123 unit tests, 0 failures.
+Updated 2026-09-09. 197 unit tests, 0 failures.
 
 Working end to end:
 
@@ -18,22 +18,27 @@ Working end to end:
 - Sides of the family worked out per person, including sides with nobody on them yet.
 - Import a compiled family history without flattening what it was unsure about.
 - Export the whole archive to a zip that opens in a browser without this app.
-- Permission rules on every read, unit tested.
-- Room schema at version 3 with real migrations and no destructive fallback.
+- Accounts, and an archive that belongs to one rather than to whoever holds the phone.
+- Invitations. One code per person, spent on first use, recording who admitted whom.
+- Permission rules on every read and every edit, unit tested.
+- Consent enforced on reads, including the decision a family made after a death.
+- Room schema at version 8 with real migrations and no destructive fallback.
 
 Partly built:
 
 - Librarian and search screens exist and answer from local data. No embeddings yet.
 - Timeline shows dated memories and gaps. Undated memories still need a home.
-- Sync has a database outbox and nothing that drains it. Firebase compiles, and
-  `google-services.json` does not exist yet, so nothing leaves the phone.
+- Sync has a database outbox and nothing that drains it. Joining writes a standing,
+  not a library, so a code redeemed on a second phone opens an archive with nothing
+  in it. The join screen says so rather than letting it look like a failed load.
+- Invitations always grant CONTRIBUTOR. The role travels on the invitation and the
+  other roles are built and tested, so what is missing is a picker, not a mechanism.
 
 Not started:
 
 - Family forest, the zoomed out view across households.
 - Dark mode.
-- Compose UI tests. `androidTest` currently holds the migration test only.
-- The post mortem consent flag is stored on a person and never checked on a read.
+- Compose UI tests. `androidTest` holds the migration tests only.
 
 ## Team
 
@@ -61,6 +66,11 @@ minSdk 26, target and compile SDK 35.
 Open the repo folder in Android Studio, let Gradle sync, then Run. Android Studio
 writes `local.properties` itself.
 
+You also need `app/google-services.json`, which is gitignored and is not in the repo.
+The google-services plugin reads it at configuration time, so a fresh clone without it
+fails before it compiles anything. It is in the team channel. Ask rather than guess:
+the error it produces does not say what is missing.
+
 For transcription, open Settings inside the app and download the speech model. It is
 about 40 MB and only needs doing once. Without it, a recording saves and plays and
 says it has not been transcribed yet, rather than inventing words for it.
@@ -82,5 +92,10 @@ uninstalls the app first, which erases the archive.
   source claimed, and the ones nobody has checked are listed so they can be.
 - Uncertainty is stored, not resolved. A death recorded as 2021 or 2022 stays both.
 - No destructive migration. This database can hold the only copy of someone's voice.
+- Private means private on the way in as well as out. A role is not a key: a keeper
+  cannot read, edit or delete what somebody kept to themselves.
+- Nothing leaves the phone because a default said so. Backup and device transfer are
+  both refused, in all three places the OS looks depending on its version. Copying an
+  archive is the export zip, which is a deliberate act by somebody in the family.
 
 Licensed under the MIT License. See `LICENSE`.
