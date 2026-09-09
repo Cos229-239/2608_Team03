@@ -333,6 +333,82 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate6To7_addsInvitesWithoutDisturbingWhoIsAlreadyInTheFamily() {
+        helper.createDatabase(TEST_DB, 6).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO people
+                  (personId, familyId, displayName, alsoKnownAs, birthYear, deathYear,
+                   deathYearEnd, birthPlace, relationLabel, linkedUserId, state,
+                   memoryStewardUserId, consentGranted, postMortemOk, confidence, source,
+                   verifiedAt, note, updatedAt, consentDeclined, consentDecidedAt,
+                   consentMethod, consentRecordedBy)
+                VALUES
+                  ('p_1', 'fam_1', 'Ruth Delaney', '', 1931, NULL, NULL, 'Chicago',
+                   'Grandmother', 'u_1', 'LIVING', NULL, 1, 1, 'FAMILY_TOLD', NULL,
+                   NULL, NULL, 100, 0, NULL, NULL, NULL)
+                """.trimIndent()
+            )
+            db.execSQL(
+                "INSERT INTO members (familyId, userId, role, personId, joinedAt, invitedBy) " +
+                    "VALUES ('fam_1', 'u_1', 'OWNER', 'p_1', 100, NULL)"
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB, 7, true, ArvDatabase.MIGRATION_6_7
+        )
+
+        // Adding a table beside the family must not touch the family.
+        db.query("SELECT displayName, consentGranted FROM people WHERE personId = 'p_1'").use { c ->
+            assertTrue("the person survived the migration", c.moveToFirst())
+            assertEquals("Ruth Delaney", c.getString(0))
+            assertEquals("the yes survived", 1, c.getInt(1))
+        }
+        db.query("SELECT role FROM members WHERE familyId = 'fam_1' AND userId = 'u_1'").use { c ->
+            assertTrue("the member survived the migration", c.moveToFirst())
+            assertEquals("OWNER", c.getString(0))
+        }
+
+        // The owner mints a code, and it arrives unspent.
+        db.execSQL(
+            "INSERT INTO invites (code, familyId, issuedByUserId, grantsRole, createdAt) " +
+                "VALUES ('K7M2QX', 'fam_1', 'u_1', 'CONTRIBUTOR', 200)"
+        )
+        db.query("SELECT issuedByUserId, grantsRole, usedAt, usedByUserId, revokedAt FROM invites WHERE code = 'K7M2QX'").use { c ->
+            assertTrue("the invitation was written", c.moveToFirst())
+            assertEquals("u_1", c.getString(0))
+            assertEquals("CONTRIBUTOR", c.getString(1))
+            assertTrue("a new code is unspent", c.isNull(2))
+            assertTrue("and nobody has used it", c.isNull(3))
+            assertTrue("and it is not revoked", c.isNull(4))
+        }
+
+        // Spending it records both sides of the pairing, which is the point of keeping
+        // the row instead of deleting it.
+        db.execSQL("UPDATE invites SET usedAt = 300, usedByUserId = 'u_2' WHERE code = 'K7M2QX'")
+        db.query("SELECT usedAt, usedByUserId FROM invites WHERE code = 'K7M2QX'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(300L, c.getLong(0))
+            assertEquals("u_2", c.getString(1))
+        }
+
+        // The code is the primary key, so a second invitation cannot reuse one. Without
+        // this a forwarded code could be re-minted under somebody else and the trail
+        // would say they let a person in.
+        var rejected = false
+        try {
+            db.execSQL(
+                "INSERT INTO invites (code, familyId, issuedByUserId, grantsRole, createdAt) " +
+                    "VALUES ('K7M2QX', 'fam_1', 'u_2', 'VIEWER', 400)"
+            )
+        } catch (e: android.database.sqlite.SQLiteConstraintException) {
+            rejected = true
+        }
+        assertTrue("a code cannot be issued twice", rejected)
+    }
+
     private companion object {
         const val TEST_DB = "migration-test"
     }

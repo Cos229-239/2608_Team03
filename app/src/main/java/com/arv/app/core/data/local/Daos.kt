@@ -339,3 +339,40 @@ interface MemberDao {
     @Query("SELECT COUNT(*) FROM members WHERE familyId = :familyId")
     suspend fun countFor(familyId: String): Int
 }
+
+@Dao
+interface InviteDao {
+
+    /** The lookup a join screen does. Primary key, so a point read. */
+    @Query("SELECT * FROM invites WHERE code = :code")
+    suspend fun byCode(code: String): InviteEntity?
+
+    /** This person's live code for this family: not yet spent, not revoked. */
+    @Query(
+        """
+        SELECT * FROM invites
+        WHERE familyId = :familyId AND issuedByUserId = :userId
+          AND usedAt IS NULL AND revokedAt IS NULL
+        LIMIT 1
+        """
+    )
+    suspend fun liveFor(familyId: String, userId: String): InviteEntity?
+
+    /** Everything this person has ever issued, spent or not. The invite trail. */
+    @Query("SELECT * FROM invites WHERE familyId = :familyId AND issuedByUserId = :userId ORDER BY createdAt DESC")
+    fun observeIssuedBy(familyId: String, userId: String): Flow<List<InviteEntity>>
+
+    @Upsert
+    suspend fun upsert(invite: InviteEntity)
+
+    /**
+     * Spends a code. Kept rather than deleted, because who admitted whom is part of the
+     * record; a spent row is the only place the pairing is written down from both sides.
+     */
+    @Query("UPDATE invites SET usedAt = :nowMillis, usedByUserId = :userId WHERE code = :code")
+    suspend fun markUsed(code: String, userId: String, nowMillis: Long)
+
+    /** Retires a live code that was never spent, without touching the ones that were. */
+    @Query("UPDATE invites SET revokedAt = :nowMillis WHERE code = :code AND usedAt IS NULL")
+    suspend fun revoke(code: String, nowMillis: Long)
+}

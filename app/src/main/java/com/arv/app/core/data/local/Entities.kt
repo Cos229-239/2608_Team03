@@ -383,3 +383,36 @@ data class MemberEntity(
         invitedBy = invitedBy
     )
 }
+
+/**
+ * One invitation, issued by one person, good for one join.
+ *
+ * The code belongs to the person who minted it, so joining through it records who opened
+ * the door, and [MemberEntity.invitedBy] is where that lands. But it is spent the moment
+ * it is used, and a fresh one is minted for that person immediately.
+ *
+ * Single use is the load-bearing part. A code that keeps working can be forwarded by
+ * anyone who has it, and then the archive records invitations that never happened. A
+ * provenance trail that can be forged is worse than none, because it looks authoritative.
+ *
+ * Rows are kept after they are spent. Who admitted whom, and when, is part of how this
+ * family came together, and [usedByUserId] is the other half of the pair that
+ * `invitedBy` only sees from one side.
+ */
+@Entity(
+    tableName = "invites",
+    indices = [Index("familyId"), Index(value = ["familyId", "issuedByUserId"])]
+)
+data class InviteEntity(
+    /** Canonical form: uppercase, no separator. Display adds the dash. */
+    @PrimaryKey val code: String,
+    val familyId: String,
+    val issuedByUserId: String,
+    /** What someone joining through this code becomes. Never OWNER; a family has one. */
+    val grantsRole: MemberRole,
+    val createdAt: Long,
+    /** Set when it is spent. A live code is one with no usedAt and no revokedAt. */
+    val usedAt: Long? = null,
+    val usedByUserId: String? = null,
+    val revokedAt: Long? = null
+)
