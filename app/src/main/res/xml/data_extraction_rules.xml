@@ -1,21 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    What may leave this phone without anybody asking. Nothing.
+    Two different questions, and Android 12 and up lets them have different answers.
+    Each section here is independent, and a section left out is fully enabled, which is
+    the trap: silence means yes.
 
-    allowBackup="false" already said this, but it stops being read on Android 12 and
-    higher, where these rules decide instead. Both are declared so the answer does not
-    change with the OS version.
+    CLOUD: no. An archive holds health records, memories somebody marked private, and
+    recordings of people who are dead and cannot be asked again. That is not material to
+    hand to a third party because a system default said so. It would not work anyway:
+    Google's Auto Backup is capped at 25 MB per app and calls onQuotaExceeded above it, so
+    a single 45 minute interview puts an archive over the line. A backup that silently
+    skips the recordings and restores a database pointing at audio that is not there is
+    worse than no backup, because it looks like one.
 
-    An archive here can hold the only recording of a dead person's voice, and it holds
-    health records and memories somebody marked private. That is not material to hand to
-    a cloud backup because a default said so. Copying an archive is a deliberate act:
-    Settings exports the whole thing to a zip that opens in a browser, which is a copy
-    the family holds rather than one Google does.
+    DEVICE TO DEVICE: yes, all of it. This is the case the feature exists for, in Google's
+    own words: files too large for the cloud that transfer between devices without issue.
+    It is local, phone to phone, not through anybody's server, and the person chooses it
+    during setup on the new phone. An archive can be the only recording of someone's voice,
+    so losing it to a new handset is the failure this app must not have.
 
-    Device transfer is excluded for the same reason and it is the sharper edge: moving to
-    a new phone will not carry the archive across. Export first. If that trade is ever
-    worth revisiting, this is the file to revisit, and the recordings live under
-    filesDir, so a device-transfer include would need to name it deliberately.
+    The speech model is the one thing left behind. It is 41 MB of downloadable Vosk that
+    Settings can fetch again in a minute, and carrying it would bloat the transfer of the
+    part that actually cannot be replaced.
+
+    CROSS PLATFORM: no. There is no iOS build of Arv, so a transfer would move a family's
+    recordings onto a device with nothing that can open them.
+
+    Android 11 and below cannot separate these. There, allowBackup="false" turns off cloud
+    and phone to phone together, and the 25 MB cap would have defeated the transfer anyway.
+    On those devices the export zip in Settings is the only way to move an archive, and the
+    privacy policy says so rather than leaving somebody to find out.
 -->
 <data-extraction-rules>
     <cloud-backup>
@@ -25,11 +38,22 @@
         <exclude domain="sharedpref" />
         <exclude domain="external" />
     </cloud-backup>
+
     <device-transfer>
+        <include domain="root" path="." />
+        <include domain="file" path="." />
+        <include domain="database" path="." />
+        <include domain="sharedpref" path="." />
+        <include domain="external" path="." />
+        <!-- Redownloadable. See the note above. -->
+        <exclude domain="file" path="vosk" />
+    </device-transfer>
+
+    <cross-platform-transfer platform="ios">
         <exclude domain="root" />
         <exclude domain="file" />
         <exclude domain="database" />
         <exclude domain="sharedpref" />
         <exclude domain="external" />
-    </device-transfer>
+    </cross-platform-transfer>
 </data-extraction-rules>

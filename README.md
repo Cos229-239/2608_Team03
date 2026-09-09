@@ -98,8 +98,11 @@ uninstalls the app first, which erases the archive.
 - No destructive migration. This database can hold the only copy of someone's voice.
 - Private means private on the way in as well as out. A role is not a key: a keeper
   cannot read, edit or delete what somebody kept to themselves.
-- Nothing leaves the phone because a default said so. Backup and device transfer are
-  both refused, in all three places the OS looks depending on its version. Copying an
-  archive is the export zip, which is a deliberate act by somebody in the family.
+- Nothing goes to a cloud because a default said so. Auto Backup is refused in every
+  place the OS looks, and it would fail anyway at its 25 MB cap. Phone to phone transfer
+  is allowed and wanted, on 12 and up where it can be answered separately from cloud:
+  it is local, the person picks it during setup, and an archive should survive a new
+  handset. On 11 and below the two share one switch, so neither happens and the export
+  zip is the only way across.
 
 Licensed under the MIT License. See `LICENSE`.

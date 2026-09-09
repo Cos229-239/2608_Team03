@@ -82,15 +82,29 @@ permission to look at anything else.
 
 ## Backup
 
-Arv is excluded from Google's automatic cloud backup, deliberately. Your recordings are not
-copied to Google Drive.
+**Cloud backup: off, deliberately.** Your recordings are never copied to Google Drive.
+Beyond the privacy reason, Google's Auto Backup is capped at 25 MB per app, so one long
+recording would put an archive over the limit and the backup would skip the audio while
+appearing to have worked.
 
-Arv is currently also excluded from Android's phone-to-phone transfer, which means **moving
-to a new phone does not carry your archive across.**
+**Moving to a new phone: yes, on Android 12 and higher.** Your archive transfers during the
+new phone's setup, if you pick that option when it asks. The transfer is local, phone to
+phone, and passes through neither us nor Google. The speech model is left behind on purpose,
+because Settings can download it again and carrying it would only slow down the transfer of
+the part that cannot be replaced.
 
-The way to keep a copy is Settings, which exports the whole archive to a zip file that opens
-in a browser without this app. Where you put that file is up to you, and it is the only copy
-that will exist.
+**On Android 11 and lower it does not transfer.** Those versions have a single setting
+covering cloud backup and phone-to-phone transfer together, so they cannot be answered
+separately, and the 25 MB cap would have defeated the transfer anyway. On those devices the
+export below is the only way to move an archive.
+
+**Transfer to an iPhone: off.** There is no iPhone version of Arv, so a transfer would put
+your recordings on a device with nothing that can open them.
+
+**Either way, export.** Settings writes the whole archive to a zip file that opens in a
+browser without this app. A phone that is lost, stolen or broken takes the archive with it,
+and a transfer only helps while you still have the old phone in your hand. Where you put
+that file is up to you.
 
 ## Other people's information
 
