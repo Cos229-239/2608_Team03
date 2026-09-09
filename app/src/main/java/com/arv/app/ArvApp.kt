@@ -3,7 +3,6 @@ package com.arv.app
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.os.Build
 import androidx.core.content.getSystemService
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.session.ActiveSession
