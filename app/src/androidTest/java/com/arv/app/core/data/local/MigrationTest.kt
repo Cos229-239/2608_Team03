@@ -333,6 +333,226 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate6To7_addsInvitesWithoutDisturbingWhoIsAlreadyInTheFamily() {
+        helper.createDatabase(TEST_DB, 6).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO people
+                  (personId, familyId, displayName, alsoKnownAs, birthYear, deathYear,
+                   deathYearEnd, birthPlace, relationLabel, linkedUserId, state,
+                   memoryStewardUserId, consentGranted, postMortemOk, confidence, source,
+                   verifiedAt, note, updatedAt, consentDeclined, consentDecidedAt,
+                   consentMethod, consentRecordedBy)
+                VALUES
+                  ('p_1', 'fam_1', 'Ruth Delaney', '', 1931, NULL, NULL, 'Chicago',
+                   'Grandmother', 'u_1', 'LIVING', NULL, 1, 1, 'FAMILY_TOLD', NULL,
+                   NULL, NULL, 100, 0, NULL, NULL, NULL)
+                """.trimIndent()
+            )
+            db.execSQL(
+                "INSERT INTO members (familyId, userId, role, personId, joinedAt, invitedBy) " +
+                    "VALUES ('fam_1', 'u_1', 'OWNER', 'p_1', 100, NULL)"
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB, 7, true, ArvDatabase.MIGRATION_6_7
+        )
+
+        // Adding a table beside the family must not touch the family.
+        db.query("SELECT displayName, consentGranted FROM people WHERE personId = 'p_1'").use { c ->
+            assertTrue("the person survived the migration", c.moveToFirst())
+            assertEquals("Ruth Delaney", c.getString(0))
+            assertEquals("the yes survived", 1, c.getInt(1))
+        }
+        db.query("SELECT role FROM members WHERE familyId = 'fam_1' AND userId = 'u_1'").use { c ->
+            assertTrue("the member survived the migration", c.moveToFirst())
+            assertEquals("OWNER", c.getString(0))
+        }
+
+        // The owner mints a code, and it arrives unspent.
+        db.execSQL(
+            "INSERT INTO invites (code, familyId, issuedByUserId, grantsRole, createdAt) " +
+                "VALUES ('K7M2QX', 'fam_1', 'u_1', 'CONTRIBUTOR', 200)"
+        )
+        db.query("SELECT issuedByUserId, grantsRole, usedAt, usedByUserId, revokedAt FROM invites WHERE code = 'K7M2QX'").use { c ->
+            assertTrue("the invitation was written", c.moveToFirst())
+            assertEquals("u_1", c.getString(0))
+            assertEquals("CONTRIBUTOR", c.getString(1))
+            assertTrue("a new code is unspent", c.isNull(2))
+            assertTrue("and nobody has used it", c.isNull(3))
+            assertTrue("and it is not revoked", c.isNull(4))
+        }
+
+        // Spending it records both sides of the pairing, which is the point of keeping
+        // the row instead of deleting it.
+        db.execSQL("UPDATE invites SET usedAt = 300, usedByUserId = 'u_2' WHERE code = 'K7M2QX'")
+        db.query("SELECT usedAt, usedByUserId FROM invites WHERE code = 'K7M2QX'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(300L, c.getLong(0))
+            assertEquals("u_2", c.getString(1))
+        }
+
+        // The code is the primary key, so a second invitation cannot reuse one. Without
+        // this a forwarded code could be re-minted under somebody else and the trail
+        // would say they let a person in.
+        var rejected = false
+        try {
+            db.execSQL(
+                "INSERT INTO invites (code, familyId, issuedByUserId, grantsRole, createdAt) " +
+                    "VALUES ('K7M2QX', 'fam_1', 'u_2', 'VIEWER', 400)"
+            )
+        } catch (e: android.database.sqlite.SQLiteConstraintException) {
+            rejected = true
+        }
+        assertTrue("a code cannot be issued twice", rejected)
+    }
+
+    @Test
+    fun migrate7To8_letsACodeSayWhichFamilyItOpensWithoutInventingOne() {
+        helper.createDatabase(TEST_DB, 7).use { db ->
+            db.execSQL(
+                "INSERT INTO people (personId, familyId, displayName, alsoKnownAs, state, " +
+                    "consentGranted, postMortemOk, updatedAt, confidence, source, verifiedAt, " +
+                    "deathYearEnd, note, consentDeclined, consentDecidedAt, consentMethod, " +
+                    "consentRecordedBy) " +
+                    "VALUES ('p_1', 'fam_1', 'Ruth Delaney', '', 'LIVING', 1, 0, 100, " +
+                    "'FAMILY_TOLD', NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL)"
+            )
+            // A code minted before the column existed. It was never told a name.
+            db.execSQL(
+                "INSERT INTO invites (code, familyId, issuedByUserId, grantsRole, createdAt) " +
+                    "VALUES ('K7M2QX', 'fam_1', 'u_1', 'CONTRIBUTOR', 200)"
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB, 8, true, ArvDatabase.MIGRATION_7_8
+        )
+
+        db.query("SELECT displayName FROM people WHERE personId = 'p_1'").use { c ->
+            assertTrue("the person survived the migration", c.moveToFirst())
+            assertEquals("Ruth Delaney", c.getString(0))
+        }
+
+        // The old code still works and still says it does not know. Backfilling a name
+        // here would be the archive making one up, which is the one thing it does not do.
+        db.query("SELECT familyId, familyName FROM invites WHERE code = 'K7M2QX'").use { c ->
+            assertTrue("the invitation survived the migration", c.moveToFirst())
+            assertEquals("fam_1", c.getString(0))
+            assertTrue("a code minted before the column knows no name", c.isNull(1))
+        }
+
+        // A code minted after it does.
+        db.execSQL(
+            "INSERT INTO invites (code, familyId, issuedByUserId, grantsRole, createdAt, familyName) " +
+                "VALUES ('P4RT9Y', 'fam_1', 'u_1', 'CONTRIBUTOR', 300, 'The Delaney family')"
+        )
+        db.query("SELECT familyName FROM invites WHERE code = 'P4RT9Y'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("The Delaney family", c.getString(0))
+        }
+    }
+
+    @Test
+    fun migrate8To9_givesAPersonAFaceAndLeavesTheirRecordAlone() {
+        helper.createDatabase(TEST_DB, 8).use { db ->
+            db.execSQL(
+                "INSERT INTO people (personId, familyId, displayName, alsoKnownAs, state, " +
+                    "consentGranted, postMortemOk, updatedAt, confidence, source, verifiedAt, " +
+                    "deathYearEnd, note, consentDeclined, consentDecidedAt, consentMethod, " +
+                    "consentRecordedBy) " +
+                    "VALUES ('p_1', 'fam_1', 'Ruth Delaney', '', 'LIVING', 1, 0, 100, " +
+                    "'FAMILY_TOLD', NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL)"
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB, 9, true, ArvDatabase.MIGRATION_8_9
+        )
+
+        // A column about how somebody is displayed must not disturb what is recorded
+        // about them. Consent especially: this archive's whole claim rests on it.
+        db.query(
+            "SELECT displayName, consentGranted, portraitAssetId FROM people WHERE personId = 'p_1'"
+        ).use { c ->
+            assertTrue("the person survived the migration", c.moveToFirst())
+            assertEquals("Ruth Delaney", c.getString(0))
+            assertEquals("the yes survived", 1, c.getInt(1))
+            assertTrue("nobody has chosen a face yet", c.isNull(2))
+        }
+
+        // And a face can be pointed at afterwards. The column holds an asset id rather
+        // than a path, so the photograph keeps the story that says who may see it.
+        db.execSQL("UPDATE people SET portraitAssetId = 'a_1' WHERE personId = 'p_1'")
+        db.query("SELECT portraitAssetId FROM people WHERE personId = 'p_1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("a_1", c.getString(0))
+        }
+
+        // Clearing it goes back to initials rather than to a broken image.
+        db.execSQL("UPDATE people SET portraitAssetId = NULL WHERE personId = 'p_1'")
+        db.query("SELECT portraitAssetId FROM people WHERE personId = 'p_1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue("cleared back to no face", c.isNull(0))
+        }
+    }
+
+    @Test
+    fun migrate9To10_movesAFaceOntoThePersonAndKeepsWhereItCameFrom() {
+        helper.createDatabase(TEST_DB, 9).use { db ->
+            db.execSQL(
+                "INSERT INTO people (personId, familyId, displayName, alsoKnownAs, state, " +
+                    "consentGranted, postMortemOk, updatedAt, confidence, source, verifiedAt, " +
+                    "deathYearEnd, note, consentDeclined, consentDecidedAt, consentMethod, " +
+                    "consentRecordedBy, portraitAssetId) " +
+                    "VALUES ('p_1', 'fam_1', 'Ruth Delaney', '', 'LIVING', 1, 0, 100, " +
+                    "'FAMILY_TOLD', NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, 'a_old')"
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB, 10, true, ArvDatabase.MIGRATION_9_10
+        )
+
+        // Additive, so the row that pointed at an asset under 9 is untouched. It simply
+        // has no path yet and draws initials until somebody picks a face again, which is
+        // the honest outcome of changing our minds about the design.
+        db.query(
+            "SELECT displayName, consentGranted, portraitPath, portraitAssetId " +
+                "FROM people WHERE personId = 'p_1'"
+        ).use { c ->
+            assertTrue("the person survived the migration", c.moveToFirst())
+            assertEquals("Ruth Delaney", c.getString(0))
+            assertEquals("the yes survived", 1, c.getInt(1))
+            assertTrue("no face yet", c.isNull(2))
+            assertEquals("and where the old one came from was kept", "a_old", c.getString(3))
+        }
+
+        // An uploaded face carries a path and no source record.
+        db.execSQL(
+            "UPDATE people SET portraitPath = '/f/portraits/x.jpg', portraitAssetId = NULL " +
+                "WHERE personId = 'p_1'"
+        )
+        db.query("SELECT portraitPath, portraitAssetId FROM people WHERE personId = 'p_1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("/f/portraits/x.jpg", c.getString(0))
+            assertTrue("an upload came from no record", c.isNull(1))
+        }
+
+        // One taken from the archive carries both.
+        db.execSQL(
+            "UPDATE people SET portraitPath = '/f/portraits/y.jpg', portraitAssetId = 'a_1' " +
+                "WHERE personId = 'p_1'"
+        )
+        db.query("SELECT portraitPath, portraitAssetId FROM people WHERE personId = 'p_1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("/f/portraits/y.jpg", c.getString(0))
+            assertEquals("a_1", c.getString(1))
+        }
+    }
+
     private companion object {
         const val TEST_DB = "migration-test"
     }

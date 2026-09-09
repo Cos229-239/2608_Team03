@@ -5,7 +5,6 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
-import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -74,29 +73,23 @@ class PlaybackController {
      */
     private fun requestFocus(): Boolean {
         val am = audioManager ?: return true
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                .setAudioAttributes(attributes)
-                .setOnAudioFocusChangeListener { change ->
-                    when (change) {
-                        AudioManager.AUDIOFOCUS_LOSS -> stop()
-                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> pause()
-                    }
+        val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(attributes)
+            .setOnAudioFocusChangeListener { change ->
+                when (change) {
+                    AudioManager.AUDIOFOCUS_LOSS -> stop()
+                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> pause()
                 }
-                .build()
-            focusRequest = req
-            am.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        } else {
-            true
-        }
+            }
+            .build()
+        focusRequest = req
+        return am.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
     }
 
     private fun abandonFocus() {
         val am = audioManager ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            focusRequest?.let { am.abandonAudioFocusRequest(it) }
-            focusRequest = null
-        }
+        focusRequest?.let { am.abandonAudioFocusRequest(it) }
+        focusRequest = null
     }
 
     private val _state = MutableStateFlow(PlaybackState())

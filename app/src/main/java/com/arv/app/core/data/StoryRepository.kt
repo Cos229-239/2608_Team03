@@ -1,5 +1,8 @@
 package com.arv.app.core.data
 
+import android.content.Context
+import android.net.Uri
+import kotlinx.coroutines.withContext
 import androidx.room.withTransaction
 import com.arv.app.core.ai.Lineage
 import com.arv.app.core.ai.TranscriptionService
@@ -7,6 +10,7 @@ import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.ai.Viewer
 import com.arv.app.core.data.local.ArvDatabase
 import com.arv.app.core.data.local.AssetEntity
+import com.arv.app.core.data.local.InviteEntity
 import com.arv.app.core.data.local.MemberEntity
 import com.arv.app.core.data.local.OutboxEntity
 import com.arv.app.core.data.local.PersonEntity
@@ -23,6 +27,7 @@ import com.arv.app.core.model.AssetType
 import com.arv.app.core.model.OutboxOp
 import java.io.File
 import java.util.UUID
+import kotlin.random.Random
 import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.EraPrecision
 import com.arv.app.core.model.MemberRole
@@ -478,6 +483,294 @@ class StoryRepository(
 
         return NewFamily(familyId, userId, personId, familyName.trim(), MemberRole.OWNER)
     }
+
+    // --- Portraits ---
+
+    /**
+     * A photograph this person could wear as a face: one the viewer can already see.
+     *
+     * Drawn only from stories that pass the permission filter, so the picker cannot become
+     * a way of discovering that a private photograph of somebody exists.
+     */
+    fun observePortraitChoices(
+        familyId: String,
+        personId: String,
+        viewer: Viewer
+    ): Flow<List<PortraitChoice>> =
+        combine(
+            db.storyDao().observeRecent(familyId),
+            db.assetDao().observeForFamily(familyId),
+            db.personDao().observeAll(familyId)
+        ) { storyRows, assetRows, personRows ->
+            val people = personRows.map { it.toDomain() }
+            val stories = storyRows.map { it.toDomain() }
+                .filter { story ->
+                    (personId in story.subjectPersonIds || personId in story.narratorIds) &&
+                        Portrait.mayTakeFromArchive(story, viewer, people)
+                }
+                .associateBy { it.storyId }
+
+            assetRows
+                .filter { it.type == AssetType.IMAGE || it.mimeType.startsWith("image/") }
+                .filter { it.storyId in stories && File(it.localPath).exists() }
+                .map { asset ->
+                    PortraitChoice(
+                        assetId = asset.assetId,
+                        localPath = asset.localPath,
+                        storyId = asset.storyId,
+                        storyTitle = stories.getValue(asset.storyId).title
+                    )
+                }
+        }.flowOn(Dispatchers.IO)
+
+    /**
+     * Every face this viewer may see, for the screens that draw a row of them.
+     *
+     * One query for the whole list rather than one per avatar. Simply reads the column now:
+     * a face belongs to its person, so there is no story to join and no permission to
+     * re-decide per render. The check happened when the face was chosen.
+     */
+    fun observePortraits(familyId: String, viewer: Viewer): Flow<Map<String, String>> =
+        db.personDao().observeAll(familyId).map { rows ->
+            rows.mapNotNull { person ->
+                val result = Portrait.resolve(person.portraitPath) { File(it).exists() }
+                (result as? Portrait.Result.Show)?.let { person.personId to it.localPath }
+            }.toMap()
+        }.flowOn(Dispatchers.IO)
+
+    /**
+     * Puts a picture straight into somebody's circle.
+     *
+     * The thing the first version of this could not do. No story is filed, because a face
+     * is not a record: requiring one meant a feed card and a timeline entry behind every
+     * profile picture. Somebody who wants the photograph in the archive as a record adds it
+     * through Documents, and can then pick it here.
+     *
+     * Gated like recording consent, so a viewer cannot do it. Returns false rather than
+     * throwing when the picture could not be read, which is an ordinary mis-tap.
+     */
+    suspend fun uploadPortrait(
+        context: Context,
+        personId: String,
+        uri: Uri,
+        viewer: Viewer,
+        nowMillis: Long
+    ): Boolean {
+        val person = db.personDao().byId(personId) ?: return false
+        if (person.familyId != viewer.familyId) return false
+        if (!MemoryAccess.canRecordConsent(person.toDomain(), viewer)) return false
+
+        val path = withContext(Dispatchers.IO) { PortraitStore.intake(context, uri) }
+            ?: return false
+
+        replace(context, personId, path, fromAssetId = null, nowMillis = nowMillis)
+        return true
+    }
+
+    /**
+     * Takes a face from a photograph already in the archive.
+     *
+     * This is the path that needs the permission check, and it is the only one: a portrait
+     * is shown to the whole family, so choosing a private photograph as one would publish
+     * it. Checked here, once, rather than on every render.
+     *
+     * The file is copied. From this moment the face is the person's, so deleting the record
+     * it came from does not blank their circle. [PersonEntity.portraitAssetId] keeps the
+     * note about where it came from.
+     */
+    suspend fun setPortraitFromArchive(
+        context: Context,
+        personId: String,
+        assetId: String,
+        viewer: Viewer,
+        nowMillis: Long
+    ): Boolean {
+        val person = db.personDao().byId(personId) ?: return false
+        if (person.familyId != viewer.familyId) return false
+        if (!MemoryAccess.canRecordConsent(person.toDomain(), viewer)) return false
+
+        val asset = db.assetDao().byId(assetId) ?: return false
+        if (asset.familyId != viewer.familyId) return false
+
+        val story = db.storyDao().observeById(asset.storyId).first()?.toDomain()
+        val people = db.personDao().all(viewer.familyId).map { it.toDomain() }
+        if (!Portrait.mayTakeFromArchive(story, viewer, people)) return false
+
+        val path = withContext(Dispatchers.IO) {
+            PortraitStore.copyFromArchive(context, asset.localPath)
+        } ?: return false
+
+        replace(context, personId, path, fromAssetId = assetId, nowMillis = nowMillis)
+        return true
+    }
+
+    /** Back to initials, and the file goes with it. */
+    suspend fun clearPortrait(
+        context: Context,
+        personId: String,
+        viewer: Viewer,
+        nowMillis: Long
+    ): Boolean {
+        val person = db.personDao().byId(personId) ?: return false
+        if (person.familyId != viewer.familyId) return false
+        if (!MemoryAccess.canRecordConsent(person.toDomain(), viewer)) return false
+
+        replace(context, personId, null, fromAssetId = null, nowMillis = nowMillis)
+        return true
+    }
+
+    /**
+     * Points a person at a new face and deletes the one it replaced.
+     *
+     * The delete comes after the write, not before. A crash between the two leaves an
+     * orphaned file, which costs a few kilobytes; the other order leaves a person pointing
+     * at a file that is gone, which costs them their grandmother's face.
+     */
+    private suspend fun replace(
+        context: Context,
+        personId: String,
+        path: String?,
+        fromAssetId: String?,
+        nowMillis: Long
+    ) {
+        val previous = db.personDao().portraitPathOf(personId)
+        db.personDao().setPortrait(personId, path, fromAssetId, nowMillis)
+        if (previous != null && previous != path) {
+            withContext(Dispatchers.IO) { PortraitStore.discard(context, previous) }
+        }
+    }
+
+    /** One photograph the picker offers, with the story it came from so it can be named. */
+    data class PortraitChoice(
+        val assetId: String,
+        val localPath: String,
+        val storyId: String,
+        val storyTitle: String
+    )
+
+    // --- Invitations ---
+
+    /**
+     * The code this person hands out, minted on first ask and kept until it is spent.
+     *
+     * Reused rather than regenerated on every visit, because the code gets written on the
+     * back of an envelope and read down a phone line a day later. A screen that showed a
+     * different code each time it opened would invalidate the one already travelling.
+     */
+    suspend fun inviteCodeFor(
+        familyId: String,
+        userId: String,
+        familyName: String?,
+        nowMillis: Long,
+        grantsRole: MemberRole = MemberRole.CONTRIBUTOR,
+        random: Random = Random.Default
+    ): InviteEntity =
+        db.inviteDao().liveFor(familyId, userId)
+            ?: mintInvite(familyId, userId, familyName, nowMillis, grantsRole, random)
+
+    /**
+     * Retires the live code and mints a fresh one.
+     *
+     * For the case the product has to answer: a code was read out to the wrong person, or
+     * written somewhere it should not have been. Revoking rather than deleting keeps the
+     * row, so an archive can still say a code existed and was pulled.
+     */
+    suspend fun replaceInviteCode(
+        familyId: String,
+        userId: String,
+        familyName: String?,
+        nowMillis: Long,
+        grantsRole: MemberRole = MemberRole.CONTRIBUTOR,
+        random: Random = Random.Default
+    ): InviteEntity {
+        db.inviteDao().liveFor(familyId, userId)?.let { db.inviteDao().revoke(it.code, nowMillis) }
+        return mintInvite(familyId, userId, familyName, nowMillis, grantsRole, random)
+    }
+
+    /**
+     * A code nobody is holding yet.
+     *
+     * The retry is not about the odds, which are nothing at 31^6 across a family. It is
+     * that the code is a primary key, so a collision would surface as a crash on upsert
+     * rather than as a second draw, and a crash while inviting someone is a bad way to
+     * find that out.
+     */
+    private suspend fun mintInvite(
+        familyId: String,
+        userId: String,
+        familyName: String?,
+        nowMillis: Long,
+        grantsRole: MemberRole,
+        random: Random
+    ): InviteEntity {
+        require(grantsRole != MemberRole.OWNER) {
+            "An invitation cannot grant OWNER. An archive has one, and it is not transferable by code."
+        }
+        repeat(8) {
+            val code = InviteCode.normalize(InviteCode.generate(random))
+            if (code != null && db.inviteDao().byCode(code) == null) {
+                val invite = InviteEntity(
+                    code = code,
+                    familyId = familyId,
+                    issuedByUserId = userId,
+                    grantsRole = grantsRole,
+                    createdAt = nowMillis,
+                    familyName = familyName?.trim()?.takeIf { it.isNotBlank() }
+                )
+                db.inviteDao().upsert(invite)
+                return invite
+            }
+        }
+        error("Could not mint an unused invite code in eight attempts.")
+    }
+
+    /** Everything this person has issued in this archive, spent, revoked or live. */
+    fun observeInvitesIssuedBy(familyId: String, userId: String) =
+        db.inviteDao().observeIssuedBy(familyId, userId)
+
+    /** What a code opens, before anyone agrees to it. Null when it is not a live code. */
+    suspend fun previewInvite(typed: String?): InviteEntity? {
+        val code = InviteCode.normalize(typed) ?: return null
+        return db.inviteDao().byCode(code)
+    }
+
+    /**
+     * Types a code in and, if it stands up, joins the archive.
+     *
+     * The decision itself is [Invitation.redeem], which is pure and tested without a
+     * database. This method does the two things that need one: fetch what the decision
+     * needs, and write the outcome. Member row and spent code land in a single
+     * transaction, because a person admitted to a family on a code that still works is
+     * exactly the forgeable trail the single-use rule exists to prevent.
+     */
+    suspend fun redeemInvite(
+        typed: String?,
+        userId: String,
+        nowMillis: Long
+    ): Invitation.Result {
+        val code = InviteCode.normalize(typed) ?: return Invitation.Result.NotACode
+        val invite = db.inviteDao().byCode(code)
+        val existingMember = invite?.let { db.memberDao().forUser(it.familyId, userId) }
+
+        val result = Invitation.redeem(typed, invite, existingMember, userId, nowMillis)
+        if (result is Invitation.Result.Accepted) {
+            db.withTransaction {
+                db.memberDao().upsert(result.member)
+                db.inviteDao().markUsed(result.spent.code, userId, nowMillis)
+            }
+        }
+        return result
+    }
+
+    /**
+     * How much of this archive is actually on this phone.
+     *
+     * Joining writes a standing, not a library. Until sync exists (TODO(DAT-2)) a code
+     * redeemed on a second device opens an archive with nothing in it, and the join screen
+     * says so rather than letting someone think the recordings failed to load.
+     */
+    suspend fun archiveWeight(familyId: String): Int =
+        db.personDao().all(familyId).size + db.storyDao().all(familyId).size
 
     /**
      * Adds someone to the archive.

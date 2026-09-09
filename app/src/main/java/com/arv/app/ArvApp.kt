@@ -3,7 +3,6 @@ package com.arv.app
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.os.Build
 import androidx.core.content.getSystemService
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.session.ActiveSession
@@ -48,7 +47,6 @@ class ArvApp : Application() {
      * (visible, silent) rather than MIN. The user must be able to see it.
      */
     private fun createRecordingChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val channel = NotificationChannel(
             CHANNEL_RECORDING,
             getString(R.string.recording_channel_name),

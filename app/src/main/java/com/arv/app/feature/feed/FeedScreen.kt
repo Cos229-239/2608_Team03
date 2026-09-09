@@ -66,6 +66,10 @@ import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.ai.Viewer
 import com.arv.app.ui.theme.ArvHero
 import com.arv.app.core.di.ServiceLocator
+import com.arv.app.core.model.FamilyLens
+import com.arv.app.core.model.shortName
+import com.arv.app.core.model.underLens
+import com.arv.app.ui.components.PersonAvatar
 import com.arv.app.core.session.ActiveSession
 import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.Person
@@ -87,17 +91,6 @@ import kotlin.math.abs
  * Sides are the viewer's own parents, derived from the graph, so the menu offers exactly
  * the sides this person's family actually has and nothing invented.
  */
-data class FeedLens(
-    val label: String,
-    /** The parent whose side this is, null for whole-family and just-me. */
-    val parentId: String? = null,
-    val mine: Boolean = false
-) {
-    companion object {
-        val Whole = FeedLens("Whole family")
-    }
-}
-
 data class FeedUiState(
     val posts: List<Story> = emptyList(),
     val people: List<Person> = emptyList(),
@@ -107,8 +100,13 @@ data class FeedUiState(
     val audioPaths: Map<String, String> = emptyMap(),
     /** storyId to its photograph, for cards about pictures rather than voices. */
     val imagePaths: Map<String, String> = emptyMap(),
-    val lenses: List<FeedLens> = listOf(FeedLens.Whole),
-    val lens: FeedLens = FeedLens.Whole
+    /**
+     * personId to the face this viewer may see. Absent means initials, and the map cannot
+     * say whether that is because nobody chose one or because this one is not theirs to see.
+     */
+    val portraits: Map<String, String> = emptyMap(),
+    val lenses: List<FamilyLens> = listOf(FamilyLens.Whole),
+    val lens: FamilyLens = FamilyLens.Whole
 ) {
     val isEmpty: Boolean get() = !loading && posts.isEmpty()
 
@@ -132,9 +130,9 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     /** Whose archive this is, so the header can say so instead of guessing. */
     val familyName: String get() = ActiveSession.familyName ?: "Our Family"
 
-    private val lens = kotlinx.coroutines.flow.MutableStateFlow(FeedLens.Whole)
+    private val lens = kotlinx.coroutines.flow.MutableStateFlow(FamilyLens.Whole)
 
-    fun chooseLens(choice: FeedLens) { lens.value = choice }
+    fun chooseLens(choice: FamilyLens) { lens.value = choice }
 
     val uiState: StateFlow<FeedUiState> =
         combine(
@@ -149,23 +147,22 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 val readable = all.filter { MemoryAccess.canRead(it, viewer, people) }
 
                 val meId = people.firstOrNull { it.linkedUserId == viewer.userId }?.personId
-                val lenses = feedLenses(meId, people, edges)
+                val lenses = FamilyLens.optionsFor(meId, people, edges)
                 // A lens that stopped existing (a parent edge was removed) falls back to
                 // the whole family rather than filtering by a ghost.
-                val active = lenses.firstOrNull {
-                    it.parentId == chosen.parentId && it.mine == chosen.mine
-                } ?: FeedLens.Whole
+                val active = FamilyLens.resolve(chosen, lenses)
 
                 Triple(
                     filterByLens(readable, active, meId, edges),
-                    peopleForLens(people, active, meId, edges),
+                    people.underLens(active, meId, edges),
                     lenses to active
                 )
             },
             repo.observePendingSyncCount(),
             repo.observeAudioPaths(familyId),
-            repo.observeImagePaths(familyId)
-        ) { (posts, people, lensPair), pending, paths, images ->
+            repo.observeImagePaths(familyId),
+            repo.observePortraits(familyId, viewer)
+        ) { (posts, people, lensPair), pending, paths, images, portraits ->
             FeedUiState(
                 posts = posts,
                 people = people,
@@ -173,25 +170,12 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
                 loading = false,
                 audioPaths = paths,
                 imagePaths = images,
+                portraits = portraits,
                 lenses = lensPair.first,
                 lens = lensPair.second
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FeedUiState())
 
-    /** Whole family, one entry per parent the viewer actually has, and just-me. */
-    private fun feedLenses(
-        meId: String?,
-        people: List<Person>,
-        edges: List<com.arv.app.core.model.Relationship>
-    ): List<FeedLens> {
-        if (meId == null) return listOf(FeedLens.Whole)
-        val sides = Lineage.immediateParents(meId, edges).mapNotNull { parentId ->
-            people.firstOrNull { it.personId == parentId }?.let { parent ->
-                FeedLens("${parent.shortName()}'s side", parentId = parentId)
-            }
-        }
-        return listOf(FeedLens.Whole) + sides + FeedLens("Just me", mine = true)
-    }
 
     /**
      * A story belongs to a side when somebody who told it is on that side of the
@@ -201,7 +185,7 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun filterByLens(
         posts: List<Story>,
-        lens: FeedLens,
+        lens: FamilyLens,
         meId: String?,
         edges: List<com.arv.app.core.model.Relationship>
     ): List<Story> = when {
@@ -224,19 +208,6 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** The avatar strip narrows with the lens, so the row shows who the feed shows. */
-    private fun peopleForLens(
-        people: List<Person>,
-        lens: FeedLens,
-        meId: String?,
-        edges: List<com.arv.app.core.model.Relationship>
-    ): List<Person> = when {
-        lens.mine -> people.filter { it.personId == meId }
-        lens.parentId == null || meId == null -> people
-        else -> people.filter {
-            it.personId == meId || it.personId == lens.parentId ||
-                lens.parentId in Lineage.sideOf(it.personId, meId, edges)
-        }
-    }
 
     init {
         // Only the sample family gets sample data. A real family's archive starts empty
@@ -261,10 +232,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 fun FeedScreen(
     onOpenStory: (String) -> Unit,
     onRecord: () -> Unit,
+    modifier: Modifier = Modifier,
     onOpenPerson: (String) -> Unit = {},
     onViewAll: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
-    modifier: Modifier = Modifier,
     viewModel: FeedViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -279,6 +250,7 @@ fun FeedScreen(
             HomeHeader(
                 familyName = viewModel.familyName,
                 people = state.people,
+                portraits = state.portraits,
                 pendingSyncCount = state.posts.size,
                 lenses = state.lenses,
                 lens = state.lens,
@@ -386,11 +358,12 @@ fun FeedScreen(
 @Composable
 private fun HomeHeader(
     people: List<Person>,
+    portraits: Map<String, String>,
     familyName: String,
     pendingSyncCount: Int,
-    lenses: List<FeedLens>,
-    lens: FeedLens,
-    onChooseLens: (FeedLens) -> Unit,
+    lenses: List<FamilyLens>,
+    lens: FamilyLens,
+    onChooseLens: (FamilyLens) -> Unit,
     onOpenPerson: (String) -> Unit,
     onOpenSettings: () -> Unit
 ) {
@@ -495,22 +468,17 @@ private fun HomeHeader(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.clickable { onOpenPerson(person.personId) }
                 ) {
-                    Box(
-                        Modifier
-                            .size(64.dp)
-                            .clip(CircleShape)
-                            .background(ArvHero.on.copy(alpha = 0.12f))
-                            .border(2.dp, ArvHero.accent, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            person.displayName.split(" ")
-                                .mapNotNull { it.firstOrNull()?.uppercase() }
-                                .take(2).joinToString(""),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = ArvHero.on
-                        )
-                    }
+                    // Their face if this viewer may see it, their initials otherwise. The
+                    // decision was made in the repository by Portrait; nothing here is
+                    // allowed to reach for an asset path on its own.
+                    PersonAvatar(
+                        displayName = person.displayName,
+                        localPath = portraits[person.personId],
+                        size = 64.dp,
+                        ringColor = ArvHero.accent,
+                        background = ArvHero.on.copy(alpha = 0.12f),
+                        initialsColor = ArvHero.on
+                    )
                     Spacer(Modifier.height(6.dp))
                     // Who am I in here? Nothing on the home screen answered it, so the
                     // strip now says so under your own face rather than making you open
@@ -583,11 +551,11 @@ private fun HomeHeader(
 private fun FeaturedStoryCard(
     story: Story,
     audioPath: String?,
-    imagePath: String? = null,
     isPlaying: Boolean,
     onTogglePlay: () -> Unit,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    imagePath: String? = null
 ) {
     Card(
         onClick = onClick,
@@ -889,20 +857,6 @@ private fun EmptyFeed(onRecord: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Button(onClick = onRecord) { Text("Record the first story") }
-    }
-}
-
-/**
- * "Ruth Delaney" is Ruth, but "Miss Opal" is never just "Miss". Names carry respect;
- * truncation is not allowed to strip it.
- */
-private val honorifics = setOf("Miss", "Mr", "Mr.", "Mrs", "Mrs.", "Ms", "Ms.", "Dr", "Dr.")
-private fun Person.shortName(): String {
-    val parts = displayName.split(" ")
-    return when {
-        parts.size <= 1 -> displayName
-        parts.first() in honorifics -> parts.take(2).joinToString(" ")
-        else -> parts.first()
     }
 }
 

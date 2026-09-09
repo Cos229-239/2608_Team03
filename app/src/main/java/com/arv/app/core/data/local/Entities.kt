@@ -72,7 +72,33 @@ data class PersonEntity(
     val consentDeclined: Boolean = false,
     val consentDecidedAt: Long? = null,
     val consentMethod: ConsentMethod? = null,
-    val consentRecordedBy: String? = null
+    val consentRecordedBy: String? = null,
+    /**
+     * The face drawn in this person's circle. A file under `filesDir/portraits`, or null
+     * for their initials.
+     *
+     * The first cut of this pointed at an [AssetEntity] instead, so that a portrait would
+     * inherit the permissions of the story its photograph belonged to. That was the wrong
+     * rule for this field. A face is identification, not testimony: [displayName],
+     * [birthYear] and [relationLabel] all sit here with no story behind them and nobody
+     * asks those for provenance. Requiring one meant a person could not simply be given a
+     * face without also filing a record, which put a feed card and a timeline entry behind
+     * every profile picture.
+     *
+     * So the portrait belongs to the person. Where it came from is a separate question,
+     * answered by [portraitAssetId].
+     */
+    val portraitPath: String? = null,
+    /**
+     * The archive photograph this face was taken from, when it was taken from one.
+     *
+     * Null for a picture uploaded straight into the circle. Kept when somebody chose an
+     * existing record, because "this face came from the 1952 wedding photograph" is worth
+     * being able to answer later. It is provenance, not the thing that renders: the
+     * permission check on that record happens once, at the moment of choosing, and the
+     * face is a copy from then on.
+     */
+    val portraitAssetId: String? = null
 )
 
 /**
@@ -295,7 +321,9 @@ fun PersonEntity.toDomain() = Person(
     consentDeclined = consentDeclined,
     consentDecidedAt = consentDecidedAt,
     consentMethod = consentMethod,
-    consentRecordedBy = consentRecordedBy
+    consentRecordedBy = consentRecordedBy,
+    portraitPath = portraitPath,
+    portraitAssetId = portraitAssetId
 )
 
 fun RelationshipEntity.toDomain() = Relationship(
@@ -383,3 +411,49 @@ data class MemberEntity(
         invitedBy = invitedBy
     )
 }
+
+/**
+ * One invitation, issued by one person, good for one join.
+ *
+ * The code belongs to the person who minted it, so joining through it records who opened
+ * the door, and [MemberEntity.invitedBy] is where that lands. But it is spent the moment
+ * it is used, and a fresh one is minted for that person immediately.
+ *
+ * Single use is the load-bearing part. A code that keeps working can be forwarded by
+ * anyone who has it, and then the archive records invitations that never happened. A
+ * provenance trail that can be forged is worse than none, because it looks authoritative.
+ *
+ * Rows are kept after they are spent. Who admitted whom, and when, is part of how this
+ * family came together, and [usedByUserId] is the other half of the pair that
+ * `invitedBy` only sees from one side.
+ */
+@Entity(
+    tableName = "invites",
+    indices = [Index("familyId"), Index(value = ["familyId", "issuedByUserId"])]
+)
+data class InviteEntity(
+    /** Canonical form: uppercase, no separator. Display adds the dash. */
+    @PrimaryKey val code: String,
+    val familyId: String,
+    val issuedByUserId: String,
+    /** What someone joining through this code becomes. Never OWNER; a family has one. */
+    val grantsRole: MemberRole,
+    val createdAt: Long,
+    /** Set when it is spent. A live code is one with no usedAt and no revokedAt. */
+    val usedAt: Long? = null,
+    val usedByUserId: String? = null,
+    val revokedAt: Long? = null,
+    /**
+     * The name of the family this code opens, as it read at the moment it was minted.
+     *
+     * Carried on the invitation because nothing else can carry it. There is no families
+     * table; a family's name lives in the session of whoever has it open, so a person
+     * typing a code has no way to find out what they are joining. The code is the only
+     * thing that travels between two people, so the name travels on it.
+     *
+     * Nullable rather than defaulted, because a code minted before this column existed
+     * genuinely does not know, and "" would be the archive claiming a name it was never
+     * told. The join screen says so out loud instead of inventing one.
+     */
+    val familyName: String? = null
+)

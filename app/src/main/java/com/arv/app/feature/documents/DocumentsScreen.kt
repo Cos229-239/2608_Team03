@@ -104,8 +104,8 @@ class DocumentsViewModel(app: Application) : AndroidViewModel(app) {
 @Composable
 fun DocumentsScreen(
     onOpenStory: (String) -> Unit,
-    onAddDocument: () -> Unit = {},
     modifier: Modifier = Modifier,
+    onAddDocument: () -> Unit = {},
     viewModel: DocumentsViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()

@@ -146,8 +146,8 @@ class StoryDetailViewModel(
  */
 @Composable
 fun StoryDetailScreen(
-    onEdit: (String) -> Unit = {},
     modifier: Modifier = Modifier,
+    onEdit: (String) -> Unit = {},
     viewModel: StoryDetailViewModel = viewModel()
 ) {
     val story by viewModel.story.collectAsStateWithLifecycle()

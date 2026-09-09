@@ -17,9 +17,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TranscriptSegmentEntity::class,
         OutboxEntity::class,
         PromptEntity::class,
-        MemberEntity::class
+        MemberEntity::class,
+        InviteEntity::class
     ],
-    version = 6,
+    version = 10,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -27,6 +28,7 @@ abstract class ArvDatabase : RoomDatabase() {
 
     abstract fun promptDao(): PromptDao
     abstract fun memberDao(): MemberDao
+    abstract fun inviteDao(): InviteDao
     abstract fun storyDao(): StoryDao
     abstract fun personDao(): PersonDao
     abstract fun relationshipDao(): RelationshipDao
@@ -150,6 +152,87 @@ abstract class ArvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Gives every member a code of their own to invite with, spent on first use.
+         *
+         * Additive: one new table, nothing existing is touched. The code is keyed to the
+         * person who issued it rather than to the family, so joining through it records
+         * who opened the door. A family-wide code could not have said that, and in an
+         * archive holding health records and memories marked private, "who let them in"
+         * is not a detail you want to be unable to answer later. Single use, because a
+         * code that keeps working can be passed on by anyone holding it, and then the
+         * trail records invitations nobody made.
+         */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS invites (
+                        code TEXT NOT NULL PRIMARY KEY,
+                        familyId TEXT NOT NULL,
+                        issuedByUserId TEXT NOT NULL,
+                        grantsRole TEXT NOT NULL,
+                        createdAt INTEGER NOT NULL,
+                        usedAt INTEGER,
+                        usedByUserId TEXT,
+                        revokedAt INTEGER
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_invites_familyId ON invites(familyId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_invites_familyId_issuedByUserId ON invites(familyId, issuedByUserId)")
+            }
+        }
+
+        /**
+         * Lets an invitation say which family it opens.
+         *
+         * A code is read down a phone line to somebody who has never seen this app. Before
+         * this column the join screen could confirm the code was real and still not say
+         * what accepting it would put them in, which is not a thing to ask anyone to agree
+         * to. Nullable on purpose: a row written before this migration was never told a
+         * name, and filling one in now would be the archive making it up.
+         */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE invites ADD COLUMN familyName TEXT")
+            }
+        }
+
+        /**
+         * Lets a person have a face.
+         *
+         * One nullable column holding an asset id, not a file path. The photograph stays
+         * where it already is, attached to the story that says who filed it and who may
+         * see it, and this points at it. A path column would have been a picture of
+         * somebody's dead mother sitting outside the permission filter with no record of
+         * where it came from.
+         */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE people ADD COLUMN portraitAssetId TEXT")
+            }
+        }
+
+        /**
+         * Lets a face belong to the person rather than to a record.
+         *
+         * Migration 8 to 9 put an asset id here so a portrait would inherit the permissions
+         * of the story its photograph came from. Wrong rule for this field: a face is
+         * identification, like a name, and requiring a story behind one meant a person
+         * could not be given a face without also filing a record and a timeline entry.
+         *
+         * Additive rather than a rewrite. portraitAssetId stays, demoted from the thing that
+         * renders to a note about where a face came from, which is worth keeping. Nothing is
+         * dropped, so no archive is touched: rows written under 9 simply have no path yet and
+         * draw initials until somebody picks a face again.
+         */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE people ADD COLUMN portraitPath TEXT")
+            }
+        }
+
         fun get(context: Context): ArvDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -161,7 +244,8 @@ abstract class ArvDatabase : RoomDatabase() {
                     // the only copy of someone's voice; losing it to a schema bump is not
                     // an acceptable failure mode. Write real migrations.
                     .addMigrations(
-                        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6
+                        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
+                        MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10
                     )
                     .build()
                     .also { instance = it }

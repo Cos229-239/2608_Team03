@@ -159,6 +159,15 @@ object MemoryAccess {
             val isSubject = story.subjectPersonIds.any { it in viewer.personIds }
             return isSubject || story.createdBy == viewer.userId
         }
+
+        // PRIVATE answers to its creator here exactly as it does in [canRead], and for the
+        // same reason. Edit is not a narrower power than read, it is a wider one: the edit
+        // screen loads the story to show its title, its year, its place and its tags, and
+        // delete does not even need the screen. A keeper who could edit what somebody kept
+        // to themselves would be reading it on the way in, which is the one thing canRead
+        // promises cannot happen. Two rules, one guarantee, so they have to agree.
+        if (story.visibility == Visibility.PRIVATE) return story.createdBy == viewer.userId
+
         return story.createdBy == viewer.userId ||
             viewer.role == MemberRole.OWNER ||
             viewer.role == MemberRole.KEEPER
