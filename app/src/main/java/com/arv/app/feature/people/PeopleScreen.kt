@@ -46,11 +46,11 @@ class PeopleViewModel(app: Application) : AndroidViewModel(app) {
 /** Screen 11 list. UX-6 builds the detail view with the hours-preserved meter. */
 @Composable
 fun PeopleScreen(
+    modifier: Modifier = Modifier,
     onOpenDocuments: () -> Unit = {},
     onOpenPerson: (String) -> Unit = {},
     onAddPerson: () -> Unit = {},
     onPlacePeople: () -> Unit = {},
-    modifier: Modifier = Modifier,
     viewModel: PeopleViewModel = viewModel()
 ) {
     val people by viewModel.people.collectAsStateWithLifecycle()

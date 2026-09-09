@@ -178,8 +178,8 @@ class PersonDetailViewModel(
 @Composable
 fun PersonDetailScreen(
     onOpenStory: (String) -> Unit,
-    onOpenPerson: (String) -> Unit = {},
     modifier: Modifier = Modifier,
+    onOpenPerson: (String) -> Unit = {},
     viewModel: PersonDetailViewModel = viewModel()
 ) {
     val person by viewModel.person.collectAsStateWithLifecycle()

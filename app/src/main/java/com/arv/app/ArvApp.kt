@@ -48,7 +48,6 @@ class ArvApp : Application() {
      * (visible, silent) rather than MIN. The user must be able to see it.
      */
     private fun createRecordingChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val channel = NotificationChannel(
             CHANNEL_RECORDING,
             getString(R.string.recording_channel_name),

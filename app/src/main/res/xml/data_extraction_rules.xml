@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    What may leave this phone without anybody asking. Nothing.
+
+    allowBackup="false" already said this, but it stops being read on Android 12 and
+    higher, where these rules decide instead. Both are declared so the answer does not
+    change with the OS version.
+
+    An archive here can hold the only recording of a dead person's voice, and it holds
+    health records and memories somebody marked private. That is not material to hand to
+    a cloud backup because a default said so. Copying an archive is a deliberate act:
+    Settings exports the whole thing to a zip that opens in a browser, which is a copy
+    the family holds rather than one Google does.
+
+    Device transfer is excluded for the same reason and it is the sharper edge: moving to
+    a new phone will not carry the archive across. Export first. If that trade is ever
+    worth revisiting, this is the file to revisit, and the recordings live under
+    filesDir, so a device-transfer include would need to name it deliberately.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>

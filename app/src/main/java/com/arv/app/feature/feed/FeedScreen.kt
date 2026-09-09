@@ -261,10 +261,10 @@ class FeedViewModel(app: Application) : AndroidViewModel(app) {
 fun FeedScreen(
     onOpenStory: (String) -> Unit,
     onRecord: () -> Unit,
+    modifier: Modifier = Modifier,
     onOpenPerson: (String) -> Unit = {},
     onViewAll: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
-    modifier: Modifier = Modifier,
     viewModel: FeedViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -583,11 +583,11 @@ private fun HomeHeader(
 private fun FeaturedStoryCard(
     story: Story,
     audioPath: String?,
-    imagePath: String? = null,
     isPlaying: Boolean,
     onTogglePlay: () -> Unit,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    imagePath: String? = null
 ) {
     Card(
         onClick = onClick,
