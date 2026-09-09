@@ -63,6 +63,8 @@ minSdk 26, target and compile SDK 35.
 - `app/src/androidTest/` migration test, needs a device or emulator
 - `app/schemas/` exported Room schemas, one file per version
 - `docs/SPEC.md` the spec the permission rules cite
+- `docs/PLAY_DATA_SAFETY.md` the Play form filled in against the code, plus the
+  account-deletion blocker that has to be built before a listing is possible
 - `docs/TERMS.md`, `docs/PRIVACY.md` terms of use and privacy policy, both written
   against the code as committed. Two placeholders in them, jurisdiction and a contact
   address, are deliberately unfilled.
