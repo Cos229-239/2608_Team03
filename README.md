@@ -60,6 +60,10 @@ minSdk 26, target and compile SDK 35.
 - `app/src/test/` unit tests
 - `app/src/androidTest/` migration test, needs a device or emulator
 - `app/schemas/` exported Room schemas, one file per version
+- `docs/SPEC.md` the spec the permission rules cite
+- `docs/TERMS.md`, `docs/PRIVACY.md` terms of use and privacy policy, both written
+  against the code as committed. Two placeholders in them, jurisdiction and a contact
+  address, are deliberately unfilled.
 
 ## Running it
 
