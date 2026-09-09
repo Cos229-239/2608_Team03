@@ -267,4 +267,58 @@ class MemoryAccessTest {
         val theirs = story(createdBy = "u_dana").copy(familyId = "fam_2")
         assertFalse(MemoryAccess.canEdit(theirs, dana))
     }
+
+    // --- private stays private on the way in as well as the way out ---
+
+    /**
+     * The hole this closes: canRead refused a keeper a private story and canEdit handed
+     * them the same story's title, year, place and tags through the edit screen, plus a
+     * delete button that needed no screen at all.
+     */
+    @Test
+    fun `a keeper cannot edit a private story belonging to someone else`() {
+        val s = story(visibility = Visibility.PRIVATE, createdBy = "u_theo")
+
+        // The read side always said no. The write side has to say the same thing.
+        assertFalse(MemoryAccess.canRead(s, keeper))
+        assertFalse(MemoryAccess.canEdit(s, keeper))
+        assertFalse(MemoryAccess.canEdit(s, dana))
+    }
+
+    @Test
+    fun `a private story is still editable by whoever recorded it`() {
+        // Closing the keeper path must not lock people out of their own material.
+        val s = story(visibility = Visibility.PRIVATE, createdBy = "u_theo")
+        assertTrue(MemoryAccess.canEdit(s, theo))
+    }
+
+    @Test
+    fun `a private health record still answers to its subject`() {
+        // Ordering check. HEALTH is decided before PRIVATE on purpose: the rule that a
+        // person may remove their own medical history is the stronger claim, and marking
+        // the record private is not a way around it.
+        val ruth = Viewer("u_ruth", MemberRole.VIEWER, familyId = FAMILY, personIds = setOf("p_ruth"))
+        val s = story(
+            area = ArchiveArea.HEALTH,
+            visibility = Visibility.PRIVATE,
+            createdBy = "u_theo",
+            subjects = listOf("p_ruth")
+        )
+        assertTrue(MemoryAccess.canEdit(s, ruth))
+        // And a keeper is still nobody here.
+        assertFalse(MemoryAccess.canEdit(s, keeper))
+    }
+
+    @Test
+    fun `a keeper keeps every power private was never part of`() {
+        // The fix is narrow by design. Family and branch material is still a keeper's to
+        // correct, which is most of what the role exists for.
+        assertTrue(MemoryAccess.canEdit(story(visibility = Visibility.FAMILY), keeper))
+        assertTrue(
+            MemoryAccess.canEdit(
+                story(visibility = Visibility.BRANCH, branchRootPersonId = "p_ruth"),
+                keeper
+            )
+        )
+    }
 }
