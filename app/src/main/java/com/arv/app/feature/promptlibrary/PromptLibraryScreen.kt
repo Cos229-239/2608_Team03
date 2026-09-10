@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.OutlinedTextField
 
 
 
@@ -38,6 +39,14 @@ fun PromptLibraryScreen(
 
     var savedQuestion by remember {
         mutableStateOf<String?>(null)
+    }
+
+    var showOwnQuestion by remember{
+        mutableStateOf(false)
+    }
+
+    var ownQuestion by remember {
+        mutableStateOf("")
     }
 
     Column(
@@ -165,10 +174,26 @@ fun PromptLibraryScreen(
                         Text("Record now")
                     }
                     Button(
-                        onClick = { },
+                        onClick = {
+                            savedQuestion = when (selectedCategory) {
+                                "Childhood" -> "What is one childhood memory you can still picture clearly?"
+                                "Food" -> "Is there a family recipe that brings back a specific memory?"
+                                "Work" -> "What is something your first job taught you that stayed with you?"
+                                "Hard things" -> "What helped your family get through a difficult time?"
+                                "Faith" -> "Was there a belief or tradition that helped guide your family?"
+                                else -> "You mentioned a song your mother hummed. Can you try to sing it?"
+                            }
+                        },
                     ) {
                         Text("Save for later")
                     }
+                }
+                if(savedQuestion != null){
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Saved: $savedQuestion"
+                    )
                 }
             }
         }
@@ -421,14 +446,51 @@ fun PromptLibraryScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        OutlinedButton(
-        onClick = { },
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
-    ){
-        Text("Write your own question")
-    }
+     if(!showOwnQuestion){
+         OutlinedButton(
+             onClick = {
+                 showOwnQuestion = true
+             },
+             modifier = Modifier
+                 .fillMaxWidth()
+                 .padding(vertical = 8.dp)
+         ){
+             Text("Write your own question")
+         }
+
+     }  else {
+         OutlinedTextField(
+             value = ownQuestion,
+             onValueChange = { value: String ->
+                 ownQuestion = value
+
+             },
+             modifier = Modifier.fillMaxWidth()
+                 .padding(vertical = 8.dp),
+             label = {
+                 Text("Your question")
+             },
+             placeholder = {
+                 Text("Type your own question...")
+             }
+         )
+
+         Button(
+             onClick = {
+                 if (ownQuestion.isNotBlank()) {
+                     savedQuestion = ownQuestion
+                     ownQuestion = ""
+                     showOwnQuestion = false
+                   }
+
+                 },
+             modifier = Modifier.fillMaxWidth()
+
+         ){
+             Text("Save question")
+         }
+
+     }
 }
 }
 
