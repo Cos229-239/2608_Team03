@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.mutableStateListOf
 
 
 
@@ -37,8 +38,8 @@ fun PromptLibraryScreen(
         mutableStateOf("Suggested")
     }
 
-    var savedQuestion by remember {
-        mutableStateOf<String?>(null)
+    val savedQuestions = remember {
+        mutableStateListOf<String?>()
     }
 
     var showOwnQuestion by remember{
@@ -175,26 +176,22 @@ fun PromptLibraryScreen(
                     }
                     Button(
                         onClick = {
-                            savedQuestion = when (selectedCategory) {
-                                "Childhood" -> "What is one childhood memory you can still picture clearly?"
-                                "Food" -> "Is there a family recipe that brings back a specific memory?"
-                                "Work" -> "What is something your first job taught you that stayed with you?"
-                                "Hard things" -> "What helped your family get through a difficult time?"
-                                "Faith" -> "Was there a belief or tradition that helped guide your family?"
-                                else -> "You mentioned a song your mother hummed. Can you try to sing it?"
-                            }
+                            savedQuestions.add(
+                                when (selectedCategory) {
+                                    "Childhood" -> "What is one childhood memory you can still picture clearly?"
+                                    "Food" -> "Is there a family recipe that brings back a specific memory?"
+                                    "Work" -> "What is something your first job taught you that stayed with you?"
+                                    "Hard things" -> "What helped your family get through a difficult time?"
+                                    "Faith" -> "Was there a belief or tradition that helped guide your family?"
+                                    else -> "You mentioned a song your mother hummed. Can you try to sing it?"
+                                }
+                            )
                         },
                     ) {
                         Text("Save for later")
                     }
                 }
-                if(savedQuestion != null){
-                    Spacer(modifier = Modifier.height(8.dp))
 
-                    Text(
-                        text = "Saved: $savedQuestion"
-                    )
-                }
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
@@ -478,7 +475,7 @@ fun PromptLibraryScreen(
          Button(
              onClick = {
                  if (ownQuestion.isNotBlank()) {
-                     savedQuestion = ownQuestion
+                     savedQuestions.add(ownQuestion)
                      ownQuestion = ""
                      showOwnQuestion = false
                    }
