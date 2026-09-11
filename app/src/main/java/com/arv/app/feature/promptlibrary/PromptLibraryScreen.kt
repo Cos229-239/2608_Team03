@@ -39,7 +39,7 @@ fun PromptLibraryScreen(
     }
 
     val savedQuestions = remember {
-        mutableStateListOf<String?>()
+        mutableStateListOf<String>()
     }
 
     var showOwnQuestion by remember{
@@ -48,6 +48,10 @@ fun PromptLibraryScreen(
 
     var ownQuestion by remember {
         mutableStateOf("")
+    }
+
+    var questionSaved by remember {
+        mutableStateOf(false)
     }
 
     Column(
@@ -74,6 +78,7 @@ fun PromptLibraryScreen(
                 selected = selectedCategory == "Suggested",
                 onClick = {
                     selectedCategory = "Suggested"
+                    questionSaved = false
                 },
                 label = {
                     Text("Suggested")
@@ -83,6 +88,7 @@ fun PromptLibraryScreen(
                 selected = selectedCategory == "Childhood",
                 onClick = {
                     selectedCategory = "Childhood"
+                    questionSaved = false
                 },
                 label = {
                     Text("Childhood")
@@ -93,6 +99,7 @@ fun PromptLibraryScreen(
                 selected = selectedCategory == "Food",
                 onClick = {
                     selectedCategory = "Food"
+                    questionSaved = false
                 },
                 label = {
                     Text("Food")
@@ -103,6 +110,7 @@ fun PromptLibraryScreen(
                 selected = selectedCategory == "Work",
                 onClick = {
                     selectedCategory = "Work"
+                    questionSaved = false
                 },
                 label = {
                     Text("Work")
@@ -132,6 +140,9 @@ fun PromptLibraryScreen(
                 }
             )
         }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
         Card(
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -140,8 +151,10 @@ fun PromptLibraryScreen(
 
             ) {
                 Text(
-                    text = "WHY THIS ONE"
+                    text = "WHY THIS ONE?"
                 )
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
                     text = when (selectedCategory){
@@ -154,6 +167,8 @@ fun PromptLibraryScreen(
                     }
                 )
 
+                Spacer(modifier = Modifier.height(8.dp))
+
                 Text(
                     text = when (selectedCategory){
                         "Childhood" -> "Childhood memories can reveal details about family,home, and experiences that may otherwise be forgotten."
@@ -165,6 +180,7 @@ fun PromptLibraryScreen(
                     }
 
                 )
+                Spacer(modifier = Modifier.height(10.dp))
 
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -186,9 +202,14 @@ fun PromptLibraryScreen(
                                     else -> "You mentioned a song your mother hummed. Can you try to sing it?"
                                 }
                             )
-                        },
+
+                            questionSaved = true
+
+                        }
                     ) {
-                        Text("Save for later")
+                        Text(
+                            if (questionSaved) "Saved!" else "Save for later"
+                        )
                     }
                 }
 
@@ -331,7 +352,7 @@ fun PromptLibraryScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         if (selectedCategory == "Suggested" || selectedCategory == "Work") {
 
@@ -368,7 +389,7 @@ fun PromptLibraryScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         if (selectedCategory == "Suggested" || selectedCategory == "Hard Things") {
 
@@ -404,7 +425,7 @@ fun PromptLibraryScreen(
                 }
             }
         }
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         if (selectedCategory == "Suggested" || selectedCategory == "Faith") {
 
@@ -440,6 +461,30 @@ fun PromptLibraryScreen(
                 }
             }
         }
+
+    if(savedQuestions.isNotEmpty()){
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = "Saved Questions",
+            style = MaterialTheme.typography.titleMedium
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        savedQuestions.forEach { question ->
+            Card(
+                modifier = Modifier.fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            ){
+                Text(
+                    text = question,
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+        }
+
+   }
 
         Spacer(modifier = Modifier.height(16.dp))
 
