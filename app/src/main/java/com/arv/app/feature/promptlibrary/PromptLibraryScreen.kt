@@ -55,6 +55,8 @@ fun PromptLibraryScreen(
         mutableStateOf(false)
     }
 
+
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -66,9 +68,7 @@ fun PromptLibraryScreen(
             text = "Questions to ask",
             style = MaterialTheme.typography.headlineSmall
         )
-        Spacer(modifier = Modifier.height(24.dp))
-
-
+        Spacer(modifier = Modifier.height(20.dp))
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -240,11 +240,22 @@ fun PromptLibraryScreen(
                             text = "Food • often opens into migration stories"
                         )
                     }
+
+                    val isSaved = savedQuestions.contains("Who taught you to cook?")
+
                     OutlinedIconButton(
-                        onClick = { },
+                        onClick = {
+                            if(!isSaved){
+                                savedQuestions.add("Who taught you to cook?")
+
+                            }
+                        },
                         modifier = Modifier.size(36.dp)
+
                     ) {
-                        Text("+")
+                        Text(
+                            if(isSaved) "✓" else "+"
+                        )
 
                     }
                 }
@@ -275,11 +286,20 @@ fun PromptLibraryScreen(
                             text = "Childhood • Sounds can unlock vivid memories"
                         )
                     }
+
+                    val isSaved = savedQuestions.contains("What did your street sound like at night?")
+
                     OutlinedIconButton(
-                        onClick = { },
+                        onClick = {
+                            if(!isSaved) {
+                                savedQuestions.add("What did your street sound like at night?")
+                            }
+                        },
                         modifier = Modifier.size(36.dp)
                     ) {
-                        Text("+")
+                        Text(
+                            if(isSaved) "✓" else "+"
+                        )
                     }
                 }
             }
@@ -309,11 +329,21 @@ fun PromptLibraryScreen(
                             text = "Childhood • Family language holds unique memories"
                         )
                     }
+
+                    val isSaved = savedQuestions.contains("What's a word your family used that nobody else did?")
+
                     OutlinedIconButton(
-                        onClick = { },
+                        onClick = {
+                            if(!isSaved) {
+                                savedQuestions.add("What's a word your family used that nobody else did?")
+
+                            }
+                        },
                         modifier = Modifier.size(36.dp)
                     ) {
-                        Text("+")
+                        Text(
+                            if(isSaved) "✓" else "+"
+                        )
                     }
                 }
             }
@@ -343,11 +373,20 @@ fun PromptLibraryScreen(
                             text = "Reflection • Revisit a memory worth reliving"
                         )
                     }
+
+                    val isSaved = savedQuestions.contains("Tell me about a day you'd live again.")
+
                     OutlinedIconButton(
-                        onClick = { },
+                        onClick = {
+                            if(!isSaved) {
+                                savedQuestions.add("Tell me about a day you'd live again.")
+                            }
+                        },
                         modifier = Modifier.size(36.dp)
                     ) {
-                        Text("+")
+                        Text(
+                            if(isSaved) "✓" else "+"
+                        )
                     }
                 }
             }
@@ -380,11 +419,20 @@ fun PromptLibraryScreen(
                         )
                     }
 
+                    val isSaved = savedQuestions.contains("What was your first job, and what do you remember most about it?")
+
                     OutlinedIconButton(
-                        onClick = { },
+                        onClick = {
+                            if (!isSaved) {
+                                savedQuestions.add("What was your first job, and what do you remember most about it?")
+
+                            }
+                        },
                         modifier = Modifier.size(36.dp)
                     ) {
-                        Text("+")
+                        Text(
+                            if(isSaved) "✓" else "+"
+                        )
                     }
                 }
             }
@@ -417,11 +465,20 @@ fun PromptLibraryScreen(
                         )
                     }
 
+                    val isSaved = savedQuestions.contains("What was one difficult time your family made it through together?")
+
                     OutlinedIconButton(
-                        onClick = { },
+                        onClick = {
+                            if(!isSaved) {
+                                savedQuestions.add("What was one difficult time your family made it through together?")
+
+                            }
+                        },
                         modifier = Modifier.size(36.dp)
                     ) {
-                        Text("+")
+                        Text(
+                            if (isSaved) "✓" else "+"
+                        )
                     }
                 }
             }
@@ -453,11 +510,20 @@ fun PromptLibraryScreen(
                         )
                     }
 
+                    val isSaved = savedQuestions.contains("Was there a tradition, prayer, or belief that brought your family comfort?")
+
                     OutlinedIconButton(
-                        onClick = { },
+                        onClick = {
+                            if(!isSaved) {
+                                savedQuestions.add("Was there a tradition, prayer, or belief that brought your family comfort?")
+
+                            }
+                        },
                         modifier = Modifier.size(36.dp)
                     ) {
-                        Text("+")
+                        Text(
+                            if(isSaved) "✓" else "+"
+                        )
                     }
                 }
             }
