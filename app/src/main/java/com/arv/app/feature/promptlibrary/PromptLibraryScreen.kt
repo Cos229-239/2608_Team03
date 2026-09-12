@@ -27,7 +27,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.mutableStateListOf
-
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.TextButton
 
 
 @Composable
@@ -477,10 +478,28 @@ fun PromptLibraryScreen(
                 modifier = Modifier.fillMaxWidth()
                     .padding(vertical = 4.dp)
             ){
-                Text(
-                    text = question,
-                    modifier = Modifier.padding(16.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+
+                ){
+                    Text(
+                        text = question,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    TextButton(
+                        onClick = {
+                            savedQuestions.remove(question)
+                        }
+                    ){
+                        Text("Remove")
+                    }
+                }
+
             }
         }
 
