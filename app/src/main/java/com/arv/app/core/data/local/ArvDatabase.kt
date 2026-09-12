@@ -20,7 +20,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MemberEntity::class,
         InviteEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -233,6 +233,24 @@ abstract class ArvDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Gives an invitation an end.
+         *
+         * The spec asked for this in week one. User story 02 lists what a join screen owes
+         * somebody typing a code: valid, invalid, expired, creating. The table was built
+         * without the column, so the app could only ever give three of those four answers,
+         * and a code read out once over the phone stayed live for as long as the archive
+         * did.
+         *
+         * Additive and nullable. Every code minted before today keeps working exactly as
+         * it did, because a row that was never given an end does not acquire one now.
+         */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE invites ADD COLUMN expiresAt INTEGER")
+            }
+        }
+
         fun get(context: Context): ArvDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -245,7 +263,8 @@ abstract class ArvDatabase : RoomDatabase() {
                     // an acceptable failure mode. Write real migrations.
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
-                        MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10
+                        MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10,
+                        MIGRATION_10_11
                     )
                     .build()
                     .also { instance = it }

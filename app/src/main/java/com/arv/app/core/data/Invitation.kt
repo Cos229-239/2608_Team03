@@ -13,6 +13,19 @@ import com.arv.app.core.data.local.MemberEntity
  */
 object Invitation {
 
+    /**
+     * How long a fresh code stays good. Fourteen days.
+     *
+     * Chosen for how a code actually travels. It is read down a phone line and written on
+     * the back of an envelope, and the person holding it may be away, or unwell, or
+     * waiting until somebody visits to type it in. A week retires codes that are still on
+     * their way. A month leaves a live credential lying in a drawer.
+     *
+     * A product decision rather than a security boundary, so it sits next to the rule that
+     * reads it instead of being buried in whatever happens to mint.
+     */
+    const val LIFETIME_MILLIS: Long = 14L * 24 * 60 * 60 * 1000
+
     sealed interface Result {
         /** Good code. [member] is the row to write, [spent] is the invite to close out. */
         data class Accepted(val member: MemberEntity, val spent: InviteEntity) : Result
@@ -37,6 +50,13 @@ object Invitation {
 
         /** They are already in. Not an error, just nothing to do. */
         data object AlreadyInThisFamily : Result
+
+        /**
+         * Time ran out. Separate from [AlreadyUsed] because nobody did anything and
+         * nobody got in; the code simply sat until it stopped counting. Whoever is
+         * holding it did nothing wrong, and the sentence they read should not imply it.
+         */
+        data object Expired : Result
     }
 
     fun redeem(
@@ -52,6 +72,10 @@ object Invitation {
         if (invite == null) return Result.Unknown
         if (invite.revokedAt != null) return Result.Revoked
         if (invite.usedAt != null) return Result.AlreadyUsed
+        // After both explicit events on purpose. Withdrawing and spending are things a
+        // person did, and naming which one happened is more use to whoever is standing
+        // there holding a dead code than being told that time passed.
+        if (invite.expiresAt != null && nowMillis >= invite.expiresAt) return Result.Expired
         if (invite.issuedByUserId == userId) return Result.YourOwn
         if (existingMember != null) return Result.AlreadyInThisFamily
 

@@ -7,7 +7,7 @@ Arv is the Swedish word for inheritance.
 
 ## Where the build stands
 
-Updated 2026-09-09. 197 unit tests, 0 failures.
+Updated 2026-09-12. 224 unit tests, 0 failures.
 
 Working end to end:
 
@@ -19,7 +19,8 @@ Working end to end:
 - Import a compiled family history without flattening what it was unsure about.
 - Export the whole archive to a zip that opens in a browser without this app.
 - Accounts, and an archive that belongs to one rather than to whoever holds the phone.
-- Invitations. One code per person, spent on first use, recording who admitted whom.
+- Invitations. One code per person, spent on first use, good for two weeks, recording
+  who admitted whom.
 - Permission rules on every read and every edit, unit tested.
 - Consent enforced on reads, including the decision a family made after a death.
 - Profile pictures. Upload one into the circle, or take one from a photograph already
@@ -28,7 +29,7 @@ Working end to end:
   the archive, so a private one cannot be promoted onto the people list. Pictures are
   downscaled on the way in, and no face means initials, which is a design not a blank.
 - Dark mode, plus eight named palettes and an auto setting that follows the system.
-- Room schema at version 10 with real migrations and no destructive fallback.
+- Room schema at version 11 with real migrations and no destructive fallback.
 
 Partly built:
 

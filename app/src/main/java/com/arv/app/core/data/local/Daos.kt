@@ -367,16 +367,23 @@ interface InviteDao {
     @Query("SELECT * FROM invites WHERE code = :code")
     suspend fun byCode(code: String): InviteEntity?
 
-    /** This person's live code for this family: not yet spent, not revoked. */
+    /**
+     * This person's live code for this family: not spent, not withdrawn, not past its end.
+     *
+     * The expiry clause is why this needs a clock. Without it the invite screen would hand
+     * back a dead code and present it as the one to read out, which is worse than showing
+     * no code at all. The code gets read down the phone and both people find out later.
+     */
     @Query(
         """
         SELECT * FROM invites
         WHERE familyId = :familyId AND issuedByUserId = :userId
           AND usedAt IS NULL AND revokedAt IS NULL
+          AND (expiresAt IS NULL OR expiresAt > :nowMillis)
         LIMIT 1
         """
     )
-    suspend fun liveFor(familyId: String, userId: String): InviteEntity?
+    suspend fun liveFor(familyId: String, userId: String, nowMillis: Long): InviteEntity?
 
     /** Everything this person has ever issued, spent or not. The invite trail. */
     @Query("SELECT * FROM invites WHERE familyId = :familyId AND issuedByUserId = :userId ORDER BY createdAt DESC")

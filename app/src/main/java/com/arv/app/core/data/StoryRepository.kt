@@ -665,7 +665,7 @@ class StoryRepository(
         grantsRole: MemberRole = MemberRole.CONTRIBUTOR,
         random: Random = Random.Default
     ): InviteEntity =
-        db.inviteDao().liveFor(familyId, userId)
+        db.inviteDao().liveFor(familyId, userId, nowMillis)
             ?: mintInvite(familyId, userId, familyName, nowMillis, grantsRole, random)
 
     /**
@@ -683,7 +683,7 @@ class StoryRepository(
         grantsRole: MemberRole = MemberRole.CONTRIBUTOR,
         random: Random = Random.Default
     ): InviteEntity {
-        db.inviteDao().liveFor(familyId, userId)?.let { db.inviteDao().revoke(it.code, nowMillis) }
+        db.inviteDao().liveFor(familyId, userId, nowMillis)?.let { db.inviteDao().revoke(it.code, nowMillis) }
         return mintInvite(familyId, userId, familyName, nowMillis, grantsRole, random)
     }
 
@@ -715,7 +715,8 @@ class StoryRepository(
                     issuedByUserId = userId,
                     grantsRole = grantsRole,
                     createdAt = nowMillis,
-                    familyName = familyName?.trim()?.takeIf { it.isNotBlank() }
+                    familyName = familyName?.trim()?.takeIf { it.isNotBlank() },
+                    expiresAt = nowMillis + Invitation.LIFETIME_MILLIS
                 )
                 db.inviteDao().upsert(invite)
                 return invite

@@ -455,5 +455,14 @@ data class InviteEntity(
      * genuinely does not know, and "" would be the archive claiming a name it was never
      * told. The join screen says so out loud instead of inventing one.
      */
-    val familyName: String? = null
+    val familyName: String? = null,
+    /**
+     * The instant this code stops working, or null for one minted before codes ended.
+     *
+     * Nullable for the same reason [familyName] is. A row written before this column was
+     * never given an end, and stamping one on now would retire codes that are still
+     * travelling between two people. Null keeps meaning what it has always meant here:
+     * this one works until it is used or withdrawn.
+     */
+    val expiresAt: Long? = null
 )
