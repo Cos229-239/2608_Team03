@@ -1,0 +1,77 @@
+rules_version = '2';
+
+// Recordings and photographs. The file is readable exactly when its asset document is,
+// so the visibility decision lives in one place, Firestore, and this file only asks it.
+// Uploads are bounded so a phone cannot fill the bucket by accident.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function memberPath(familyId) {
+      return /databases/(default)/documents/families/$(familyId)/members/$(request.auth.uid);
+    }
+
+    function isMember(familyId) {
+      return signedIn() && firestore.exists(memberPath(familyId));
+    }
+
+    function member(familyId) {
+      return firestore.get(memberPath(familyId)).data;
+    }
+
+    function isKeeper(familyId) {
+      return isMember(familyId) && member(familyId).role in ['OWNER', 'KEEPER'];
+    }
+
+    function canContribute(familyId) {
+      return isMember(familyId) && member(familyId).role in ['OWNER', 'KEEPER', 'CONTRIBUTOR'];
+    }
+
+    function asset(familyId, assetId) {
+      return firestore.get(/databases/(default)/documents/families/$(familyId)/assets/$(assetId)).data;
+    }
+
+    // The same four cases as firestore.rules canReadStory, read off the asset document.
+    function canRead(a, familyId) {
+      return isMember(familyId)
+        && a.familyId == familyId
+        && (!a.restricted || isKeeper(familyId))
+        && (
+          a.visibility == 'FAMILY'
+          || (a.visibility == 'BRANCH'
+              && a.branchRootPersonId != null
+              && a.branchRootPersonId in member(familyId).ancestorPersonIds)
+          || (a.visibility == 'SELECTED'
+              && (request.auth.uid in a.sharedWithUserIds || a.createdBy == request.auth.uid))
+          || (a.visibility == 'PRIVATE' && a.createdBy == request.auth.uid)
+        );
+    }
+
+    function canEdit(a, familyId) {
+      return isMember(familyId)
+        && a.familyId == familyId
+        && (
+          a.area == 'HEALTH'
+            ? (a.createdBy == request.auth.uid || member(familyId).personId in a.subjectPersonIds)
+            : (a.createdBy == request.auth.uid || isKeeper(familyId))
+        );
+    }
+
+    match /families/{familyId}/assets/{assetId}/{file=**} {
+      allow read: if canRead(asset(familyId, assetId), familyId);
+      // The asset document is written before the bytes, so an upload is authorised by
+      // a record the rules can already read. Half a gigabyte covers an hour of audio
+      // with room to spare.
+      allow write: if canContribute(familyId)
+        && canEdit(asset(familyId, assetId), familyId)
+        && request.resource.size < 512 * 1024 * 1024;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
