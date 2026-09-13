@@ -9,7 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Park
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -158,7 +158,7 @@ private val leftTabs = listOf(
 )
 private val rightTabs = listOf(
     Tab(Destination.Timeline, Icons.Outlined.Schedule, R.string.tab_timeline),
-    Tab(Destination.Librarian, Icons.Outlined.MenuBook, R.string.tab_librarian)
+    Tab(Destination.Librarian, Icons.AutoMirrored.Outlined.MenuBook, R.string.tab_librarian)
 )
 private val tabs = leftTabs + rightTabs
 

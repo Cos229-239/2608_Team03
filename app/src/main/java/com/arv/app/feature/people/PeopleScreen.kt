@@ -14,7 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.HelpOutline
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
@@ -231,7 +231,7 @@ fun PeopleScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Icon(Icons.Outlined.HelpOutline, contentDescription = null)
+                    Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = null)
                     Column(Modifier.weight(1f)) {
                         Text("Still to place", style = MaterialTheme.typography.titleMedium)
                         Text(
