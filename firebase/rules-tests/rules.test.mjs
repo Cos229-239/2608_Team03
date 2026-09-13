@@ -46,6 +46,13 @@ const member = (role, personId, ancestorPersonIds) => ({
   role, personId, branchRootPersonId: null, ancestorPersonIds, joinedAt: 1, invitedBy: null
 })
 
+// The shape InviteEntity.kt writes, with createdBy for the issuer because that is the
+// name every other collection in these rules uses for the same idea.
+const invite = (code, createdBy, over = {}) => ({
+  code, familyId: FAM, createdBy, role: 'CONTRIBUTOR', createdAt: 1, expiresAt: 9,
+  usedAt: null, usedBy: null, revokedAt: null, familyName: 'Delaney', ...over
+})
+
 async function seed () {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore()
@@ -72,7 +79,7 @@ async function seed () {
     b.set(doc(db, `families/${FAM}/transcripts/a_family`), { ...story(), storyId: 's_family', status: 'READY', fullText: 'words' })
     b.set(doc(db, `families/${FAM}/embeddings/e_ok`), { ...story(), storyId: 's_family', text: 'x' })
     b.set(doc(db, `families/${FAM}/embeddings/e_none`), { ...story({ aiUsePolicy: 'NONE' }), storyId: 's_family', text: 'x' })
-    b.set(doc(db, `families/${FAM}/invites/CODE1`), { createdBy: 'u_owner', role: 'VIEWER', expiresAt: 9, usesLeft: 1 })
+    b.set(doc(db, `families/${FAM}/invites/CODE1`), invite('CODE1', 'u_owner'))
     b.set(doc(db, `families/${OTHER}`), { name: 'Other', createdBy: 'u_other', createdAt: 1 })
     b.set(doc(db, `families/${OTHER}/members/u_other`), member('OWNER', 'p_other', ['p_other']))
     b.set(doc(db, `families/${OTHER}/stories/s_other`), story({ familyId: OTHER, createdBy: 'u_other', visibility: 'SELECTED', sharedWithUserIds: ['u_viewer'] }))
@@ -291,9 +298,23 @@ test('people are added by anyone who can contribute', async () => {
 })
 
 test('invites are written by keepers and read by nobody', async () => {
-  await assertSucceeds(setDoc(doc(as('u_keeper'), `families/${FAM}/invites/CODE2`), { createdBy: 'u_keeper', role: 'VIEWER', expiresAt: 9, usesLeft: 1 }))
-  await assertFails(setDoc(doc(as('u_contrib'), `families/${FAM}/invites/CODE3`), { createdBy: 'u_contrib', role: 'VIEWER', expiresAt: 9, usesLeft: 1 }))
+  await assertSucceeds(setDoc(doc(as('u_keeper'), `families/${FAM}/invites/CODE2`), invite('CODE2', 'u_keeper')))
+  await assertFails(setDoc(doc(as('u_contrib'), `families/${FAM}/invites/CODE3`), invite('CODE3', 'u_contrib')))
   await assertFails(getDoc(doc(as('u_owner'), `families/${FAM}/invites/CODE1`)))
+  await assertFails(getDoc(doc(as('u_keeper'), `families/${FAM}/invites/CODE1`)))
+})
+
+test('an invite must say who issued it, which code it is, and which family it opens', async () => {
+  await assertFails(setDoc(doc(as('u_keeper'), `families/${FAM}/invites/CODE4`), invite('CODE4', 'u_owner')))
+  await assertFails(setDoc(doc(as('u_keeper'), `families/${FAM}/invites/CODE5`), invite('CODE9', 'u_keeper')))
+  await assertFails(setDoc(doc(as('u_keeper'), `families/${FAM}/invites/CODE6`), invite('CODE6', 'u_keeper', { familyId: OTHER })))
+  await assertFails(setDoc(doc(as('u_keeper'), `families/${FAM}/invites/CODE7`), invite('CODE7', 'u_keeper', { role: 'OWNER' })))
+})
+
+test('a keeper can withdraw a code but not rewrite who issued it', async () => {
+  await assertSucceeds(updateDoc(doc(as('u_keeper'), `families/${FAM}/invites/CODE1`), { revokedAt: 5 }))
+  await assertFails(updateDoc(doc(as('u_keeper'), `families/${FAM}/invites/CODE1`), { createdBy: 'u_keeper' }))
+  await assertFails(updateDoc(doc(as('u_contrib'), `families/${FAM}/invites/CODE1`), { revokedAt: 5 }))
 })
 
 test('the librarian index respects the story and the owner\'s NONE', async () => {

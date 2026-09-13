@@ -199,13 +199,27 @@ service cloud.firestore {
         allow delete: if canContribute(familyId);
       }
 
-      // Redeemed by a Cloud Function, so a joiner never needs to read the collection
-      // and a code is never enumerable.
+      // Read by nobody on the client, so a code is never enumerable and a joiner never
+      // needs the collection. Redeemed by the redeemInvite Cloud Function, which reads
+      // through the Admin SDK and writes the member row a joiner cannot write for
+      // themselves. The code is the document id and is carried as a field too, because
+      // a collection-group query cannot find a document by id across families, and
+      // that query is how the function locates a code without knowing the family.
       match /invites/{code} {
         allow read: if false;
         allow create: if isKeeper(familyId)
-          && request.resource.data.createdBy == uid();
-        allow update, delete: if isKeeper(familyId);
+          && request.resource.data.createdBy == uid()
+          && request.resource.data.code == code
+          && request.resource.data.familyId == familyId
+          && request.resource.data.role in ['KEEPER', 'CONTRIBUTOR', 'VIEWER'];
+        // Withdrawing and re-publishing are the keeper's. Who issued it is not theirs
+        // to rewrite, and neither is which family or which code the row belongs to.
+        allow update: if isKeeper(familyId)
+          && request.resource.data.code == code
+          && request.resource.data.familyId == familyId
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.role in ['KEEPER', 'CONTRIBUTOR', 'VIEWER'];
+        allow delete: if isKeeper(familyId);
       }
     }
   }

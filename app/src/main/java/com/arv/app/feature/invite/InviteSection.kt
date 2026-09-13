@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arv.app.core.data.InviteCode
+import com.arv.app.core.data.InviteService
 import com.arv.app.core.data.local.InviteEntity
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.model.MemberRole
@@ -44,6 +45,7 @@ import java.util.Locale
 class InviteViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = ServiceLocator.storyRepository(app)
+    private val invites = ServiceLocator.inviteService(app)
     private val familyId = ServiceLocator.familyId
     private val userId = ServiceLocator.userId
 
@@ -51,6 +53,10 @@ class InviteViewModel(app: Application) : AndroidViewModel(app) {
     val code: StateFlow<InviteEntity?> = _code.asStateFlow()
 
     var working by mutableStateOf(false)
+        private set
+
+    /** How far the code on screen will travel. Null until the first publish has been tried. */
+    var reach by mutableStateOf<InviteService.Reach?>(null)
         private set
 
     /** Everything this account has issued here, so the trail is visible to whoever made it. */
@@ -68,14 +74,17 @@ class InviteViewModel(app: Application) : AndroidViewModel(app) {
         if (working || _code.value != null) return
         working = true
         viewModelScope.launch {
-            _code.value = runCatching {
-                repo.inviteCodeFor(
+            runCatching {
+                invites.ensureCode(
                     familyId = familyId,
                     userId = userId,
                     familyName = ActiveSession.familyName,
                     nowMillis = System.currentTimeMillis()
                 )
-            }.getOrNull()
+            }.getOrNull()?.let { minted ->
+                _code.value = minted.invite
+                reach = minted.reach
+            }
             working = false
         }
     }
@@ -84,14 +93,17 @@ class InviteViewModel(app: Application) : AndroidViewModel(app) {
         if (working) return
         working = true
         viewModelScope.launch {
-            _code.value = runCatching {
-                repo.replaceInviteCode(
+            runCatching {
+                invites.replaceCode(
                     familyId = familyId,
                     userId = userId,
                     familyName = ActiveSession.familyName,
                     nowMillis = System.currentTimeMillis()
                 )
-            }.getOrNull() ?: _code.value
+            }.getOrNull()?.let { minted ->
+                _code.value = minted.invite
+                reach = minted.reach
+            }
             working = false
         }
     }
@@ -157,6 +169,22 @@ fun InviteSection(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+                // Whether it will work on the other person's phone is the one thing the
+                // person reading it out cannot see for themselves.
+                when (viewModel.reach) {
+                    InviteService.Reach.OtherPhones -> Text(
+                        "Works on any phone with the app.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    InviteService.Reach.ThisPhoneOnly -> Text(
+                        "Could not reach the family's server, so for now this code only " +
+                            "works on this phone. Open this screen again when you are online.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    else -> Unit
                 }
             }
         }

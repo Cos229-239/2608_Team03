@@ -29,6 +29,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arv.app.core.data.InviteCode
+import com.arv.app.core.data.InviteService
 import com.arv.app.core.data.Invitation
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.session.ActiveSession
@@ -58,6 +59,7 @@ data class JoinPreview(val familyName: String?, val roleLabel: String)
 class JoinFamilyViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = ServiceLocator.storyRepository(app)
+    private val invites = ServiceLocator.inviteService(app)
 
     var state by mutableStateOf(JoinUiState())
         private set
@@ -104,13 +106,13 @@ class JoinFamilyViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 val now = System.currentTimeMillis()
-                when (val result = repo.redeemInvite(state.typed, userId, now)) {
-                    is Invitation.Result.Accepted -> {
+                when (val result = invites.redeem(state.typed, userId, now)) {
+                    is InviteService.Joined.In -> {
                         val familyId = result.member.familyId
                         ActiveSession.set(
                             familyId = familyId,
                             userId = userId,
-                            familyName = result.spent.familyName ?: "Family archive",
+                            familyName = result.familyName ?: "Family archive",
                             role = result.member.role
                         )
                         // The joiner has a standing and no profile yet, so this settles
@@ -123,7 +125,8 @@ class JoinFamilyViewModel(app: Application) : AndroidViewModel(app) {
                             emptyOnThisPhone = repo.archiveWeight(familyId) == 0
                         )
                     }
-                    else -> state = state.copy(working = false, refusal = refusalText(result))
+                    is InviteService.Joined.Refused ->
+                        state = state.copy(working = false, refusal = refusalText(result.why))
                 }
             } catch (t: Throwable) {
                 state = state.copy(
@@ -157,6 +160,9 @@ class JoinFamilyViewModel(app: Application) : AndroidViewModel(app) {
             "That invitation was withdrawn. Ask them for a new code."
         is Invitation.Result.Expired ->
             "That code has run out. Ask them for a new one; a code lasts two weeks."
+        is Invitation.Result.Unreachable ->
+            "Could not reach the family's server to check that code. Check the connection " +
+                "and try again. Nothing was changed."
         is Invitation.Result.YourOwn ->
             "That is your own invitation. Nobody invites themselves into a family."
         is Invitation.Result.AlreadyInThisFamily ->

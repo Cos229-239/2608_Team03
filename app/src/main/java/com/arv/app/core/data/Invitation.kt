@@ -57,6 +57,13 @@ object Invitation {
          * holding it did nothing wrong, and the sentence they read should not imply it.
          */
         data object Expired : Result
+
+        /**
+         * Never got an answer from the server, so the code could not be checked at all.
+         * Nothing was changed. Only a code this phone has never seen can end here; every
+         * other answer is decided locally without a network.
+         */
+        data object Unreachable : Result
     }
 
     fun redeem(

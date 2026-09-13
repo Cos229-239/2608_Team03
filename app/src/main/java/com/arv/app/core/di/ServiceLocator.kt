@@ -1,5 +1,10 @@
 package com.arv.app.core.di
 
+import com.arv.app.core.data.InviteService
+import com.arv.app.core.data.RepositoryInviteLocal
+import com.arv.app.core.remote.FirebaseInviteRemote
+import com.arv.app.core.remote.InviteRemote
+
 import android.content.Context
 import com.arv.app.core.audio.PlaybackController
 import com.arv.app.core.ai.ClinicalClaimGuard
@@ -118,6 +123,23 @@ object ServiceLocator {
                     )
                 ).also { librarian = it }
             }
+        }
+
+    @Volatile private var invites: InviteService? = null
+
+    /**
+     * Invitations, local first and the server second.
+     *
+     * The remote is Firebase when google-services.json was there at build time and
+     * nothing when it was not, decided once here. Constructing the Firebase remote throws
+     * without a FirebaseApp, and that throw is the whole detection.
+     */
+    fun inviteService(context: Context): InviteService =
+        invites ?: synchronized(this) {
+            invites ?: InviteService(
+                local = RepositoryInviteLocal(storyRepository(context)),
+                remote = runCatching { FirebaseInviteRemote() }.getOrElse { InviteRemote.None }
+            ).also { invites = it }
         }
 
     @Volatile private var models: VoskModelStore? = null
