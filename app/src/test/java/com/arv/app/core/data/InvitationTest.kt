@@ -17,7 +17,8 @@ class InvitationTest {
         usedBy: String? = null,
         revokedAt: Long? = null,
         issuer: String = "u_ruth",
-        role: MemberRole = MemberRole.CONTRIBUTOR
+        role: MemberRole = MemberRole.CONTRIBUTOR,
+        expiresAt: Long? = null
     ) = InviteEntity(
         code = code,
         familyId = "fam_1",
@@ -26,8 +27,39 @@ class InvitationTest {
         createdAt = 1_000L,
         usedAt = usedAt,
         usedByUserId = usedBy,
-        revokedAt = revokedAt
+        revokedAt = revokedAt,
+        expiresAt = expiresAt
     )
+
+    @Test
+    fun `a code past its end is expired`() {
+        val r = Invitation.redeem(code, invite(expiresAt = 4_000L), null, "u_dana", 5_000L)
+        assertEquals(Invitation.Result.Expired, r)
+    }
+
+    @Test
+    fun `a code is expired the instant it reaches its end`() {
+        val r = Invitation.redeem(code, invite(expiresAt = 5_000L), null, "u_dana", 5_000L)
+        assertEquals(Invitation.Result.Expired, r)
+    }
+
+    @Test
+    fun `a code minted before codes had an end never runs out`() {
+        val r = Invitation.redeem(code, invite(expiresAt = null), null, "u_dana", Long.MAX_VALUE)
+        assertTrue(r is Invitation.Result.Accepted)
+    }
+
+    @Test
+    fun `being spent is a better answer than having run out`() {
+        val spent = invite(usedAt = 2_000L, usedBy = "u_kev", expiresAt = 3_000L)
+        assertEquals(Invitation.Result.AlreadyUsed, Invitation.redeem(code, spent, null, "u_dana", 5_000L))
+    }
+
+    @Test
+    fun `being withdrawn is a better answer than having run out`() {
+        val pulled = invite(revokedAt = 2_000L, expiresAt = 3_000L)
+        assertEquals(Invitation.Result.Revoked, Invitation.redeem(code, pulled, null, "u_dana", 5_000L))
+    }
 
     @Test
     fun `a good code writes the inviter into the member row`() {

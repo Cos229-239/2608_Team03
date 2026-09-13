@@ -71,7 +71,6 @@ import com.arv.app.core.model.shortName
 import com.arv.app.core.model.underLens
 import com.arv.app.ui.components.PersonAvatar
 import com.arv.app.core.session.ActiveSession
-import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.Story
 import com.arv.app.ui.label

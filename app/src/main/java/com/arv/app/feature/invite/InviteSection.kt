@@ -124,8 +124,8 @@ fun InviteSection(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text(
-            "Read this out to one person. It works once, and the archive records that you " +
-                "are the one who let them in.",
+            "Read this out to one person. It works once, it stops working after two " +
+                "weeks, and the archive records that you are the one who let them in.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -149,6 +149,15 @@ fun InviteSection(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                // Said here rather than left to the join screen, because the person who
+                // has to act on it is the one reading the code out, not the one typing it.
+                code?.expiresAt?.let { ends ->
+                    Text(
+                        "Good until " + dayOf(ends) + ".",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 

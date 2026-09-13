@@ -1,0 +1,14 @@
+{
+  "name": "arv-rules-tests",
+  "private": true,
+  "type": "module",
+  "description": "Runs firestore.rules and storage.rules against the emulator. Nothing syncs until this is green.",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore,storage --project arv-archive-rules-test \"node --test rules.test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.0.0",
+    "firebase-tools": "^14.0.0"
+  }
+}

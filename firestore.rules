@@ -1,0 +1,212 @@
+rules_version = '2';
+
+// The server copy of core/ai/MemoryAccess.kt. The phone filters so it never renders what
+// the server would refuse; this is the refusal. A bug here is a family member reading
+// something that was never meant for them, and this app is built to hold health records,
+// so nothing syncs until the tests in firebase/rules-tests pass.
+//
+// Rules are not filters. A read rule that depends on a document's fields can only be
+// proven for a query that constrains those fields, so a sync pull has to ask in the
+// same shape the rule answers. For stories, assets, and embeddings, each of these
+// with familyId == F and restricted == false:
+//   visibility == 'FAMILY'
+//   visibility == 'BRANCH'   and branchRootPersonId in <my ancestorPersonIds>
+//   visibility == 'SELECTED' and sharedWithUserIds array-contains <me>
+//   visibility == 'PRIVATE'  and createdBy == <me>
+//   visibility == 'SELECTED' and createdBy == <me>
+// A keeper adds the same five with restricted == true. An unconstrained list is
+// refused, and the test suite proves that too.
+//
+// Every story, asset, and embedding document carries every field these rules read,
+// including the false and the null ones. The writer guarantees it; the rules assume it.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function memberPath(familyId) {
+      return /databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid);
+    }
+
+    function isMember(familyId) {
+      return signedIn() && exists(memberPath(familyId));
+    }
+
+    function member(familyId) {
+      return get(memberPath(familyId)).data;
+    }
+
+    function isOwner(familyId) {
+      return isMember(familyId) && member(familyId).role == 'OWNER';
+    }
+
+    function isKeeper(familyId) {
+      return isMember(familyId) && member(familyId).role in ['OWNER', 'KEEPER'];
+    }
+
+    function canContribute(familyId) {
+      return isMember(familyId) && member(familyId).role in ['OWNER', 'KEEPER', 'CONTRIBUTOR'];
+    }
+
+    // PRIVATE < SELECTED < BRANCH < FAMILY, the same order as the Visibility enum.
+    function rank(v) {
+      return v == 'PRIVATE' ? 0 : (v == 'SELECTED' ? 1 : (v == 'BRANCH' ? 2 : 3));
+    }
+
+    // MemoryAccess.canRead. Restricted is keeper-only whatever the visibility. Private
+    // is the creator's alone: no keeper exception, no steward exception, and a memorial
+    // profile changes nothing here. BRANCH reads the ancestor set on the member row,
+    // which the member cannot write.
+    function canReadStory(s, familyId) {
+      return isMember(familyId)
+        && s.familyId == familyId
+        && (!s.restricted || isKeeper(familyId))
+        && (
+          s.visibility == 'FAMILY'
+          || (s.visibility == 'BRANCH'
+              && s.branchRootPersonId != null
+              && s.branchRootPersonId in member(familyId).ancestorPersonIds)
+          || (s.visibility == 'SELECTED'
+              && (uid() in s.sharedWithUserIds || s.createdBy == uid()))
+          || (s.visibility == 'PRIVATE' && s.createdBy == uid())
+        );
+    }
+
+    // MemoryAccess.canEdit. Health follows the person it is about, not the role of
+    // whoever is asking. A steward's right to edit a health record about the person they
+    // steward is enforced on the phone until the story carries its stewards; here it
+    // fails closed.
+    function canEditStory(s, familyId) {
+      return isMember(familyId)
+        && s.familyId == familyId
+        && (
+          s.area == 'HEALTH'
+            ? (s.createdBy == uid() || member(familyId).personId in s.subjectPersonIds)
+            : (s.createdBy == uid() || isKeeper(familyId))
+        );
+    }
+
+    // Visibility can be narrowed by anyone who may edit and widened only by the creator.
+    // Adding a reader to a SELECTED memory is widening.
+    function widened(before, after) {
+      return rank(after.visibility) > rank(before.visibility)
+        || (after.visibility == 'SELECTED'
+            && !before.sharedWithUserIds.toSet().hasAll(after.sharedWithUserIds));
+    }
+
+    function branchWithoutRoot(s) {
+      return s.visibility == 'BRANCH' && s.branchRootPersonId == null;
+    }
+
+    match /families/{familyId} {
+      allow get: if isMember(familyId);
+      allow list: if false;
+      allow create: if signedIn() && request.resource.data.createdBy == uid();
+      allow update: if isOwner(familyId)
+        && request.resource.data.createdBy == resource.data.createdBy;
+      allow delete: if false;
+
+      // One row per account. The owner's own row arrives in the same batch as the
+      // family. Every other row is the owner's to write, or a Cloud Function's when an
+      // invite is redeemed, so a member can never promote themselves or edit the
+      // ancestor set that BRANCH reads.
+      match /members/{userId} {
+        allow read: if isMember(familyId);
+        allow create: if
+          (userId == uid()
+            && request.resource.data.role == 'OWNER'
+            && getAfter(/databases/$(database)/documents/families/$(familyId)).data.createdBy == uid())
+          || (isOwner(familyId) && userId != uid());
+        allow update: if isOwner(familyId)
+          && (userId != uid()
+              || (request.resource.data.role == 'OWNER'
+                  && request.resource.data.ancestorPersonIds == resource.data.ancestorPersonIds));
+        allow delete: if isOwner(familyId) && userId != uid();
+      }
+
+      match /people/{personId} {
+        allow read: if isMember(familyId);
+        allow create, update: if canContribute(familyId)
+          && request.resource.data.familyId == familyId;
+        allow delete: if isKeeper(familyId);
+      }
+
+      match /relationships/{edgeId} {
+        allow read: if isMember(familyId);
+        allow create, update: if canContribute(familyId)
+          && request.resource.data.familyId == familyId;
+        allow delete: if isKeeper(familyId);
+      }
+
+      match /stories/{storyId} {
+        allow read: if canReadStory(resource.data, familyId);
+        allow create: if canContribute(familyId)
+          && request.resource.data.familyId == familyId
+          && request.resource.data.createdBy == uid()
+          && !branchWithoutRoot(request.resource.data);
+        allow update: if canEditStory(resource.data, familyId)
+          && request.resource.data.familyId == resource.data.familyId
+          && request.resource.data.createdBy == resource.data.createdBy
+          && (!widened(resource.data, request.resource.data) || resource.data.createdBy == uid())
+          && (request.resource.data.restricted == resource.data.restricted || isKeeper(familyId))
+          && !branchWithoutRoot(request.resource.data);
+        allow delete: if canEditStory(resource.data, familyId);
+      }
+
+      // Assets and transcripts carry their story's familyId, createdBy, visibility,
+      // sharedWithUserIds, branchRootPersonId, restricted, area, and subjectPersonIds,
+      // written in the same batch as the story and rewritten in the same batch as any
+      // change to them. That is what lets a query for them be proven.
+      match /assets/{assetId} {
+        allow read: if canReadStory(resource.data, familyId);
+        allow create: if canContribute(familyId)
+          && request.resource.data.familyId == familyId
+          && request.resource.data.createdBy == uid();
+        allow update, delete: if canEditStory(resource.data, familyId);
+      }
+
+      match /transcripts/{assetId} {
+        allow read: if canReadStory(resource.data, familyId);
+        // Written by the transcription function. A person may correct words, which
+        // is an update to something they may edit.
+        allow create: if false;
+        allow update: if canEditStory(resource.data, familyId)
+          && request.resource.data.familyId == resource.data.familyId
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.visibility == resource.data.visibility;
+        allow delete: if false;
+      }
+
+      // The librarian's index. Same visibility as the story it came from, and a memory
+      // whose owner said NONE is not readable by anyone but its creator, because the
+      // family librarian must never see it and the personal one may.
+      match /embeddings/{chunkId} {
+        allow read: if canReadStory(resource.data, familyId)
+          && (resource.data.aiUsePolicy != 'NONE' || resource.data.createdBy == uid());
+        allow write: if false;
+      }
+
+      match /prompts/{promptId} {
+        allow read: if isMember(familyId);
+        allow create, update: if canContribute(familyId)
+          && request.resource.data.familyId == familyId;
+        allow delete: if canContribute(familyId);
+      }
+
+      // Redeemed by a Cloud Function, so a joiner never needs to read the collection
+      // and a code is never enumerable.
+      match /invites/{code} {
+        allow read: if false;
+        allow create: if isKeeper(familyId)
+          && request.resource.data.createdBy == uid();
+        allow update, delete: if isKeeper(familyId);
+      }
+    }
+  }
+}

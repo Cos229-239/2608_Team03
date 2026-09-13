@@ -28,7 +28,7 @@ class ViewerRoleTest {
 
     @Test
     fun `an open archive gives the viewer its stored role`() {
-        ActiveSession.set("fam_1", "u_1", "The Nilssons", MemberRole.KEEPER)
+        ActiveSession.set("fam_1", "u_1", "The Delaneys", MemberRole.KEEPER)
         val v = ServiceLocator.viewer
         assertEquals("fam_1", v.familyId)
         assertEquals("u_1", v.userId)
@@ -37,7 +37,7 @@ class ViewerRoleTest {
 
     @Test
     fun `refreshing the role from the member row is what the viewer sees next`() {
-        ActiveSession.set("fam_1", "u_1", "The Nilssons", MemberRole.OWNER)
+        ActiveSession.set("fam_1", "u_1", "The Delaneys", MemberRole.OWNER)
         ActiveSession.setRole(MemberRole.VIEWER)
         assertEquals(MemberRole.VIEWER, ServiceLocator.viewer.role)
     }
@@ -51,7 +51,7 @@ class ViewerRoleTest {
 
     @Test
     fun `leaving an archive drops the role with it`() {
-        ActiveSession.set("fam_1", "u_1", "The Nilssons", MemberRole.KEEPER)
+        ActiveSession.set("fam_1", "u_1", "The Delaneys", MemberRole.KEEPER)
         ActiveSession.clear()
         assertEquals(null, ActiveSession.role)
         assertEquals(MemberRole.OWNER, ServiceLocator.viewer.role)

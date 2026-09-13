@@ -553,6 +553,40 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate10To11_givesAnInvitationAnEndWithoutRetiringTheOnesAlreadyOut() {
+        helper.createDatabase(TEST_DB, 10).use { db ->
+            db.execSQL(
+                "INSERT INTO invites (code, familyId, issuedByUserId, grantsRole, createdAt, " +
+                    "usedAt, usedByUserId, revokedAt, familyName) " +
+                    "VALUES ('K7M2QX', 'fam_1', 'u_1', 'CONTRIBUTOR', 100, NULL, NULL, NULL, 'Delaney')"
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB, 11, true, ArvDatabase.MIGRATION_10_11
+        )
+
+        // A code minted before codes had an end has none now either. Stamping one on
+        // would retire something still travelling between two people.
+        db.query(
+            "SELECT familyId, grantsRole, familyName, expiresAt FROM invites WHERE code = 'K7M2QX'"
+        ).use { c ->
+            assertTrue("the code survived the migration", c.moveToFirst())
+            assertEquals("fam_1", c.getString(0))
+            assertEquals("CONTRIBUTOR", c.getString(1))
+            assertEquals("Delaney", c.getString(2))
+            assertTrue("no end was invented for it", c.isNull(3))
+        }
+
+        // A code minted after has one, and it reads back as written.
+        db.execSQL("UPDATE invites SET expiresAt = 1209600100 WHERE code = 'K7M2QX'")
+        db.query("SELECT expiresAt FROM invites WHERE code = 'K7M2QX'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(1209600100L, c.getLong(0))
+        }
+    }
+
     private companion object {
         const val TEST_DB = "migration-test"
     }

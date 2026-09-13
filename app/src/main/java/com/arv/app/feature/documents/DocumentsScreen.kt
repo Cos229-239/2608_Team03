@@ -23,7 +23,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.HelpOutline
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -48,13 +48,11 @@ import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.ai.Viewer
 import com.arv.app.ui.theme.ArvHero
 import com.arv.app.core.di.ServiceLocator
-import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.Story
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 data class DocumentsUiState(
@@ -261,7 +259,7 @@ private fun DocumentCard(story: Story, people: String, onClick: () -> Unit) {
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    if (found) Icons.Outlined.Description else Icons.Outlined.HelpOutline,
+                    if (found) Icons.Outlined.Description else Icons.AutoMirrored.Outlined.HelpOutline,
                     contentDescription = null,
                     tint = if (found) ArvHero.accent else MaterialTheme.colorScheme.onSurfaceVariant
                 )

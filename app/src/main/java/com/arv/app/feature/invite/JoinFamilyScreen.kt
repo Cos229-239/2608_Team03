@@ -155,6 +155,8 @@ class JoinFamilyViewModel(app: Application) : AndroidViewModel(app) {
             "That code has already been used. Ask them for a new one; each code admits one person."
         is Invitation.Result.Revoked ->
             "That invitation was withdrawn. Ask them for a new code."
+        is Invitation.Result.Expired ->
+            "That code has run out. Ask them for a new one; a code lasts two weeks."
         is Invitation.Result.YourOwn ->
             "That is your own invitation. Nobody invites themselves into a family."
         is Invitation.Result.AlreadyInThisFamily ->
