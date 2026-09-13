@@ -70,7 +70,6 @@ import com.arv.app.core.ai.Lineage
 import com.arv.app.core.ai.TreeFrame
 import com.arv.app.ui.theme.ArvHero
 import com.arv.app.core.di.ServiceLocator
-import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.Story
 import com.arv.app.core.model.StoryKind

@@ -1,7 +1,6 @@
 package com.arv.app.core.ai
 
 import com.arv.app.core.model.TranscriptSegment
-import kotlinx.coroutines.delay
 import java.io.File
 
 /**

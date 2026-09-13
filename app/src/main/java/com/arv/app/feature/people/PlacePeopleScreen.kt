@@ -30,7 +30,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.arv.app.core.di.ServiceLocator
-import com.arv.app.core.model.Confidence
 import com.arv.app.core.model.Person
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
