@@ -74,7 +74,7 @@ class InviteService(private val local: InviteLocal, private val remote: InviteRe
         // answer (spent, withdrawn, expired, your own) is final and needs no network.
         if (here !is Invitation.Result.Unknown) return Joined.Refused(here)
 
-        return when (val away = remote.redeem(typed ?: "")) {
+        return when (val away = remote.redeem(typed ?: "", userId, nowMillis)) {
             is RemoteRedeem.Accepted -> {
                 val member = MemberEntity(
                     familyId = away.familyId,
@@ -96,7 +96,7 @@ class InviteService(private val local: InviteLocal, private val remote: InviteRe
         val me = local.memberRowFor(invite.familyId, userId) ?: return Reach.ThisPhoneOnly
         // The server will not take a code for a family it has never heard of, and only the
         // owner may introduce one. A keeper who joined through a code is already known
-        // there, because the function wrote their row.
+        // there, because their own join wrote their row.
         if (me.role == MemberRole.OWNER) {
             val name = familyName ?: invite.familyName ?: ""
             if (remote.registerFamily(invite.familyId, name, me) == RemoteWrite.Failed) return Reach.ThisPhoneOnly

@@ -20,8 +20,9 @@ Working end to end:
 - Export the whole archive to a zip that opens in a browser without this app.
 - Accounts, and an archive that belongs to one rather than to whoever holds the phone.
 - Invitations. One code per person, spent on first use, good for two weeks, recording
-  who admitted whom. A code read out on one phone works on another: one Cloud Function
-  checks it, with the same seven answers the phone gives.
+  who admitted whom. A code read out on one phone works on another. The phone checks it
+  with the same seven answers either way, and Firestore rules, tested against the
+  emulator, refuse anything the phone would have. No server code, and the free plan.
 - Permission rules on every read and every edit, unit tested.
 - Consent enforced on reads, including the decision a family made after a death.
 - Profile pictures. Upload one into the circle, or take one from a photograph already
@@ -56,9 +57,9 @@ Not started:
 ## Stack
 
 Kotlin and Jetpack Compose, no XML layouts. Room for local storage. Vosk for offline
-speech. OkHttp and Coil. Firebase Authentication for accounts, and Firestore plus one
-Cloud Function for invitations. `google-services.json` is not committed; a build without
-it still runs, with the sample family and codes that work on one phone.
+speech. OkHttp and Coil. Firebase Authentication for accounts and Firestore for
+invitations, both on the free plan. `google-services.json` is not committed; a build
+without it still runs, with the sample family and codes that work on one phone.
 
 minSdk 26, target and compile SDK 35.
 
@@ -69,7 +70,6 @@ minSdk 26, target and compile SDK 35.
 - `app/src/test/` unit tests
 - `app/src/androidTest/` migration test, needs a device or emulator
 - `app/schemas/` exported Room schemas, one file per version
-- `functions/` the redeemInvite Cloud Function, the only server-side code
 - `firestore.rules`, `storage.rules`, and their tests under `firebase/rules-tests/`
 - `docs/SPEC.md` the spec the permission rules cite
 - `docs/PLAY_DATA_SAFETY.md` the Play form filled in against the code, plus the

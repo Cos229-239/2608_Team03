@@ -10,9 +10,9 @@ import com.arv.app.core.model.MemberRole
  * without one.
  *
  * Three things cross the wire and nothing else: that a family exists and who owns it, the
- * codes its keepers have issued, and one call that turns a code into a standing. No
- * recording, story, person or health record goes through here, and there is no method on
- * this interface that could carry one. docs/PRIVACY.md lists exactly these.
+ * codes its keepers have issued, and the standing a joiner writes for themselves when they
+ * spend one. No recording, story, person or health record goes through here, and there is
+ * no method on this interface that could carry one. docs/PRIVACY.md lists exactly these.
  */
 interface InviteRemote {
 
@@ -34,8 +34,11 @@ interface InviteRemote {
     /** Withdraws a code on the server, so it stops working everywhere, not just here. */
     suspend fun revoke(invite: InviteEntity, nowMillis: Long): RemoteWrite
 
-    /** Asks the server to admit the signed-in account on a code this phone has never seen. */
-    suspend fun redeem(typed: String): RemoteRedeem
+    /**
+     * Redeems a code this phone has never seen: reads it, decides with [Invitation.redeem],
+     * and writes the standing and the spend as one batch the rules accept only as a pair.
+     */
+    suspend fun redeem(typed: String, userId: String, nowMillis: Long): RemoteRedeem
 
     /** The remote for a build that has none. Every write is skipped; a redeem cannot reach. */
     object None : InviteRemote {
@@ -44,7 +47,8 @@ interface InviteRemote {
             RemoteWrite.Skipped
         override suspend fun publish(invite: InviteEntity) = RemoteWrite.Skipped
         override suspend fun revoke(invite: InviteEntity, nowMillis: Long) = RemoteWrite.Skipped
-        override suspend fun redeem(typed: String): RemoteRedeem = RemoteRedeem.Unreachable
+        override suspend fun redeem(typed: String, userId: String, nowMillis: Long): RemoteRedeem =
+            RemoteRedeem.Unreachable
     }
 }
 

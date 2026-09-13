@@ -64,9 +64,11 @@ is for a server to hold the code. When somebody in a family issues their first c
 app writes three things to Firestore, Google's database service, in a project Team 03
 controls: the name the family gave its archive; a row for each member holding their account
 identifier, their role, when they joined and who invited them; and each invitation code,
-with who issued it, when it expires, and who used it. When somebody types a code in, a small
-program of ours running on Google's Cloud Functions reads the code, checks it the same way
-the app does, and admits the account.
+with who issued it, when it expires, and who used it. When somebody types a code in, the
+app reads that one code, checks it the same way it checks a code on the phone, and writes
+its own membership and marks the code used in one step. Rules on the database, which we
+wrote and test, refuse any other write: a membership without a live code, a code spent by
+somebody else, a role the code did not grant. No program of ours runs on any server.
 
 That is everything the server holds. No recording, transcript, story, document, photograph,
 person or health record goes there, and the code that talks to the server has no way to
@@ -80,13 +82,12 @@ their privacy policy.
 - No advertising, and no advertising identifiers.
 - No crash or error reporting.
 - No selling or sharing of anything, because there is nothing on our side to sell or share.
-- No servers of our own beyond the one small function above, which runs on Google's
-  infrastructure and does one thing.
+- No servers of our own. The database is Google's; the rules that guard it are ours.
 
 The app includes a Google Firebase library for cloud file storage and a Google
 text-recognition library that **are not used**. No code in the app calls them. The Firebase
-database and functions libraries are used for exactly the invitation traffic described
-above and for nothing else. If that changes, this document changes with it before the
+database library is used for exactly the invitation traffic described above and for nothing
+else. If that changes, this document changes with it before the
 feature ships.
 
 ## Permissions, and what each is for

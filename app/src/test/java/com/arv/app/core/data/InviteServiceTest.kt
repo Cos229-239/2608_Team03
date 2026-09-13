@@ -93,7 +93,7 @@ class InviteServiceTest {
             return RemoteWrite.Done
         }
 
-        override suspend fun redeem(typed: String): RemoteRedeem {
+        override suspend fun redeem(typed: String, userId: String, nowMillis: Long): RemoteRedeem {
             calls += "redeem:$typed"
             return redeemAnswer
         }

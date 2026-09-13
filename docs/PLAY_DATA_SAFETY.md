@@ -16,7 +16,7 @@ them, files photographs, and holds health information a family wrote down, and n
 is collected, because none of it goes anywhere. Three things leave: an email address and a
 password to Firebase Authentication; one HTTP request for a speech model if somebody turns
 transcription on; and, once a family uses invitations, the family's name, its members'
-account ids and roles, and its invitation codes, to Firestore and one Cloud Function.
+account ids and roles, and its invitation codes, to Firestore.
 
 A reviewer looking at an app with `RECORD_AUDIO` and a health feature will expect audio and
 health data to be declared. The justification for declaring neither is above, and it is
@@ -75,7 +75,7 @@ The five bolded "No" answers are the ones to be able to defend:
 
 | Question | Answer |
 |---|---|
-| Is data encrypted in transit? | **Yes.** Firebase Authentication, Firestore and Cloud Functions, all over TLS. |
+| Is data encrypted in transit? | **Yes.** Firebase Authentication and Firestore, both over TLS. |
 | Do you provide a way for users to request data deletion? | **Not yet. See the blocker below.** |
 | Have you committed to Play Families Policy? | No. Arv is not directed at children. |
 | Has your app undergone an independent security review? | No. |
@@ -117,9 +117,9 @@ the only other outbound request in the app, and a reviewer who reads the manifes
 
 **The unused Firebase Storage and MLKit libraries.** Both ship inside the APK and no code
 calls either. That changes no answer above, since the form asks about behaviour rather than
-dependencies. Firestore and Functions are called, for invitations only, and the answers
-above reflect that; the day either carries anything else, this document and the privacy
-policy change before the feature ships rather than after.
+dependencies. Firestore is called, for invitations only, and the answers above reflect
+that; the day it carries anything else, this document and the privacy policy change before
+the feature ships rather than after.
 
 ---
 
