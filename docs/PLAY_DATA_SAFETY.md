@@ -13,9 +13,10 @@ not held. Transmitted.
 
 That single definition is why this card is almost empty. Arv records voices, transcribes
 them, files photographs, and holds health information a family wrote down, and none of it
-is collected, because none of it goes anywhere. Two things leave: an email address and a
-password to Firebase Authentication, and one HTTP request for a speech model if somebody
-turns transcription on.
+is collected, because none of it goes anywhere. Three things leave: an email address and a
+password to Firebase Authentication; one HTTP request for a speech model if somebody turns
+transcription on; and, once a family uses invitations, the family's name, its members'
+account ids and roles, and its invitation codes, to Firestore and one Cloud Function.
 
 A reviewer looking at an app with `RECORD_AUDIO` and a health feature will expect audio and
 health data to be declared. The justification for declaring neither is above, and it is
@@ -34,7 +35,8 @@ acting for the app, which Play does not count as sharing.
 |---|---|---|---|---|---|---|
 | Personal info | Email address | **Yes** | No | Required | Account management | No |
 | Personal info | User IDs | **Yes** | No | Required | Account management | No |
-| Personal info | Name, address, phone, race, beliefs, orientation | No | No | | | |
+| Personal info | Name | **Yes** | No | Optional | App functionality | No |
+| Personal info | Address, phone, race, beliefs, orientation | No | No | | | |
 | Audio | Voice or sound recordings | **No** | No | | | |
 | Audio | Music files, other audio | No | No | | | |
 | Photos and videos | Photos, videos | **No** | No | | | |
@@ -42,12 +44,19 @@ acting for the app, which Play does not count as sharing.
 | Files and docs | Files and docs | **No** | No | | | |
 | Messages | Emails, SMS, in-app messages | No | No | | | |
 | App activity | Interactions, search history, other user-generated content | **No** | No | | | |
+| App activity | Other actions | **Yes** | No | Optional | App functionality | No |
 | App info and performance | Crash logs, diagnostics | **No** | No | | | |
 | Device or other IDs | Device or other IDs | No | No | | | |
 | Location | Approximate, precise | No | No | | | |
 | Financial info | All | No | No | | | |
 | Calendar, Contacts | All | No | No | | | |
 | Web browsing | History | No | No | | | |
+
+The two new "Yes" answers, both optional and both only once a family issues a code: **Name**
+is the name a family gave its archive, written to Firestore so a joiner can be told what
+they are agreeing to. **Other actions** is invitation traffic: each member's role, who
+invited them and when, and each code with its issuer, expiry and use. Nothing under either
+heading is a recording, a person or a health record.
 
 The five bolded "No" answers are the ones to be able to defend:
 
@@ -66,7 +75,7 @@ The five bolded "No" answers are the ones to be able to defend:
 
 | Question | Answer |
 |---|---|
-| Is data encrypted in transit? | **Yes.** The only transmission is Firebase Authentication, over TLS. |
+| Is data encrypted in transit? | **Yes.** Firebase Authentication, Firestore and Cloud Functions, all over TLS. |
 | Do you provide a way for users to request data deletion? | **Not yet. See the blocker below.** |
 | Have you committed to Play Families Policy? | No. Arv is not directed at children. |
 | Has your app undergone an independent security review? | No. |
@@ -89,6 +98,8 @@ What it needs:
   `authUid`, because `ActiveSession` deliberately separates being authenticated from having
   an archive open. That is defensible and it should be a choice rather than an accident.
 - A public URL where somebody can request deletion without installing the app.
+- Removal of the family, member and invitation rows Firestore holds for that account,
+  since deleting the Firebase account alone leaves them behind.
 
 **2. A hosted privacy policy URL.** Play requires the policy at a public address.
 `docs/PRIVACY.md` is written and has an unfilled contact placeholder.
@@ -104,11 +115,11 @@ this is a plain file download and is not declarable as collection. Named here be
 the only other outbound request in the app, and a reviewer who reads the manifest will find
 `INTERNET` and ask what it is for.
 
-**The unused Firebase and MLKit libraries.** Firebase Firestore, Storage and Functions and
-the MLKit text recogniser all ship inside the APK and no code calls any of them. That
-changes no answer above, since the form asks about behaviour rather than dependencies, but
-the day one of them is wired up this document and the privacy policy both change, and they
-change before the feature ships rather than after.
+**The unused Firebase Storage and MLKit libraries.** Both ship inside the APK and no code
+calls either. That changes no answer above, since the form asks about behaviour rather than
+dependencies. Firestore and Functions are called, for invitations only, and the answers
+above reflect that; the day either carries anything else, this document and the privacy
+policy change before the feature ships rather than after.
 
 ---
 

@@ -1,6 +1,6 @@
 # Terms of Use
 
-**Effective 9 September 2026.**
+**Effective 12 September 2026.**
 
 Arv is a student project, built by Team 03 for COS229. It is not a commercial product, it
 is not sold, and it is not distributed through any app store. These terms cover the use of
@@ -26,8 +26,12 @@ agree to these terms and be responsible for the archive.
 
 Creating an account requires an email address and a password. An archive belongs to the
 account that created it. Whoever creates an archive is its owner, and an owner may invite
-other people into it with a single-use code. Anyone you invite can see and add to that
-archive according to the role their invitation granted them.
+other people into it with a single-use code, good for two weeks. Anyone you invite can see
+and add to that archive according to the role their invitation granted them.
+
+So that a code read out on one phone can be typed into another, the family's name, its
+members' standings and its codes are held on a server. The privacy policy says exactly
+what, and that nothing else is.
 
 You are responsible for who you invite. An invitation is recorded against the account that
 issued it, permanently, which is deliberate.
@@ -64,16 +68,18 @@ the print, and an unpublished family photograph can remain under copyright for d
 You are responsible for anything you upload and for any claim arising from it. Team 03 is
 not responsible for material a user chooses to add to their own archive.
 
-We host nothing, so there is no copy of your material for anyone to complain to us about. If
+We host none of your material, so there is no copy of a recording, document or photograph
+for anyone to complain to us about. If
 that ever changes, a takedown process will be published before it does.
 
 ## 6. There is no backup, and you can lose everything
 
 Read this twice.
 
-Arv keeps your archive on your phone and nowhere else. Nothing is uploaded. Nothing is
-copied to a server. There is no account recovery for an archive, because there is nothing
-held anywhere to recover it from.
+Arv keeps your archive on your phone and nowhere else. No recording, story, document,
+photograph, person or health record is uploaded or copied to a server. There is no account
+recovery for an archive, because none of it is held anywhere to recover it from. Invitations
+are the one thing a server holds, and they are not your archive.
 
 That means an archive is lost, permanently and completely, if you:
 

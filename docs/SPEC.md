@@ -159,7 +159,12 @@ families/{familyId}/prompts/{promptId}
   answeredStoryId?
 
 families/{familyId}/invites/{code}
-  createdBy, expiresAt, usesLeft, role
+  code                                         -- the id again, so a collection-group query can find it
+  familyId, familyName                         -- the name travels on the code; see InviteEntity
+  createdBy, role, createdAt, expiresAt
+  usedAt, usedBy, revokedAt                    -- spent rows are kept: who admitted whom
+  -- never read by a client (rules: read false). Redeemed by the redeemInvite Cloud
+  -- Function, which writes the member row a joiner cannot write for themselves.
 ```
 
 **Private vault.** Memories with `visibility == PRIVATE` live in the same collections with the same shape. There is no second database. The vault is a *query result*, not a storage location, which means there is exactly one permission path to audit instead of two.

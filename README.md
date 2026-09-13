@@ -7,7 +7,7 @@ Arv is the Swedish word for inheritance.
 
 ## Where the build stands
 
-Updated 2026-09-12. 224 unit tests, 0 failures.
+Updated 2026-09-12. 237 unit tests, 0 failures.
 
 Working end to end:
 
@@ -20,7 +20,8 @@ Working end to end:
 - Export the whole archive to a zip that opens in a browser without this app.
 - Accounts, and an archive that belongs to one rather than to whoever holds the phone.
 - Invitations. One code per person, spent on first use, good for two weeks, recording
-  who admitted whom.
+  who admitted whom. A code read out on one phone works on another: one Cloud Function
+  checks it, with the same seven answers the phone gives.
 - Permission rules on every read and every edit, unit tested.
 - Consent enforced on reads, including the decision a family made after a death.
 - Profile pictures. Upload one into the circle, or take one from a photograph already
@@ -35,9 +36,9 @@ Partly built:
 
 - Librarian and search screens exist and answer from local data. No embeddings yet.
 - Timeline shows dated memories and gaps. Undated memories still need a home.
-- Sync has a database outbox and nothing that drains it. Joining writes a standing,
-  not a library, so a code redeemed on a second phone opens an archive with nothing
-  in it. The join screen says so rather than letting it look like a failed load.
+- Sync has a database outbox and nothing that drains it. A code now works on a second
+  phone, but joining writes a standing, not a library, so the archive opens with nothing
+  in it there. The join screen says so rather than letting it look like a failed load.
 - Invitations always grant CONTRIBUTOR. The role travels on the invitation and the
   other roles are built and tested, so what is missing is a picker, not a mechanism.
 
@@ -55,7 +56,9 @@ Not started:
 ## Stack
 
 Kotlin and Jetpack Compose, no XML layouts. Room for local storage. Vosk for offline
-speech. OkHttp and Coil. Firebase is a declared dependency and is not configured.
+speech. OkHttp and Coil. Firebase Authentication for accounts, and Firestore plus one
+Cloud Function for invitations. `google-services.json` is not committed; a build without
+it still runs, with the sample family and codes that work on one phone.
 
 minSdk 26, target and compile SDK 35.
 
@@ -66,6 +69,8 @@ minSdk 26, target and compile SDK 35.
 - `app/src/test/` unit tests
 - `app/src/androidTest/` migration test, needs a device or emulator
 - `app/schemas/` exported Room schemas, one file per version
+- `functions/` the redeemInvite Cloud Function, the only server-side code
+- `firestore.rules`, `storage.rules`, and their tests under `firebase/rules-tests/`
 - `docs/SPEC.md` the spec the permission rules cite
 - `docs/PLAY_DATA_SAFETY.md` the Play form filled in against the code, plus the
   account-deletion blocker that has to be built before a listing is possible
