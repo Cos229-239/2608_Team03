@@ -101,6 +101,7 @@ families/{familyId}/members/{userId}
   personId                                     -- their own profile in the tree
   branchRootPersonId                           -- used by BRANCH visibility
   joinedAt, invitedBy
+  viaCode?                                     -- the code a joiner spent to get this row
 
 families/{familyId}/people/{personId}          -- subjects, not accounts
   displayName, alsoKnownAs[], birthYear, deathYear, birthPlace
@@ -158,8 +159,12 @@ families/{familyId}/prompts/{promptId}
   status: SUGGESTED | SAVED | ANSWERED | SKIPPED
   answeredStoryId?
 
-families/{familyId}/invites/{code}
-  createdBy, expiresAt, usesLeft, role
+invites/{code}                                 -- top level: the joiner does not know the family
+  code, familyId, familyName                   -- the name travels on the code; see InviteEntity
+  createdBy, role, createdAt, expiresAt
+  usedAt, usedBy, revokedAt                    -- spent rows are kept: who admitted whom
+  -- read by exact id only, never listed. A joiner spends it in the same batch as their
+  -- own member row (rules: joining, spending); neither write is accepted alone.
 ```
 
 **Private vault.** Memories with `visibility == PRIVATE` live in the same collections with the same shape. There is no second database. The vault is a *query result*, not a storage location, which means there is exactly one permission path to audit instead of two.

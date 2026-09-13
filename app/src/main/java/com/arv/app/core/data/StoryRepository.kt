@@ -763,6 +763,23 @@ class StoryRepository(
         return result
     }
 
+    /** This person's live code, if any: what the invite screen shows and what replacing retires. */
+    suspend fun liveInviteFor(familyId: String, userId: String, nowMillis: Long): InviteEntity? =
+        db.inviteDao().liveFor(familyId, userId, nowMillis)
+
+    /** This account's standing in a family, or null when it has none. */
+    suspend fun memberRowFor(familyId: String, userId: String): MemberEntity? =
+        db.memberDao().forUser(familyId, userId)
+
+    /**
+     * Writes a standing the server granted.
+     *
+     * The decision was made by the redeemInvite function against the same rules
+     * [Invitation.redeem] applies here, and the spent code lives on the phone that minted
+     * it, not this one. So there is nothing to mark used locally, only the member row.
+     */
+    suspend fun admitMember(member: MemberEntity) = db.memberDao().upsert(member)
+
     /**
      * How much of this archive is actually on this phone.
      *

@@ -1,12 +1,14 @@
 # Privacy Policy
 
-**Effective 9 September 2026.**
+**Effective 12 September 2026.**
 
 Arv is a student project, built by Team 03 for COS229.
 
-Two things leave your phone. Your email address, when you make an account. And a request to
-a speech-model server, once, only if you choose to turn on transcription. That is the whole
-list, and the rest of this document is the detail behind it.
+Three things leave your phone. Your email address, when you make an account. A request to a
+speech-model server, once, only if you choose to turn on transcription. And, only if you
+invite somebody or accept an invitation, the family's name, your standing in it, and the
+invitation codes themselves, so that a code read out on one phone can be typed into
+another. That is the whole list, and the rest of this document is the detail behind it.
 
 Nothing else goes anywhere. Not the recordings, not the transcripts, not the people, not the
 health records. There is no analytics, no advertising, no crash reporting and no tracking of
@@ -28,7 +30,6 @@ All of this is written to the app's private storage and never sent anywhere:
 - **Health information** a family chose to record.
 - **Consent records.** Whether a person agreed to be archived, who wrote that answer down,
   when, and how it reached them.
-- **Invitation codes** you issued or redeemed, including which account admitted which.
 
 Uninstalling the app deletes all of it.
 
@@ -55,19 +56,39 @@ The model is downloaded once. Your recordings are never sent there, or anywhere.
 download it, the app never contacts that server, and recordings simply save without a
 transcript rather than being sent away to get one.
 
+**3. The family's name, your standing in it, and invitation codes, to Google, only if you
+use invitations.**
+
+An invitation has to work on a phone that has never seen it, and the only way to do that
+is for a server to hold the code. When somebody in a family issues their first code, the
+app writes three things to Firestore, Google's database service, in a project Team 03
+controls: the name the family gave its archive; a row for each member holding their account
+identifier, their role, when they joined and who invited them; and each invitation code,
+with who issued it, when it expires, and who used it. When somebody types a code in, the
+app reads that one code, checks it the same way it checks a code on the phone, and writes
+its own membership and marks the code used in one step. Rules on the database, which we
+wrote and test, refuse any other write: a membership without a live code, a code spent by
+somebody else, a role the code did not grant. No program of ours runs on any server.
+
+That is everything the server holds. No recording, transcript, story, document, photograph,
+person or health record goes there, and the code that talks to the server has no way to
+send one. A family that never issues a code sends nothing under this heading. Team 03 can
+read what is in that database, and Google's handling of the request itself is covered by
+their privacy policy.
+
 ## What we do not do
 
 - No analytics or usage tracking. No SDK in this app reports what you do.
 - No advertising, and no advertising identifiers.
 - No crash or error reporting.
 - No selling or sharing of anything, because there is nothing on our side to sell or share.
-- No servers of our own. Team 03 operates no backend.
+- No servers of our own. The database is Google's; the rules that guard it are ours.
 
-The app does include Google Firebase libraries for cloud storage, databases and server
-functions, and a Google text-recognition library. **None of them are used.** No code in the
-app calls them. They are dependencies that were added ahead of features that do not exist
-yet, and they ship inside the app without doing anything. If that changes, this document
-changes with it before the feature ships.
+The app includes a Google Firebase library for cloud file storage and a Google
+text-recognition library that **are not used**. No code in the app calls them. The Firebase
+database library is used for exactly the invitation traffic described above and for nothing
+else. If that changes, this document changes with it before the
+feature ships.
 
 ## Permissions, and what each is for
 
@@ -76,7 +97,7 @@ changes with it before the feature ships.
 | Record audio | Recording someone telling a story. This is the app. |
 | Foreground service, foreground service microphone | Keeps a 45 minute interview recording when the screen locks. Without it Android kills the recording. |
 | Post notifications | Shows the notification that says a recording is running. |
-| Internet, network state | The two requests above. Nothing else. |
+| Internet, network state | The three kinds of request above. Nothing else. |
 
 Arv does **not** ask for access to your photo library. Documents and photographs are added
 through the system file picker, which hands the app one file that you chose and no standing
@@ -132,8 +153,12 @@ family. That information stays on the phone with everything else.
 
 ## Keeping and deleting
 
-There is no retention schedule, because there is nothing held on a server to retain. Your
-archive lives on your phone for as long as you keep it there.
+For the archive itself there is no retention schedule, because none of it is held on a
+server. Your archive lives on your phone for as long as you keep it there.
+
+The family name, membership rows and invitation codes described above stay in the database
+until the family's owner asks for them to be removed. There is no in-app way to do that
+yet; `docs/PLAY_DATA_SAFETY.md` lists it as a blocker.
 
 To delete everything: uninstall the app, or clear its data in Android settings. Both are
 immediate and neither is recoverable.
@@ -158,5 +183,5 @@ outside the team.
 
 This document was written for Arv as a student project and has not been reviewed by a
 lawyer. A Play Store listing requires a privacy policy hosted at a public URL plus a separate
-Data Safety declaration, and a hosted or synced version of Arv would need this rewritten,
-since the first sentence would no longer be true.
+Data Safety declaration. A version of Arv that synced recordings or stories between phones
+would need this rewritten; today only invitations cross.

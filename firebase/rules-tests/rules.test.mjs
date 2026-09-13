@@ -46,6 +46,28 @@ const member = (role, personId, ancestorPersonIds) => ({
   role, personId, branchRootPersonId: null, ancestorPersonIds, joinedAt: 1, invitedBy: null
 })
 
+// The shape InviteEntity.kt writes, with createdBy for the issuer because that is the
+// name every other collection in these rules uses for the same idea.
+const invite = (code, createdBy, over = {}) => ({
+  code, familyId: FAM, createdBy, role: 'CONTRIBUTOR', createdAt: 1,
+  expiresAt: Date.now() + 14 * 24 * 3600 * 1000,
+  usedAt: null, usedBy: null, revokedAt: null, familyName: 'Delaney', ...over
+})
+
+// What a phone writes when it redeems: its own row naming the code, and the code spent
+// by that account, in one batch. Exactly what FirebaseInviteRemote.redeem sends.
+const rowVia = (code, over = {}) => ({
+  role: 'CONTRIBUTOR', personId: null, branchRootPersonId: null, ancestorPersonIds: [],
+  joinedAt: 5, invitedBy: 'u_owner', viaCode: code, ...over
+})
+const join = (uid, code, over = {}) => {
+  const db = as(uid)
+  const b = writeBatch(db)
+  b.set(doc(db, `families/${FAM}/members/${uid}`), rowVia(code, over))
+  b.update(doc(db, `invites/${code}`), { usedAt: 5, usedBy: uid })
+  return b.commit()
+}
+
 async function seed () {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore()
@@ -72,7 +94,10 @@ async function seed () {
     b.set(doc(db, `families/${FAM}/transcripts/a_family`), { ...story(), storyId: 's_family', status: 'READY', fullText: 'words' })
     b.set(doc(db, `families/${FAM}/embeddings/e_ok`), { ...story(), storyId: 's_family', text: 'x' })
     b.set(doc(db, `families/${FAM}/embeddings/e_none`), { ...story({ aiUsePolicy: 'NONE' }), storyId: 's_family', text: 'x' })
-    b.set(doc(db, `families/${FAM}/invites/CODE1`), { createdBy: 'u_owner', role: 'VIEWER', expiresAt: 9, usesLeft: 1 })
+    b.set(doc(db, 'invites/CODE1'), invite('CODE1', 'u_owner'))
+    b.set(doc(db, 'invites/CODEX'), invite('CODEX', 'u_owner', { expiresAt: 1 }))
+    b.set(doc(db, 'invites/CODER'), invite('CODER', 'u_owner', { revokedAt: 2 }))
+    b.set(doc(db, 'invites/CODES'), invite('CODES', 'u_owner', { usedAt: 3, usedBy: 'u_viewer' }))
     b.set(doc(db, `families/${OTHER}`), { name: 'Other', createdBy: 'u_other', createdAt: 1 })
     b.set(doc(db, `families/${OTHER}/members/u_other`), member('OWNER', 'p_other', ['p_other']))
     b.set(doc(db, `families/${OTHER}/stories/s_other`), story({ familyId: OTHER, createdBy: 'u_other', visibility: 'SELECTED', sharedWithUserIds: ['u_viewer'] }))
@@ -290,10 +315,61 @@ test('people are added by anyone who can contribute', async () => {
   await assertFails(setDoc(doc(as('u_contrib'), `families/${FAM}/people/p_new`), { familyId: OTHER, displayName: 'New' }))
 })
 
-test('invites are written by keepers and read by nobody', async () => {
-  await assertSucceeds(setDoc(doc(as('u_keeper'), `families/${FAM}/invites/CODE2`), { createdBy: 'u_keeper', role: 'VIEWER', expiresAt: 9, usesLeft: 1 }))
-  await assertFails(setDoc(doc(as('u_contrib'), `families/${FAM}/invites/CODE3`), { createdBy: 'u_contrib', role: 'VIEWER', expiresAt: 9, usesLeft: 1 }))
-  await assertFails(getDoc(doc(as('u_owner'), `families/${FAM}/invites/CODE1`)))
+test('invites are written by keepers of the family they open', async () => {
+  await assertSucceeds(setDoc(doc(as('u_keeper'), 'invites/CODE2'), invite('CODE2', 'u_keeper')))
+  await assertFails(setDoc(doc(as('u_contrib'), 'invites/CODE3'), invite('CODE3', 'u_contrib')))
+  await assertFails(setDoc(doc(as('u_other'), 'invites/CODE8'), invite('CODE8', 'u_other')))
+})
+
+test('an invite must say who issued it and which code it is, and cannot arrive spent or grant OWNER', async () => {
+  await assertFails(setDoc(doc(as('u_keeper'), 'invites/CODE4'), invite('CODE4', 'u_owner')))
+  await assertFails(setDoc(doc(as('u_keeper'), 'invites/CODE5'), invite('CODE9', 'u_keeper')))
+  await assertFails(setDoc(doc(as('u_keeper'), 'invites/CODE7'), invite('CODE7', 'u_keeper', { role: 'OWNER' })))
+  await assertFails(setDoc(doc(as('u_keeper'), 'invites/CODE6'), invite('CODE6', 'u_keeper', { usedAt: 1, usedBy: 'u_keeper' })))
+})
+
+test('a code is read by whoever holds it and listed by nobody', async () => {
+  await assertSucceeds(getDoc(doc(as('u_new'), 'invites/CODE1')))
+  await assertFails(getDocs(collection(as('u_new'), 'invites')))
+  await assertFails(getDoc(doc(anon(), 'invites/CODE1')))
+})
+
+test('a keeper can withdraw a code but cannot rewrite who issued it or unspend it', async () => {
+  await assertSucceeds(updateDoc(doc(as('u_keeper'), 'invites/CODE1'), { revokedAt: 5 }))
+  await assertFails(updateDoc(doc(as('u_keeper'), 'invites/CODE1'), { createdBy: 'u_keeper' }))
+  await assertFails(updateDoc(doc(as('u_keeper'), 'invites/CODES'), { usedAt: null, usedBy: null }))
+  await assertFails(updateDoc(doc(as('u_contrib'), 'invites/CODE1'), { revokedAt: 5 }))
+})
+
+test('a joiner admits themselves by spending the code in the same batch, once', async () => {
+  await assertSucceeds(join('u_new', 'CODE1'))
+  await assertFails(join('u_late', 'CODE1'))
+  await assertSucceeds(getDoc(doc(as('u_new'), `families/${FAM}/members/u_new`)))
+})
+
+test('neither half of a join is accepted on its own', async () => {
+  await assertFails(setDoc(doc(as('u_new'), `families/${FAM}/members/u_new`), rowVia('CODE1')))
+  await assertFails(updateDoc(doc(as('u_new'), 'invites/CODE1'), { usedAt: 5, usedBy: 'u_new' }))
+})
+
+test('a joiner cannot choose their role, their inviter, their lineage, or somebody else as the spender', async () => {
+  await assertFails(join('u_new', 'CODE1', { role: 'KEEPER' }))
+  await assertFails(join('u_new', 'CODE1', { role: 'OWNER' }))
+  await assertFails(join('u_new', 'CODE1', { invitedBy: 'u_new' }))
+  await assertFails(join('u_new', 'CODE1', { ancestorPersonIds: ['p_ruth'] }))
+  await assertFails(join('u_new', 'CODE1', { personId: 'p_ruth' }))
+  const db = as('u_new'); const b = writeBatch(db)
+  b.set(doc(db, `families/${FAM}/members/u_new`), rowVia('CODE1'))
+  b.update(doc(db, 'invites/CODE1'), { usedAt: 5, usedBy: 'u_someone_else' })
+  await assertFails(b.commit())
+})
+
+test('expired, withdrawn, spent and your own code all refuse a join', async () => {
+  await assertFails(join('u_new', 'CODEX'))
+  await assertFails(join('u_new', 'CODER'))
+  await assertFails(join('u_new', 'CODES'))
+  await assertFails(join('u_owner', 'CODE1', { invitedBy: 'u_owner' }))
+  await assertFails(join('u_new', 'NOSUCH'))
 })
 
 test('the librarian index respects the story and the owner\'s NONE', async () => {
