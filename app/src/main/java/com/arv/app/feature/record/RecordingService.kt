@@ -294,7 +294,13 @@ class RecordingService : LifecycleService() {
                 .setSilent(true)
                 .build()
 
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        // R, not Q. FOREGROUND_SERVICE_TYPE_MICROPHONE and the manifest's
+        // foregroundServiceType="microphone" both arrived in API 30, so on an Android 10
+        // phone this passed a type the platform had never heard of and could not find
+        // declared, and startForeground is entitled to refuse that. Recording is the one
+        // thing in this app that cannot be asked to happen again, so it starts without a
+        // type on 29 rather than gambling on how that version reacts.
+        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         } else {
             0

@@ -104,7 +104,6 @@ dependencies {
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.storage)
-    implementation(libs.firebase.functions)
 
     testImplementation(libs.junit)
     // Android ships org.json, the JVM does not. Without this the import parser could only

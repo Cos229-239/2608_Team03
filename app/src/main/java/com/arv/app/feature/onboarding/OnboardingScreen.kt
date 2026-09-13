@@ -97,6 +97,7 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
 @Composable
 fun OnboardingScreen(
     onReady: () -> Unit,
+    onJoinWithCode: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: OnboardingViewModel = viewModel()
 ) {
@@ -158,6 +159,18 @@ fun OnboardingScreen(
                 .heightIn(min = 48.dp)
         ) {
             Text(if (working) "Creating" else "Create the archive")
+        }
+
+        // The second half of the question. Somebody joining a family that already exists
+        // must not have to create a second one to get past this screen, which is what
+        // happened for as long as this was the only way through.
+        TextButton(
+            onClick = onJoinWithCode,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+        ) {
+            Text("Somebody gave me a code")
         }
 
         TextButton(

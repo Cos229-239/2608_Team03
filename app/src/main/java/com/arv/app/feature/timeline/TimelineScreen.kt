@@ -34,7 +34,6 @@ import androidx.compose.material3.FilterChip
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 data class TimelineUiState(
@@ -92,8 +91,8 @@ class TimelineViewModel(app: Application) : AndroidViewModel(app) {
 @Composable
 fun TimelineScreen(
     onOpenStory: (String) -> Unit,
-    onRecord: () -> Unit = {},
     modifier: Modifier = Modifier,
+    onRecord: () -> Unit = {},
     viewModel: TimelineViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()

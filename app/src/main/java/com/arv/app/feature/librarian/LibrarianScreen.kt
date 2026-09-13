@@ -32,7 +32,6 @@ import com.arv.app.core.ai.LibrarianOutcome
 import com.arv.app.core.ai.Viewer
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.model.LibrarianScope
-import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.Provenance
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

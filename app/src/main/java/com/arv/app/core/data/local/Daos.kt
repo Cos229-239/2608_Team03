@@ -141,6 +141,26 @@ interface PersonDao {
 
     @Upsert
     suspend fun upsertAll(people: List<PersonEntity>)
+
+    /**
+     * Points a person at the photograph that stands for their face, or clears it.
+     *
+     * A single column write rather than a whole-row upsert, because a portrait is chosen
+     * from a screen that is showing a person somebody else may be editing, and rewriting
+     * every field from a stale copy would quietly undo their work.
+     */
+    @Query(
+        """
+        UPDATE people SET portraitPath = :path, portraitAssetId = :fromAssetId,
+            updatedAt = :nowMillis
+        WHERE personId = :personId
+        """
+    )
+    suspend fun setPortrait(personId: String, path: String?, fromAssetId: String?, nowMillis: Long)
+
+    /** The file currently standing as this person's face, so a replacement can delete it. */
+    @Query("SELECT portraitPath FROM people WHERE personId = :personId")
+    suspend fun portraitPathOf(personId: String): String?
 }
 
 @Dao
@@ -338,4 +358,48 @@ interface MemberDao {
 
     @Query("SELECT COUNT(*) FROM members WHERE familyId = :familyId")
     suspend fun countFor(familyId: String): Int
+}
+
+@Dao
+interface InviteDao {
+
+    /** The lookup a join screen does. Primary key, so a point read. */
+    @Query("SELECT * FROM invites WHERE code = :code")
+    suspend fun byCode(code: String): InviteEntity?
+
+    /**
+     * This person's live code for this family: not spent, not withdrawn, not past its end.
+     *
+     * The expiry clause is why this needs a clock. Without it the invite screen would hand
+     * back a dead code and present it as the one to read out, which is worse than showing
+     * no code at all. The code gets read down the phone and both people find out later.
+     */
+    @Query(
+        """
+        SELECT * FROM invites
+        WHERE familyId = :familyId AND issuedByUserId = :userId
+          AND usedAt IS NULL AND revokedAt IS NULL
+          AND (expiresAt IS NULL OR expiresAt > :nowMillis)
+        LIMIT 1
+        """
+    )
+    suspend fun liveFor(familyId: String, userId: String, nowMillis: Long): InviteEntity?
+
+    /** Everything this person has ever issued, spent or not. The invite trail. */
+    @Query("SELECT * FROM invites WHERE familyId = :familyId AND issuedByUserId = :userId ORDER BY createdAt DESC")
+    fun observeIssuedBy(familyId: String, userId: String): Flow<List<InviteEntity>>
+
+    @Upsert
+    suspend fun upsert(invite: InviteEntity)
+
+    /**
+     * Spends a code. Kept rather than deleted, because who admitted whom is part of the
+     * record; a spent row is the only place the pairing is written down from both sides.
+     */
+    @Query("UPDATE invites SET usedAt = :nowMillis, usedByUserId = :userId WHERE code = :code")
+    suspend fun markUsed(code: String, userId: String, nowMillis: Long)
+
+    /** Retires a live code that was never spent, without touching the ones that were. */
+    @Query("UPDATE invites SET revokedAt = :nowMillis WHERE code = :code AND usedAt IS NULL")
+    suspend fun revoke(code: String, nowMillis: Long)
 }

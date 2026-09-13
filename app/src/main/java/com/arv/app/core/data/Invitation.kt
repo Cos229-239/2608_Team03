@@ -1,0 +1,102 @@
+package com.arv.app.core.data
+
+import com.arv.app.core.data.local.InviteEntity
+import com.arv.app.core.data.local.MemberEntity
+
+/**
+ * What happens when somebody types a code in.
+ *
+ * Pure so it can be tested without a database, same as [Membership]. Every refusal is a
+ * distinct answer rather than one "invalid code", because the person standing there needs
+ * to know whether to retype it, ask for a new one, or stop trying. "Invalid" tells them
+ * none of that and sends them back to the person who invited them with nothing useful.
+ */
+object Invitation {
+
+    /**
+     * How long a fresh code stays good. Fourteen days.
+     *
+     * Chosen for how a code actually travels. It is read down a phone line and written on
+     * the back of an envelope, and the person holding it may be away, or unwell, or
+     * waiting until somebody visits to type it in. A week retires codes that are still on
+     * their way. A month leaves a live credential lying in a drawer.
+     *
+     * A product decision rather than a security boundary, so it sits next to the rule that
+     * reads it instead of being buried in whatever happens to mint.
+     */
+    const val LIFETIME_MILLIS: Long = 14L * 24 * 60 * 60 * 1000
+
+    sealed interface Result {
+        /** Good code. [member] is the row to write, [spent] is the invite to close out. */
+        data class Accepted(val member: MemberEntity, val spent: InviteEntity) : Result
+
+        /** Not shaped like a code at all. They are still typing, or they mistyped badly. */
+        data object NotACode : Result
+
+        /** Shaped right, but no such invitation. A typo that happens to be well formed. */
+        data object Unknown : Result
+
+        /**
+         * Already spent. Distinct from [Unknown] on purpose: this one means "ask them for
+         * a fresh code", which is a thing the person can actually act on.
+         */
+        data object AlreadyUsed : Result
+
+        /** The person who issued it took it back before anyone used it. */
+        data object Revoked : Result
+
+        /** Their own code. Nobody invites themselves into a family. */
+        data object YourOwn : Result
+
+        /** They are already in. Not an error, just nothing to do. */
+        data object AlreadyInThisFamily : Result
+
+        /**
+         * Time ran out. Separate from [AlreadyUsed] because nobody did anything and
+         * nobody got in; the code simply sat until it stopped counting. Whoever is
+         * holding it did nothing wrong, and the sentence they read should not imply it.
+         */
+        data object Expired : Result
+
+        /**
+         * Never got an answer from the server, so the code could not be checked at all.
+         * Nothing was changed. Only a code this phone has never seen can end here; every
+         * other answer is decided locally without a network.
+         */
+        data object Unreachable : Result
+    }
+
+    fun redeem(
+        typed: String?,
+        /** The row matching [typed] once normalized, or null if there wasn't one. */
+        invite: InviteEntity?,
+        /** This account's existing standing in [InviteEntity.familyId], if any. */
+        existingMember: MemberEntity?,
+        userId: String,
+        nowMillis: Long
+    ): Result {
+        InviteCode.normalize(typed) ?: return Result.NotACode
+        if (invite == null) return Result.Unknown
+        if (invite.revokedAt != null) return Result.Revoked
+        if (invite.usedAt != null) return Result.AlreadyUsed
+        // After both explicit events on purpose. Withdrawing and spending are things a
+        // person did, and naming which one happened is more use to whoever is standing
+        // there holding a dead code than being told that time passed.
+        if (invite.expiresAt != null && nowMillis >= invite.expiresAt) return Result.Expired
+        if (invite.issuedByUserId == userId) return Result.YourOwn
+        if (existingMember != null) return Result.AlreadyInThisFamily
+
+        return Result.Accepted(
+            member = MemberEntity(
+                familyId = invite.familyId,
+                userId = userId,
+                role = invite.grantsRole,
+                // The whole reason the code is per person. Written once, at the moment it
+                // is true, and never inferred afterwards.
+                invitedBy = invite.issuedByUserId,
+                joinedAt = nowMillis
+            ),
+            spent = invite.copy(usedAt = nowMillis, usedByUserId = userId)
+        )
+    }
+}

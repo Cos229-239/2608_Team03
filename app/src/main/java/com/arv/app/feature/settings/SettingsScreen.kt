@@ -42,6 +42,7 @@ import com.arv.app.ui.theme.ThemeOption
 import com.arv.app.core.data.ArchiveExport
 import com.arv.app.core.data.FamilyImport
 import com.arv.app.core.di.ServiceLocator
+import com.arv.app.feature.invite.InviteSection
 import com.arv.app.core.session.ActiveSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -494,6 +495,12 @@ fun SettingsScreen(
                 )
             }
         }
+
+        item { HorizontalDivider() }
+
+        item { SectionLabel("Inviting someone") }
+
+        item { InviteSection() }
 
         item { HorizontalDivider() }
 

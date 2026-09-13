@@ -7,13 +7,24 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+
+    <!--
+        READ_MEDIA_IMAGES was declared and never needed. Documents and photographs come in
+        through ActivityResultContracts.OpenDocument, which is the system document picker:
+        it hands back a per-file grant for the one thing the person chose, and asks for no
+        standing permission at all. Declaring the broad one meant the install screen asked
+        a family archive to be trusted with every photograph on the phone, to read none of
+        them. On Android 14 it also opened the partial-access flow, which this app has no
+        code for and no use for.
+    -->
 
     <uses-feature android:name="android.hardware.microphone" android:required="true" />
 
     <application
         android:name=".ArvApp"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
