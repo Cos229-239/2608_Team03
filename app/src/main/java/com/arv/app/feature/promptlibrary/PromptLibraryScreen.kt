@@ -29,12 +29,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.Alignment
 import androidx.compose.material3.TextButton
-
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 @Composable
 fun PromptLibraryScreen(
     modifier: Modifier = Modifier
 ){
+    val viewModel: PromptLibraryViewModel = viewModel()
+
     var selectedCategory by remember{
         mutableStateOf("Suggested")
     }
