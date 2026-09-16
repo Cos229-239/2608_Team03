@@ -76,6 +76,13 @@ class FirebaseInviteRemote(
         db.document("invites/${invite.code}").update("revokedAt", nowMillis).awaitTask()
     }
 
+    // Deleting a row that is already gone succeeds, so a second tap is harmless. A refusal
+    // from the rules comes back as Failed, and the phone keeps the member rather than
+    // pretending the server agreed.
+    override suspend fun removeMember(familyId: String, userId: String): RemoteWrite = write {
+        db.document("families/$familyId/members/$userId").delete().awaitTask()
+    }
+
     override suspend fun redeem(typed: String, userId: String, nowMillis: Long): RemoteRedeem {
         val code = InviteCode.normalize(typed) ?: return RemoteRedeem.Refused(Invitation.Result.NotACode)
         val inviteRef = db.document("invites/$code")

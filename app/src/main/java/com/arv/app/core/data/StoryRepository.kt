@@ -780,6 +780,12 @@ class StoryRepository(
      */
     suspend fun admitMember(member: MemberEntity) = db.memberDao().upsert(member)
 
+    /** Takes an account out of a family on this phone. The server half is InviteService's. */
+    suspend fun removeMember(familyId: String, userId: String) = db.memberDao().remove(familyId, userId)
+
+    /** Everyone standing in a family, oldest first. */
+    fun observeMembers(familyId: String): Flow<List<MemberEntity>> = db.memberDao().observeAll(familyId)
+
     /**
      * How much of this archive is actually on this phone.
      *

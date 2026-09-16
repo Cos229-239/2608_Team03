@@ -68,7 +68,8 @@ with who issued it, when it expires, and who used it. When somebody types a code
 app reads that one code, checks it the same way it checks a code on the phone, and writes
 its own membership and marks the code used in one step. Rules on the database, which we
 wrote and test, refuse any other write: a membership without a live code, a code spent by
-somebody else, a role the code did not grant. No program of ours runs on any server.
+somebody else, a role the code did not grant. The one removal they accept is the family's
+owner taking another member out. No program of ours runs on any server.
 
 That is everything the server holds. No recording, transcript, story, document, photograph,
 person or health record goes there, and the code that talks to the server has no way to
@@ -157,8 +158,10 @@ For the archive itself there is no retention schedule, because none of it is hel
 server. Your archive lives on your phone for as long as you keep it there.
 
 The family name, membership rows and invitation codes described above stay in the database
-until the family's owner asks for them to be removed. There is no in-app way to do that
-yet; `docs/PLAY_DATA_SAFETY.md` lists it as a blocker.
+until the family's owner asks for them to be removed. The owner can remove a member from
+inside the app, under Settings, which deletes that member's row. There is no in-app way yet
+to remove the family name or the invitation codes; `docs/PLAY_DATA_SAFETY.md` lists that as
+a blocker.
 
 To delete everything: uninstall the app, or clear its data in Android settings. Both are
 immediate and neither is recoverable.
