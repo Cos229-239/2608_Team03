@@ -356,6 +356,13 @@ interface MemberDao {
     @Query("UPDATE members SET role = :role WHERE familyId = :familyId AND userId = :userId")
     suspend fun setRole(familyId: String, userId: String, role: MemberRole)
 
+    /**
+     * Takes an account out of a family on this phone. The invitation that let them in is
+     * left exactly as it was, so the record of who admitted whom outlives the removal.
+     */
+    @Query("DELETE FROM members WHERE familyId = :familyId AND userId = :userId")
+    suspend fun remove(familyId: String, userId: String)
+
     @Query("SELECT COUNT(*) FROM members WHERE familyId = :familyId")
     suspend fun countFor(familyId: String): Int
 }

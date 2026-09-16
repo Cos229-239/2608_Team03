@@ -18,6 +18,7 @@ interface InviteLocal {
     suspend fun redeemInvite(typed: String?, userId: String, nowMillis: Long): Invitation.Result
     suspend fun memberRowFor(familyId: String, userId: String): MemberEntity?
     suspend fun admitMember(member: MemberEntity)
+    suspend fun removeMember(familyId: String, userId: String)
 }
 
 /**
@@ -45,6 +46,18 @@ class InviteService(private val local: InviteLocal, private val remote: InviteRe
     }
 
     data class Minted(val invite: InviteEntity, val reach: Reach)
+
+    /** What taking somebody out of the family came to. */
+    sealed interface Removal {
+        /** Gone from this phone, and from the server too when [everywhere]. */
+        data class Removed(val everywhere: Boolean) : Removal
+        /** Only the owner removes, never themselves, and the owner is never removed. Nothing was tried. */
+        data object NotAllowed : Removal
+        /** Not in this family on this phone, so there is nobody here to take out. */
+        data object NotAMember : Removal
+        /** The server could not be reached. Nothing was removed anywhere. */
+        data object CouldNotReach : Removal
+    }
 
     /** What redeeming a code came to. */
     sealed interface Joined {
@@ -91,6 +104,27 @@ class InviteService(private val local: InviteLocal, private val remote: InviteRe
         }
     }
 
+    /**
+     * Takes somebody out of the family.
+     *
+     * The server goes first and this phone follows only if the server agreed. Removal is for
+     * the other phones: somebody taken out here but still standing on the server is still in
+     * the family everywhere else, and a screen that said "removed" in that state would be
+     * promising the family something it cannot rely on.
+     */
+    suspend fun removeMember(familyId: String, actorUserId: String, targetUserId: String): Removal {
+        val target = local.memberRowFor(familyId, targetUserId) ?: return Removal.NotAMember
+        val actor = local.memberRowFor(familyId, actorUserId)
+        if (!Membership.canRemove(actor, target)) return Removal.NotAllowed
+        val everywhere = when (remote.removeMember(familyId, targetUserId)) {
+            RemoteWrite.Failed -> return Removal.CouldNotReach
+            RemoteWrite.Done -> true
+            RemoteWrite.Skipped -> false
+        }
+        local.removeMember(familyId, targetUserId)
+        return Removal.Removed(everywhere)
+    }
+
     private suspend fun publish(invite: InviteEntity, familyName: String?, userId: String): Reach {
         if (!remote.available) return Reach.NoServer
         val me = local.memberRowFor(invite.familyId, userId) ?: return Reach.ThisPhoneOnly
@@ -126,4 +160,6 @@ class RepositoryInviteLocal(private val repo: StoryRepository) : InviteLocal {
     override suspend fun memberRowFor(familyId: String, userId: String) = repo.memberRowFor(familyId, userId)
 
     override suspend fun admitMember(member: MemberEntity) = repo.admitMember(member)
+
+    override suspend fun removeMember(familyId: String, userId: String) = repo.removeMember(familyId, userId)
 }

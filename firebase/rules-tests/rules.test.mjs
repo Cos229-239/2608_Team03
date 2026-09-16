@@ -287,6 +287,21 @@ test('the owner writes other members; a keeper does not', async () => {
   await assertFails(setDoc(doc(as('u_keeper'), `families/${FAM}/members/u_new`), member('VIEWER', null, [])))
 })
 
+test('the owner removes a member; nobody else removes anyone, and nobody removes themselves', async () => {
+  await assertFails(deleteDoc(doc(as('u_keeper'), `families/${FAM}/members/u_viewer`)))
+  await assertFails(deleteDoc(doc(as('u_contrib'), `families/${FAM}/members/u_contrib`)))
+  await assertFails(deleteDoc(doc(as('u_owner'), `families/${FAM}/members/u_owner`)))
+  await assertFails(deleteDoc(doc(as('u_other'), `families/${FAM}/members/u_viewer`)))
+  await assertSucceeds(deleteDoc(doc(as('u_owner'), `families/${FAM}/members/u_contrib`)))
+})
+
+test('a removed member reads nothing of the family afterwards', async () => {
+  await assertSucceeds(getDoc(doc(as('u_contrib'), S('s_family'))))
+  await assertSucceeds(deleteDoc(doc(as('u_owner'), `families/${FAM}/members/u_contrib`)))
+  await assertFails(getDoc(doc(as('u_contrib'), S('s_family'))))
+  await assertFails(getDoc(doc(as('u_contrib'), `families/${FAM}/members/u_owner`)))
+})
+
 test('nobody promotes themselves or rewrites the ancestor set branch reads', async () => {
   await assertFails(updateDoc(doc(as('u_keeper'), `families/${FAM}/members/u_keeper`), { role: 'OWNER' }))
   await assertFails(updateDoc(doc(as('u_viewer'), `families/${FAM}/members/u_viewer`), { ancestorPersonIds: ['p_viewer', 'p_owner'] }))

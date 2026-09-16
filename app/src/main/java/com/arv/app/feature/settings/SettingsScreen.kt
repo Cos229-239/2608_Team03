@@ -43,6 +43,8 @@ import com.arv.app.core.data.ArchiveExport
 import com.arv.app.core.data.FamilyImport
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.feature.invite.InviteSection
+import com.arv.app.feature.invite.MembersSection
+import com.arv.app.core.model.MemberRole
 import com.arv.app.core.session.ActiveSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -503,6 +505,16 @@ fun SettingsScreen(
         item { InviteSection() }
 
         item { HorizontalDivider() }
+
+        // Only the owner can take somebody out, so only the owner is shown the list with
+        // that button on it.
+        if (ActiveSession.role == MemberRole.OWNER) {
+            item { SectionLabel("Who is in this family") }
+
+            item { MembersSection() }
+
+            item { HorizontalDivider() }
+        }
 
         item { SectionLabel("This archive") }
 

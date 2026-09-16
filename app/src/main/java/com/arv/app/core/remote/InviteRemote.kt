@@ -13,6 +13,7 @@ import com.arv.app.core.model.MemberRole
  * codes its keepers have issued, and the standing a joiner writes for themselves when they
  * spend one. No recording, story, person or health record goes through here, and there is
  * no method on this interface that could carry one. docs/PRIVACY.md lists exactly these.
+ * Removing a member deletes one of those rows and carries nothing.
  */
 interface InviteRemote {
 
@@ -40,6 +41,13 @@ interface InviteRemote {
      */
     suspend fun redeem(typed: String, userId: String, nowMillis: Long): RemoteRedeem
 
+    /**
+     * Takes a member out of the family on the server, so no other phone treats them as in it.
+     *
+     * The rules accept this from the owner alone, and never for the owner's own row.
+     */
+    suspend fun removeMember(familyId: String, userId: String): RemoteWrite
+
     /** The remote for a build that has none. Every write is skipped; a redeem cannot reach. */
     object None : InviteRemote {
         override val available = false
@@ -49,6 +57,7 @@ interface InviteRemote {
         override suspend fun revoke(invite: InviteEntity, nowMillis: Long) = RemoteWrite.Skipped
         override suspend fun redeem(typed: String, userId: String, nowMillis: Long): RemoteRedeem =
             RemoteRedeem.Unreachable
+        override suspend fun removeMember(familyId: String, userId: String) = RemoteWrite.Skipped
     }
 }
 
