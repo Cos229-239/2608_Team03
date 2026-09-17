@@ -119,6 +119,7 @@ class JoinFamilyViewModel(app: Application) : AndroidViewModel(app) {
                         // their role and leaves their lineage empty, which makes branch
                         // material fail closed until somebody places them in the tree.
                         repo.refreshLineage(familyId, userId, now)
+                        repo.rememberFamily(familyId, result.familyName, now)
                         state = state.copy(
                             working = false,
                             joined = true,

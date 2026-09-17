@@ -416,6 +416,25 @@ data class PromptEntity(
 }
 
 /**
+ * An archive's own record on this phone: its id, and the name its family gave it.
+ *
+ * The name used to live only in the open session, and signing out wipes the session. The
+ * stories, the people and the member row all stayed on the phone, and nothing could name the
+ * archive they belonged to, so signing back in had no way to offer it and asked for a new
+ * family instead. A row here outlives any session.
+ *
+ * Its own table rather than a column on [MemberEntity], because a member row is rewritten
+ * whole from several places (a join, a sync pull, a backfill) and any one of them that did
+ * not know the name would quietly erase it.
+ */
+@Entity(tableName = "families")
+data class FamilyEntity(
+    @PrimaryKey val familyId: String,
+    val name: String,
+    val updatedAt: Long = 0L
+)
+
+/**
  * One account's membership in one family. See [Member] for why this is its own table.
  *
  * Keyed by family and user together: the same account will be in more than one family

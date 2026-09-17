@@ -10,6 +10,7 @@ import com.arv.app.core.ai.MemoryAccess
 import com.arv.app.core.ai.Viewer
 import com.arv.app.core.data.local.ArvDatabase
 import com.arv.app.core.data.local.AssetEntity
+import com.arv.app.core.data.local.FamilyEntity
 import com.arv.app.core.data.local.InviteEntity
 import com.arv.app.core.data.local.MemberEntity
 import com.arv.app.core.data.local.OutboxEntity
@@ -510,10 +511,51 @@ class StoryRepository(
                     joinedAt = nowMillis
                 )
             )
+            db.familyDao().upsert(FamilyEntity(familyId, familyName.trim(), nowMillis))
         }
 
         return NewFamily(familyId, userId, personId, familyName.trim(), MemberRole.OWNER)
     }
+
+    /**
+     * Writes down what a family calls its archive, so this phone can offer it again after
+     * somebody signs out. A blank name is not a name and changes nothing.
+     */
+    suspend fun rememberFamily(familyId: String, name: String?, nowMillis: Long = System.currentTimeMillis()) {
+        val clean = name?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        if (db.familyDao().byId(familyId)?.name == clean) return
+        db.familyDao().upsert(FamilyEntity(familyId, clean, nowMillis))
+    }
+
+    /** An archive this account already stands in, as the picker after sign-in shows it. */
+    data class YourArchive(
+        val familyId: String,
+        /** Null for an archive from before names were kept, until it is opened once. */
+        val name: String?,
+        val role: MemberRole,
+        val joinedAt: Long,
+        /** A few of the people in it, so an archive with no name can still be told apart. */
+        val somePeople: List<String>
+    )
+
+    /**
+     * Every archive on this phone that this account belongs to, most recently joined first.
+     *
+     * Only this phone's. An account signing in on a new phone has nothing here yet; finding
+     * its families on the server is the job of sync, not of this list.
+     */
+    suspend fun archivesFor(userId: String): List<YourArchive> =
+        db.memberDao().familiesFor(userId)
+            .sortedByDescending { it.joinedAt }
+            .map { member ->
+                YourArchive(
+                    familyId = member.familyId,
+                    name = db.familyDao().byId(member.familyId)?.name,
+                    role = member.role,
+                    joinedAt = member.joinedAt,
+                    somePeople = db.personDao().all(member.familyId).map { it.displayName }.sorted().take(3)
+                )
+            }
 
     // --- Portraits ---
 

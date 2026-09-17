@@ -436,6 +436,16 @@ interface PromptDao {
 }
 
 @Dao
+interface FamilyDao {
+
+    @Query("SELECT * FROM families WHERE familyId = :familyId")
+    suspend fun byId(familyId: String): FamilyEntity?
+
+    @Upsert
+    suspend fun upsert(family: FamilyEntity)
+}
+
+@Dao
 interface MemberDao {
 
     @Query("SELECT * FROM members WHERE familyId = :familyId AND userId = :userId")
@@ -447,7 +457,7 @@ interface MemberDao {
     @Query("SELECT * FROM members WHERE familyId = :familyId")
     suspend fun all(familyId: String): List<MemberEntity>
 
-    /** Every family this account belongs to. The archive picker, once there is one. */
+    /** Every family this account belongs to. What the archive picker offers after sign-in. */
     @Query("SELECT * FROM members WHERE userId = :userId ORDER BY joinedAt ASC")
     suspend fun familiesFor(userId: String): List<MemberEntity>
 

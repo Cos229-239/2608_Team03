@@ -35,6 +35,11 @@ class ArvApp : Application() {
         if (familyId != null && userId != null) {
             ServiceLocator.appScope.launch {
                 runCatching { ServiceLocator.storyRepository(this@ArvApp).refreshLineage(familyId, userId) }
+                // An archive from before names were kept learns its name from the session
+                // that has been holding it, so a sign-out later can still offer it back.
+                runCatching {
+                    ServiceLocator.storyRepository(this@ArvApp).rememberFamily(familyId, ActiveSession.familyName)
+                }
                 // Whatever transcription the last run left behind, picked back up. A
                 // crash must cost a retry, never a permanently stuck "Transcribing".
                 runCatching {

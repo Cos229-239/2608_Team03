@@ -31,7 +31,7 @@ Working end to end:
   the archive, so a private one cannot be promoted onto the people list. Pictures are
   downscaled on the way in, and no face means initials, which is a design not a blank.
 - Dark mode, plus eight named palettes and an auto setting that follows the system.
-- Room schema at version 12 with real migrations and no destructive fallback.
+- Room schema at version 13 with real migrations and no destructive fallback.
 
 Partly built:
 

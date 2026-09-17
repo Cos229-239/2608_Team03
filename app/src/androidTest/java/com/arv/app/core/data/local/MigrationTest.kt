@@ -653,6 +653,37 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate12To13_givesEachArchiveItsNameFromTheNewestCodeThatCarriedIt() {
+        helper.createDatabase(TEST_DB, 12).use { db ->
+            db.execSQL(
+                "INSERT INTO invites (code, familyId, issuedByUserId, grantsRole, createdAt, " +
+                    "usedAt, usedByUserId, revokedAt, familyName, expiresAt) VALUES " +
+                    "('OLDCODE', 'fam_1', 'u_1', 'CONTRIBUTOR', 100, NULL, NULL, 150, 'Delany', NULL), " +
+                    "('NEWCODE', 'fam_1', 'u_1', 'CONTRIBUTOR', 200, NULL, NULL, NULL, 'Delaney', NULL), " +
+                    "('NONAME1', 'fam_2', 'u_2', 'VIEWER', 300, NULL, NULL, NULL, NULL, NULL)"
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB, 13, true, ArvDatabase.MIGRATION_12_13
+        )
+
+        db.query("SELECT familyId, name, updatedAt FROM families ORDER BY familyId").use { c ->
+            assertTrue("the named family has a record", c.moveToFirst())
+            assertEquals("fam_1", c.getString(0))
+            assertEquals("the newest code's spelling wins", "Delaney", c.getString(1))
+            assertEquals(200L, c.getLong(2))
+            assertTrue("no name is invented for a family whose codes never carried one", !c.moveToNext())
+        }
+
+        // The codes themselves are untouched.
+        db.query("SELECT COUNT(*) FROM invites").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(3, c.getInt(0))
+        }
+    }
+
     private companion object {
         const val TEST_DB = "migration-test"
     }

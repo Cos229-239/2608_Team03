@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -24,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.arv.app.core.data.StoryRepository
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.model.MemberRole
 import com.arv.app.core.session.ActiveSession
@@ -38,6 +41,44 @@ class OnboardingViewModel(app: Application) : AndroidViewModel(app) {
 
     var error by mutableStateOf<String?>(null)
         private set
+
+    /**
+     * Archives on this phone that the signed-in account already belongs to.
+     *
+     * Signing out closes the archive and keeps every row of it, and this screen used to
+     * offer only a new family afterwards, so signing back in walked straight past the
+     * archive that was still here. Empty for a new account, and for the sample family.
+     */
+    var archives by mutableStateOf<List<StoryRepository.YourArchive>>(emptyList())
+        private set
+
+    init {
+        ActiveSession.authUid?.let { uid ->
+            viewModelScope.launch {
+                archives = runCatching { repo.archivesFor(uid) }.getOrDefault(emptyList())
+            }
+        }
+    }
+
+    /** Opens an archive this account already has, exactly as creating or joining one does. */
+    fun openArchive(archive: StoryRepository.YourArchive, onReady: () -> Unit) {
+        val uid = ActiveSession.authUid ?: return
+        if (working) return
+        working = true
+        error = null
+        viewModelScope.launch {
+            try {
+                ActiveSession.set(archive.familyId, uid, archive.name ?: "Family archive", archive.role)
+                // Role and lineage come from the member row, the same as on every launch.
+                repo.refreshLineage(archive.familyId, uid)
+                onReady()
+            } catch (t: Throwable) {
+                error = "Could not open that archive. Nothing was changed. Try again."
+            } finally {
+                working = false
+            }
+        }
+    }
 
     /**
      * Creates the archive and opens it. Runs in [viewModelScope], not in a composition
@@ -120,10 +161,47 @@ fun OnboardingScreen(
         )
         Text(
             "An archive belongs to a family, so this starts by asking which one. " +
-                "Nothing leaves this phone.",
+                "It stays on this phone unless you invite somebody or turn on sharing.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+
+        if (viewModel.archives.isNotEmpty()) {
+            Text(
+                "YOUR ARCHIVES ON THIS PHONE",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            viewModel.archives.forEach { archive ->
+                OutlinedButton(
+                    onClick = { viewModel.openArchive(archive, onReady) },
+                    enabled = !working,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            "Open " + (archive.name ?: "an unnamed archive"),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            describe(archive),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            HorizontalDivider()
+            Text(
+                "Or start a new one",
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
 
         OutlinedTextField(
             value = familyName,
@@ -185,4 +263,22 @@ fun OnboardingScreen(
             Text("Look at the sample family instead")
         }
     }
+}
+
+/** "Owner. With Ann, Benjamin and Billie." Enough to tell two archives apart. */
+private fun describe(archive: StoryRepository.YourArchive): String {
+    val role = when (archive.role) {
+        MemberRole.OWNER -> "Owner"
+        MemberRole.KEEPER -> "Keeper"
+        MemberRole.CONTRIBUTOR -> "Contributor"
+        MemberRole.VIEWER -> "Viewer"
+    }
+    val people = archive.somePeople
+    val alongside = when (people.size) {
+        0 -> ""
+        1 -> " With ${people[0]}."
+        2 -> " With ${people[0]} and ${people[1]}."
+        else -> " With ${people[0]}, ${people[1]} and ${people[2]}."
+    }
+    return "$role.$alongside"
 }
