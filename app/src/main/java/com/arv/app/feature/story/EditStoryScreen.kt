@@ -349,7 +349,7 @@ fun EditStoryScreen(
 
         item {
             // Deleting is the strongest edit, so it lives here with the other edits,
-            // behind a question that says exactly what will be lost.
+            // behind a question that says exactly what happens and how to undo it.
             var confirmDelete by androidx.compose.runtime.remember {
                 androidx.compose.runtime.mutableStateOf(false)
             }
@@ -368,8 +368,9 @@ fun EditStoryScreen(
                     title = { Text("Delete this story?") },
                     text = {
                         Text(
-                            "The recording, the transcript, and everything about it " +
-                                "are erased. There is no undo."
+                            "It disappears from this archive, and from every phone the " +
+                                "archive is shared with. Nothing is erased, and it can be " +
+                                "brought back from Settings, under Recently deleted."
                         )
                     },
                     confirmButton = {

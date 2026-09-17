@@ -4,6 +4,10 @@ import com.arv.app.core.data.InviteService
 import com.arv.app.core.data.RepositoryInviteLocal
 import com.arv.app.core.remote.FirebaseInviteRemote
 import com.arv.app.core.remote.InviteRemote
+import com.arv.app.core.sync.FirestoreSyncRemote
+import com.arv.app.core.sync.RoomSyncLocal
+import com.arv.app.core.sync.SyncEngine
+import com.arv.app.core.sync.SyncRemote
 
 import android.content.Context
 import com.arv.app.core.audio.PlaybackController
@@ -126,20 +130,42 @@ object ServiceLocator {
         }
 
     @Volatile private var invites: InviteService? = null
+    @Volatile private var inviteServer: InviteRemote? = null
 
     /**
-     * Invitations, local first and the server second.
-     *
-     * The remote is Firebase when google-services.json was there at build time and
-     * nothing when it was not, decided once here. Constructing the Firebase remote throws
-     * without a FirebaseApp, and that throw is the whole detection.
+     * The server half of invitations. Firebase when google-services.json was there at build
+     * time and nothing when it was not, decided once here. Constructing the Firebase remote
+     * throws without a FirebaseApp, and that throw is the whole detection.
      */
+    fun inviteRemote(): InviteRemote =
+        inviteServer ?: synchronized(this) {
+            inviteServer ?: runCatching<InviteRemote> { FirebaseInviteRemote() }
+                .getOrElse { InviteRemote.None }
+                .also { inviteServer = it }
+        }
+
+    /** Invitations, local first and the server second. */
     fun inviteService(context: Context): InviteService =
         invites ?: synchronized(this) {
             invites ?: InviteService(
                 local = RepositoryInviteLocal(storyRepository(context)),
-                remote = runCatching { FirebaseInviteRemote() }.getOrElse { InviteRemote.None }
+                remote = inviteRemote()
             ).also { invites = it }
+        }
+
+    @Volatile private var sync: SyncEngine? = null
+
+    /**
+     * Sharing an archive between the family's phones. Detected the same way as
+     * [inviteRemote]: no Firebase configuration, no server, and the engine says so rather
+     * than failing. Whether it runs at all is the person's choice, in Settings.
+     */
+    fun syncEngine(context: Context): SyncEngine =
+        sync ?: synchronized(this) {
+            sync ?: SyncEngine(
+                local = RoomSyncLocal(ArvDatabase.get(context)),
+                remote = runCatching<SyncRemote> { FirestoreSyncRemote() }.getOrElse { SyncRemote.None }
+            ).also { sync = it }
         }
 
     @Volatile private var models: VoskModelStore? = null

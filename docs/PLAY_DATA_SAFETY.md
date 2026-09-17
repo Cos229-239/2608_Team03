@@ -11,12 +11,14 @@ facts written for a person rather than a form.
 Play defines **collected** as user data transmitted off the device. Not stored, not read,
 not held. Transmitted.
 
-That single definition is why this card is almost empty. Arv records voices, transcribes
-them, files photographs, and holds health information a family wrote down, and none of it
-is collected, because none of it goes anywhere. Three things leave: an email address and a
+That single definition is why this card is short. Arv records voices, transcribes them,
+files photographs, and holds health information a family wrote down, and none of that is
+collected, because none of it goes anywhere. Four things leave: an email address and a
 password to Firebase Authentication; one HTTP request for a speech model if somebody turns
-transcription on; and, once a family uses invitations, the family's name, its members'
-account ids and roles, and its invitation codes, to Firestore.
+transcription on; once a family uses invitations, the family's name, its members' account
+ids and roles, and its invitation codes, to Firestore; and, only for an archive somebody
+turns sharing on for, the non-private stories' details, the family tree and consent records,
+to Firestore.
 
 A reviewer looking at an app with `RECORD_AUDIO` and a health feature will expect audio and
 health data to be declared. The justification for declaring neither is above, and it is
@@ -36,6 +38,7 @@ acting for the app, which Play does not count as sharing.
 | Personal info | Email address | **Yes** | No | Required | Account management | No |
 | Personal info | User IDs | **Yes** | No | Required | Account management | No |
 | Personal info | Name | **Yes** | No | Optional | App functionality | No |
+| Personal info | Other info | **Yes** | No | Optional | App functionality | No |
 | Personal info | Address, phone, race, beliefs, orientation | No | No | | | |
 | Audio | Voice or sound recordings | **No** | No | | | |
 | Audio | Music files, other audio | No | No | | | |
@@ -43,7 +46,8 @@ acting for the app, which Play does not count as sharing.
 | Health and fitness | Health info, fitness info | **No** | No | | | |
 | Files and docs | Files and docs | **No** | No | | | |
 | Messages | Emails, SMS, in-app messages | No | No | | | |
-| App activity | Interactions, search history, other user-generated content | **No** | No | | | |
+| App activity | Interactions, search history | No | No | | | |
+| App activity | Other user-generated content | **Yes** | No | Optional | App functionality | No |
 | App activity | Other actions | **Yes** | No | Optional | App functionality | No |
 | App info and performance | Crash logs, diagnostics | **No** | No | | | |
 | Device or other IDs | Device or other IDs | No | No | | | |
@@ -55,19 +59,25 @@ acting for the app, which Play does not count as sharing.
 The two new "Yes" answers, both optional and both only once a family issues a code: **Name**
 is the name a family gave its archive, written to Firestore so a joiner can be told what
 they are agreeing to. **Other actions** is invitation traffic: each member's role, who
-invited them and when, and each code with its issuer, expiry and use. Nothing under either
-heading is a recording, a person or a health record.
+invited them and when, and each code with its issuer, expiry and use.
+
+Sharing adds two more, both optional and both only for an archive somebody turned sharing on
+for. **Name** now also covers the names of people in the family tree, and **Other info**
+their birth and death years, birthplaces, notes and consent records. **Other user-generated
+content** is what was written about each story set to Family, Branch or Selected: title,
+year, place, tags and who may see it. Nothing under any of these headings is a recording, a
+photograph, a transcript, a private story or a health record.
 
 The five bolded "No" answers are the ones to be able to defend:
 
-- **Voice recordings.** Written to `filesDir/recordings` and never uploaded. Sync has a
-  database outbox and nothing that drains it. Firebase Storage is a declared dependency
-  and no code path calls it.
+- **Voice recordings.** Written to `filesDir/recordings` and never uploaded. Sync sends
+  story details, never files. Firebase Storage is a declared dependency and no code path
+  calls it.
 - **Photos and files.** Copied into `filesDir/documents` from the system document picker.
   Never uploaded. The app does not hold a media permission at all.
-- **Health info.** An archive area in the local database. Never uploaded.
-- **User-generated content.** Stories, notes, transcripts, consent records, people,
-  relationships. All local.
+- **Health info.** An archive area in the local database. Never uploaded, with sharing on or
+  off: `SyncPolicy.shares` refuses any story in the health area whatever its visibility, and
+  a phone that receives one drops it.
 - **Crash logs and diagnostics.** There is no analytics, crash reporting or advertising SDK
   in the app. Grep the dependency list; the answer holds.
 
@@ -101,10 +111,16 @@ What it needs:
 - Removal of the family, member and invitation rows Firestore holds for that account,
   since deleting the Firebase account alone leaves them behind.
 
-**2. A hosted privacy policy URL.** Play requires the policy at a public address.
+**2. Erasing a shared archive.** With sharing on, a family's stories, people and links sit
+in Firestore until somebody removes them, and nothing in the app can yet. Deleting a story
+hides it on purpose, so it can be restored. Play's deletion requirement needs a real erase:
+a keeper action that removes the archive's documents, and a written answer about what
+happens to what other members already hold.
+
+**3. A hosted privacy policy URL.** Play requires the policy at a public address.
 `docs/PRIVACY.md` is written and has an unfilled contact placeholder.
 
-**3. The two placeholders** in `docs/TERMS.md` and `docs/PRIVACY.md`: governing-law
+**4. The two placeholders** in `docs/TERMS.md` and `docs/PRIVACY.md`: governing-law
 jurisdiction and a contact address.
 
 ## Judgment calls somebody should agree with rather than inherit
@@ -117,9 +133,9 @@ the only other outbound request in the app, and a reviewer who reads the manifes
 
 **The unused Firebase Storage and MLKit libraries.** Both ship inside the APK and no code
 calls either. That changes no answer above, since the form asks about behaviour rather than
-dependencies. Firestore is called, for invitations only, and the answers above reflect
-that; the day it carries anything else, this document and the privacy policy change before
-the feature ships rather than after.
+dependencies. Firestore is called, for invitations and for sharing, and the answers above
+reflect that; the day it carries anything else, this document and the privacy policy change
+before the feature ships rather than after.
 
 ---
 

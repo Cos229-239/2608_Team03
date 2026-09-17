@@ -20,6 +20,9 @@ import com.arv.app.core.data.local.TranscriptSegmentEntity
 import com.arv.app.core.model.RelationshipKind
 import com.arv.app.core.session.ActiveSession
 import com.arv.app.core.data.local.toDomain
+import com.arv.app.core.sync.SyncDocs
+import com.arv.app.core.sync.SyncPaths
+import com.arv.app.core.sync.SyncPolicy
 import com.arv.app.core.model.ArchiveArea
 import com.arv.app.core.model.Confidence
 import com.arv.app.core.model.ConsentMethod
@@ -238,16 +241,39 @@ class StoryRepository(
         nowMillis: Long
     ) {
         if (parentPersonId == childPersonId) return
-        db.relationshipDao().upsert(
-            RelationshipEntity(
-                familyId = familyId,
-                fromPersonId = parentPersonId,
-                toPersonId = childPersonId,
-                kind = RelationshipKind.PARENT,
-                updatedAt = nowMillis
-            )
-        )
+        writeEdge(familyId, parentPersonId, childPersonId, RelationshipKind.PARENT, uncertain = false, nowMillis)
         refreshLineage(familyId, userId)
+    }
+
+    /**
+     * Writes one family link. An existing link is copied rather than rebuilt, so what sync
+     * knows about it survives, and the new version is stamped past the old one so it wins
+     * over it on every phone.
+     */
+    private suspend fun writeEdge(
+        familyId: String,
+        from: String,
+        to: String,
+        kind: RelationshipKind,
+        uncertain: Boolean,
+        nowMillis: Long
+    ) {
+        db.withTransaction {
+            val existing = db.relationshipDao().byKey(from, to, kind)
+            db.relationshipDao().upsert(
+                existing?.copy(
+                    uncertain = uncertain,
+                    updatedAt = SyncPolicy.stamp(existing.updatedAt, nowMillis)
+                ) ?: RelationshipEntity(
+                    familyId = familyId,
+                    fromPersonId = from,
+                    toPersonId = to,
+                    kind = kind,
+                    uncertain = uncertain,
+                    updatedAt = nowMillis
+                )
+            )
+        }
     }
 
     /** People the archive is holding on somebody's word alone, for the verify list. */
@@ -260,15 +286,17 @@ class StoryRepository(
 
     /** Records that somebody checked a person against a real source. */
     suspend fun markVerified(personId: String, source: String, nowMillis: Long) {
-        val p = db.personDao().byId(personId) ?: return
-        db.personDao().upsert(
-            p.copy(
-                confidence = Confidence.DOCUMENTED,
-                source = source.ifBlank { p.source },
-                verifiedAt = nowMillis,
-                updatedAt = nowMillis
+        db.withTransaction {
+            val p = db.personDao().byId(personId) ?: return@withTransaction
+            db.personDao().upsert(
+                p.copy(
+                    confidence = Confidence.DOCUMENTED,
+                    source = source.ifBlank { p.source },
+                    verifiedAt = nowMillis,
+                    updatedAt = SyncPolicy.stamp(p.updatedAt, nowMillis)
+                )
             )
-        )
+        }
     }
 
     /**
@@ -290,20 +318,22 @@ class StoryRepository(
         viewer: Viewer,
         nowMillis: Long
     ): Boolean {
-        val p = db.personDao().byId(personId) ?: return false
-        if (!MemoryAccess.canRecordConsent(p.toDomain(), viewer)) return false
-        db.personDao().upsert(
-            p.copy(
-                consentGranted = if (method == ConsentMethod.ON_THEIR_BEHALF) p.consentGranted else granted,
-                postMortemOk = postMortemOk,
-                consentDeclined = !granted,
-                consentDecidedAt = nowMillis,
-                consentMethod = method,
-                consentRecordedBy = viewer.userId,
-                updatedAt = nowMillis
+        return db.withTransaction {
+            val p = db.personDao().byId(personId) ?: return@withTransaction false
+            if (!MemoryAccess.canRecordConsent(p.toDomain(), viewer)) return@withTransaction false
+            db.personDao().upsert(
+                p.copy(
+                    consentGranted = if (method == ConsentMethod.ON_THEIR_BEHALF) p.consentGranted else granted,
+                    postMortemOk = postMortemOk,
+                    consentDeclined = !granted,
+                    consentDecidedAt = nowMillis,
+                    consentMethod = method,
+                    consentRecordedBy = viewer.userId,
+                    updatedAt = SyncPolicy.stamp(p.updatedAt, nowMillis)
+                )
             )
-        )
-        return true
+            true
+        }
     }
 
     /**
@@ -322,16 +352,7 @@ class StoryRepository(
         userId: String,
         nowMillis: Long
     ) {
-        db.relationshipDao().upsert(
-            RelationshipEntity(
-                familyId = familyId,
-                fromPersonId = fromPersonId,
-                toPersonId = toPersonId,
-                kind = kind,
-                uncertain = false,
-                updatedAt = nowMillis
-            )
-        )
+        writeEdge(familyId, fromPersonId, toPersonId, kind, uncertain = false, nowMillis)
         refreshLineage(familyId, userId)
     }
 
@@ -351,14 +372,24 @@ class StoryRepository(
         userId: String,
         nowMillis: Long
     ) {
-        db.relationshipDao().delete(
-            RelationshipEntity(
-                familyId = familyId,
-                fromPersonId = fromPersonId,
-                toPersonId = toPersonId,
-                kind = kind
-            )
-        )
+        db.withTransaction {
+            val existing = db.relationshipDao().byKey(fromPersonId, toPersonId, kind)
+                ?: return@withTransaction
+            db.relationshipDao().delete(existing)
+            // A link the family's server holds has to come off it as well, or the next pull
+            // brings it straight back. One the server never had leaves nothing to tell it.
+            if (existing.syncedAt != null) {
+                db.outboxDao().enqueue(
+                    OutboxEntity(
+                        op = OutboxOp.DELETE,
+                        collectionPath = SyncPaths.relationships(familyId),
+                        docId = SyncDocs.edgeId(existing),
+                        payloadJson = "{}",
+                        createdAt = nowMillis
+                    )
+                )
+            }
+        }
         refreshLineage(familyId, userId)
     }
 
@@ -938,7 +969,7 @@ class StoryRepository(
         val story = db.storyDao().observeById(storyId).first() ?: return
         val asset = primaryAsset(storyId) ?: return
 
-        db.storyDao().upsert(story.copy(transcriptStatus = TranscriptStatus.RUNNING))
+        db.storyDao().setTranscriptStatus(story.storyId, TranscriptStatus.RUNNING)
 
         val result = transcription.transcribe(File(asset.localPath))
         result.fold(
@@ -955,45 +986,91 @@ class StoryRepository(
                         )
                     }
                 )
-                db.storyDao().upsert(story.copy(transcriptStatus = TranscriptStatus.READY))
+                db.storyDao().setTranscriptStatus(story.storyId, TranscriptStatus.READY)
             },
             onFailure = {
-                db.storyDao().upsert(story.copy(transcriptStatus = TranscriptStatus.FAILED))
+                db.storyDao().setTranscriptStatus(story.storyId, TranscriptStatus.FAILED)
             }
         )
     }
 
     /**
-     * Removes a story from the archive: the row, its assets, its transcript, and the
-     * files on disk. Permission-checked with the same canEdit rule as editing, because
-     * deleting is the strongest edit there is. The recording bytes are erased last, after
-     * the database writes succeed, so a failure can never leave a listed story whose
-     * audio is already gone.
+     * Takes a story out of the archive, on this phone and, once it syncs, on every phone.
+     *
+     * Hidden, not erased. The recording, its transcript and its details all stay, so whoever
+     * could edit it can bring it back from Recently deleted. That used to be an erase with
+     * no undo, which made one mis-tap on the only recording of somebody's voice final, and
+     * an erased row has no way to tell another phone it is gone.
+     *
+     * Permission-checked with the same canEdit rule as editing, because deleting is the
+     * strongest edit there is.
      */
-    suspend fun deleteStory(storyId: String, viewer: Viewer): Boolean {
-        val entity = db.storyDao().observeById(storyId).first() ?: return false
-        if (!MemoryAccess.canEdit(entity.toDomain(), viewer)) return false
-
-        val assets = db.assetDao().observeForStory(storyId).first()
-        db.withTransaction {
-            for (asset in assets) {
-                db.transcriptDao().clearForAsset(asset.assetId)
-            }
-            db.assetDao().deleteForStory(storyId)
-            db.outboxDao().deleteForDoc(storyId)
-            for (asset in assets) {
-                db.outboxDao().deleteForDoc(asset.assetId)
-            }
-            db.storyDao().delete(entity)
-        }
-        for (asset in assets) {
-            runCatching {
-                val f = File(asset.localPath)
-                if (f.exists()) f.delete()
-            }
-        }
-        return true
+    suspend fun deleteStory(
+        storyId: String,
+        viewer: Viewer,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean = db.withTransaction {
+        val entity = db.storyDao().byIdIncludingDeleted(storyId)
+            ?.takeIf { it.deletedAt == null } ?: return@withTransaction false
+        if (!MemoryAccess.canEdit(entity.toDomain(), viewer)) return@withTransaction false
+        db.storyDao().upsert(
+            entity.copy(
+                deletedAt = nowMillis,
+                deletedBy = viewer.userId,
+                updatedAt = SyncPolicy.stamp(entity.updatedAt, nowMillis)
+            )
+        )
+        true
     }
+
+    /**
+     * Brings a deleted story back, if this viewer could edit it. The same rule that let it be
+     * deleted decides who may undo that: its creator, a keeper, or for a health record the
+     * person it is about.
+     */
+    suspend fun restoreStory(storyId: String, viewer: Viewer, nowMillis: Long): Boolean =
+        db.withTransaction {
+            val entity = db.storyDao().byIdIncludingDeleted(storyId)
+                ?.takeIf { it.deletedAt != null } ?: return@withTransaction false
+            if (!MemoryAccess.canEdit(entity.toDomain(), viewer)) return@withTransaction false
+            db.storyDao().upsert(
+                entity.copy(
+                    deletedAt = null,
+                    deletedBy = null,
+                    updatedAt = SyncPolicy.stamp(entity.updatedAt, nowMillis)
+                )
+            )
+            true
+        }
+
+    /** One entry in Recently deleted. Who deleted it is a name when the archive knows one. */
+    data class DeletedStory(
+        val storyId: String,
+        val title: String,
+        val deletedAt: Long,
+        val deletedByName: String?
+    )
+
+    /**
+     * What this viewer could bring back. Filtered by canEdit rather than canRead, because the
+     * list exists to restore from, and it never lists a title the viewer could not open: a
+     * private story is only ever editable by the person who made it.
+     */
+    fun observeRecentlyDeleted(familyId: String, viewer: Viewer): Flow<List<DeletedStory>> =
+        combine(
+            db.storyDao().observeDeleted(familyId),
+            db.personDao().observeAll(familyId)
+        ) { rows, people ->
+            rows.filter { MemoryAccess.canEdit(it.toDomain(), viewer) }
+                .map { row ->
+                    DeletedStory(
+                        storyId = row.storyId,
+                        title = row.title,
+                        deletedAt = row.deletedAt ?: 0L,
+                        deletedByName = people.firstOrNull { it.linkedUserId == row.deletedBy }?.displayName
+                    )
+                }
+        }.flowOn(Dispatchers.IO)
 
     /**
      * Rewrites a story's details, if this viewer may.
@@ -1020,35 +1097,41 @@ class StoryRepository(
         aiUsePolicy: AiUsePolicy,
         nowMillis: Long
     ): Boolean {
-        val entity = db.storyDao().observeById(storyId).first() ?: return false
-        if (!MemoryAccess.canEdit(entity.toDomain(), viewer)) return false
         if (visibility == Visibility.BRANCH && branchRootPersonId == null) return false
-
-        // Visibility runs PRIVATE, SELECTED, BRANCH, FAMILY, narrowest to widest.
-        // A keeper may fix a title or a date on somebody else's memory. Deciding that
-        // more people may read it is the creator's call and nobody else's.
-        if (visibility.ordinal > entity.visibility.ordinal && entity.createdBy != viewer.userId) {
-            return false
-        }
 
         val era = if (eraUnknown) EraText.Parsed(null, null, EraPrecision.UNKNOWN)
         else EraText.parse(eraText)
 
-        db.storyDao().upsert(
-            entity.copy(
-                title = title.trim().ifBlank { entity.title },
-                eraStart = era.start,
-                eraEnd = era.end,
-                eraPrecision = era.precision,
-                placeLabel = placeLabel?.trim()?.ifBlank { null },
-                tags = tags.map { it.trim() }.filter { it.isNotBlank() },
-                visibility = visibility,
-                branchRootPersonId = if (visibility == Visibility.BRANCH) branchRootPersonId else null,
-                aiUsePolicy = aiUsePolicy,
-                updatedAt = nowMillis
+        // Read and written in one transaction, so a version that arrives from another phone
+        // between the two is edited rather than silently replaced.
+        return db.withTransaction {
+            val entity = db.storyDao().byIdIncludingDeleted(storyId)
+                ?.takeIf { it.deletedAt == null } ?: return@withTransaction false
+            if (!MemoryAccess.canEdit(entity.toDomain(), viewer)) return@withTransaction false
+
+            // Visibility runs PRIVATE, SELECTED, BRANCH, FAMILY, narrowest to widest.
+            // A keeper may fix a title or a date on somebody else's memory. Deciding that
+            // more people may read it is the creator's call and nobody else's.
+            if (visibility.ordinal > entity.visibility.ordinal && entity.createdBy != viewer.userId) {
+                return@withTransaction false
+            }
+
+            db.storyDao().upsert(
+                entity.copy(
+                    title = title.trim().ifBlank { entity.title },
+                    eraStart = era.start,
+                    eraEnd = era.end,
+                    eraPrecision = era.precision,
+                    placeLabel = placeLabel?.trim()?.ifBlank { null },
+                    tags = tags.map { it.trim() }.filter { it.isNotBlank() },
+                    visibility = visibility,
+                    branchRootPersonId = if (visibility == Visibility.BRANCH) branchRootPersonId else null,
+                    aiUsePolicy = aiUsePolicy,
+                    updatedAt = SyncPolicy.stamp(entity.updatedAt, nowMillis)
+                )
             )
-        )
-        return true
+            true
+        }
     }
 
     /**
@@ -1253,25 +1336,30 @@ class StoryRepository(
             createdAt = now
         )
 
-        // A story holding both photographs and a voice is a collection. Audio-only
-        // stories keep the kind they were born with.
-        val kind = when (entity.kind) {
-            StoryKind.AUDIO -> StoryKind.AUDIO
-            else -> StoryKind.COLLECTION
-        }
+        val added = db.withTransaction {
+            // Read again inside the transaction. A newer version may have arrived from another
+            // phone since the check above, and this has to build on it, not replace it.
+            val current = db.storyDao().byIdIncludingDeleted(storyId)
+                ?.takeIf { it.deletedAt == null } ?: return@withTransaction false
 
-        db.withTransaction {
+            // A story holding both photographs and a voice is a collection. Audio-only
+            // stories keep the kind they were born with.
+            val kind = when (current.kind) {
+                StoryKind.AUDIO -> StoryKind.AUDIO
+                else -> StoryKind.COLLECTION
+            }
+
             db.assetDao().upsert(asset)
             db.storyDao().upsert(
-                entity.copy(
+                current.copy(
                     kind = kind,
                     // The first voice on a story becomes the one it plays.
-                    primaryAssetId = entity.primaryAssetId ?: assetId,
-                    durationMs = entity.durationMs ?: durationMs,
-                    assetCount = entity.assetCount + 1,
+                    primaryAssetId = current.primaryAssetId ?: assetId,
+                    durationMs = current.durationMs ?: durationMs,
+                    assetCount = current.assetCount + 1,
                     // There are words to find now, so the story owes a transcript again.
                     transcriptStatus = TranscriptStatus.PENDING,
-                    updatedAt = now
+                    updatedAt = SyncPolicy.stamp(current.updatedAt, now)
                 )
             )
             db.outboxDao().enqueue(
@@ -1284,9 +1372,10 @@ class StoryRepository(
                     createdAt = now
                 )
             )
+            true
         }
 
-        return assetId
+        return if (added) assetId else null
     }
 
     suspend fun saveRecording(

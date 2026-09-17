@@ -587,6 +587,72 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate11To12_letsAnArchiveBeSharedWithoutClaimingAnythingWasSharedAlready() {
+        helper.createDatabase(TEST_DB, 11).use { db ->
+            db.execSQL(
+                """
+                INSERT INTO stories
+                  (storyId, familyId, title, kind, area, narratorIds, subjectPersonIds,
+                   eraStart, eraEnd, eraPrecision, placeLabel, tags, visibility, aiUsePolicy,
+                   provenance, sharedWithUserIds, restricted, branchRootPersonId, durationMs,
+                   assetCount, transcriptStatus, uploadState, primaryAssetId, createdBy,
+                   createdAt, updatedAt)
+                VALUES
+                  ('s_1', 'fam_1', 'The night the levee broke', 'AUDIO', 'STORIES', 'p_1', '',
+                   1958, NULL, 'EXACT', 'Greenville', 'flood', 'FAMILY', 'SUMMARY_OK',
+                   'AUTHENTIC_RECORDING', '', 0, NULL, 2700000, 1, 'READY', 'LOCAL_ONLY',
+                   'a_1', 'u_1', 100, 200)
+                """.trimIndent()
+            )
+            db.execSQL(
+                "INSERT INTO people (personId, familyId, displayName, alsoKnownAs, state, " +
+                    "consentGranted, postMortemOk, confidence, updatedAt, consentDeclined) " +
+                    "VALUES ('p_1', 'fam_1', 'Ruth Delaney', '', 'LIVING', 1, 0, 'FAMILY_TOLD', 150, 0)"
+            )
+            db.execSQL(
+                "INSERT INTO relationships (familyId, fromPersonId, toPersonId, kind, uncertain, updatedAt) " +
+                    "VALUES ('fam_1', 'p_1', 'p_2', 'PARENT', 1, 160)"
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(
+            TEST_DB, 12, true, ArvDatabase.MIGRATION_11_12
+        )
+
+        // The story is exactly what it was, not deleted, and not marked as ever having been
+        // on a server, because it never was.
+        db.query(
+            "SELECT title, transcriptStatus, updatedAt, deletedAt, deletedBy, syncedAt, refusedAt " +
+                "FROM stories WHERE storyId = 's_1'"
+        ).use { c ->
+            assertTrue("the story survived the migration", c.moveToFirst())
+            assertEquals("The night the levee broke", c.getString(0))
+            assertEquals("READY", c.getString(1))
+            assertEquals(200L, c.getLong(2))
+            assertTrue("nothing was deleted", c.isNull(3))
+            assertTrue(c.isNull(4))
+            assertTrue("nothing is claimed as shared", c.isNull(5))
+            assertTrue(c.isNull(6))
+        }
+
+        db.query("SELECT displayName, consentGranted, syncedAt, refusedAt FROM people WHERE personId = 'p_1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("Ruth Delaney", c.getString(0))
+            assertEquals(1, c.getInt(1))
+            assertTrue(c.isNull(2))
+            assertTrue(c.isNull(3))
+        }
+
+        db.query("SELECT uncertain, updatedAt, syncedAt, refusedAt FROM relationships WHERE fromPersonId = 'p_1'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(1, c.getInt(0))
+            assertEquals(160L, c.getLong(1))
+            assertTrue(c.isNull(2))
+            assertTrue(c.isNull(3))
+        }
+    }
+
     private companion object {
         const val TEST_DB = "migration-test"
     }

@@ -516,6 +516,15 @@ fun SettingsScreen(
             item { HorizontalDivider() }
         }
 
+        item { SectionLabel("Sharing between phones") }
+
+        item { SyncSection() }
+
+        item { HorizontalDivider() }
+
+        // Draws its own heading, and nothing at all when nothing has been deleted.
+        item { RecentlyDeletedSection() }
+
         item { SectionLabel("This archive") }
 
         item {

@@ -31,15 +31,19 @@ Working end to end:
   the archive, so a private one cannot be promoted onto the people list. Pictures are
   downscaled on the way in, and no face means initials, which is a design not a blank.
 - Dark mode, plus eight named palettes and an auto setting that follows the system.
-- Room schema at version 11 with real migrations and no destructive fallback.
+- Room schema at version 12 with real migrations and no destructive fallback.
 
 Partly built:
 
 - Librarian and search screens exist and answer from local data. No embeddings yet.
 - Timeline shows dated memories and gaps. Undated memories still need a home.
-- Sync has a database outbox and nothing that drains it. A code now works on a second
-  phone, but joining writes a standing, not a library, so the archive opens with nothing
-  in it there. The join screen says so rather than letting it look like a failed load.
+- Sync, first half. With sharing turned on in Settings, stories set to Family, Branch or
+  Selected, the family tree and the member list go between phones, the later edit wins,
+  and deleting hides a story everywhere with an undo under Recently deleted. Private
+  stories and health records never leave the phone. Recordings and photographs do not
+  travel yet; that half needs Cloud Storage, which needs the paid Firebase plan. Branch
+  stories reach other phones only once member rows carry a place in the tree, and nothing
+  writes that yet.
 - Invitations always grant CONTRIBUTOR. The role travels on the invitation and the
   other roles are built and tested, so what is missing is a picker, not a mechanism.
 

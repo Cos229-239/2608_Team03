@@ -9,11 +9,12 @@ import com.arv.app.core.model.MemberRole
  * The server half of an invitation, behind an interface so the app builds and tests
  * without one.
  *
- * Three things cross the wire and nothing else: that a family exists and who owns it, the
- * codes its keepers have issued, and the standing a joiner writes for themselves when they
- * spend one. No recording, story, person or health record goes through here, and there is
- * no method on this interface that could carry one. docs/PRIVACY.md lists exactly these.
- * Removing a member deletes one of those rows and carries nothing.
+ * Three things cross the wire here and nothing else: that a family exists and who owns it,
+ * the codes its keepers have issued, and the standing a joiner writes for themselves when
+ * they spend one. No recording, story, person or health record goes through here, and there
+ * is no method on this interface that could carry one. Sharing an archive is a separate
+ * switch with its own interface, [com.arv.app.core.sync.SyncRemote]. docs/PRIVACY.md lists
+ * both. Removing a member deletes one of these rows and carries nothing.
  */
 interface InviteRemote {
 

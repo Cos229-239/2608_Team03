@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import androidx.core.content.getSystemService
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.session.ActiveSession
+import com.arv.app.core.sync.SyncScheduler
 import kotlinx.coroutines.launch
 
 class ArvApp : Application() {
@@ -19,6 +20,10 @@ class ArvApp : Application() {
         com.arv.app.ui.theme.ThemeController.restore(this)
         ServiceLocator.playback.attach(this)
         createRecordingChannel()
+
+        // Edits on this phone go to the family's server a few seconds after they stop, when
+        // this archive is shared. Watching costs nothing when it is not.
+        SyncScheduler.watch(this, ServiceLocator.appScope)
 
         // Work out who this person is in the family and who they descend from. BRANCH
         // visibility reads the result, and it starts empty, so until this finishes
