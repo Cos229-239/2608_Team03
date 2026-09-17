@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.Button
@@ -70,6 +71,7 @@ import com.arv.app.core.model.FamilyLens
 import com.arv.app.core.model.shortName
 import com.arv.app.core.model.underLens
 import com.arv.app.ui.components.PersonAvatar
+import com.arv.app.core.model.MemberRole
 import com.arv.app.core.session.ActiveSession
 import com.arv.app.core.model.Person
 import com.arv.app.core.model.Story
@@ -235,6 +237,7 @@ fun FeedScreen(
     onOpenPerson: (String) -> Unit = {},
     onViewAll: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onInvite: () -> Unit = {},
     viewModel: FeedViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -255,7 +258,8 @@ fun FeedScreen(
                 lens = state.lens,
                 onChooseLens = viewModel::chooseLens,
                 onOpenPerson = onOpenPerson,
-                onOpenSettings = onOpenSettings
+                onOpenSettings = onOpenSettings,
+                onInvite = onInvite
             )
         }
 
@@ -364,7 +368,8 @@ private fun HomeHeader(
     lens: FamilyLens,
     onChooseLens: (FamilyLens) -> Unit,
     onOpenPerson: (String) -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onInvite: () -> Unit
 ) {
     Column(
         Modifier
@@ -391,12 +396,23 @@ private fun HomeHeader(
                 color = ArvHero.on,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false)
+                // All the room the icons leave. A spacer beside it took a weight too, which
+                // split that room in half, and the second icon cut the family's name short.
+                modifier = Modifier.weight(1f)
             )
-            Spacer(Modifier.weight(1f))
-            // Was a painted "Invite family" icon with no onClick. Inviting is not built,
-            // and a control that does nothing is worse than one fewer control, so the
-            // space now goes to something that works.
+            // This was a painted "Invite family" icon with no onClick, removed because a
+            // control that does nothing is worse than one fewer control. Inviting has worked
+            // since 9 September, so the icon is back and now does what it shows. Viewers do
+            // not decide who joins, so they do not see it.
+            if (ActiveSession.role != MemberRole.VIEWER) {
+                IconButton(onClick = onInvite) {
+                    Icon(
+                        Icons.Outlined.PersonAdd,
+                        contentDescription = "Invite someone",
+                        tint = ArvHero.on
+                    )
+                }
+            }
             IconButton(onClick = onOpenSettings) {
                 Icon(
                     Icons.Outlined.Settings,
