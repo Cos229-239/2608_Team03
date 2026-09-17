@@ -6,11 +6,21 @@ import com.arv.app.core.di.ServiceLocator
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
-
+import kotlinx.coroutines.launch
+import com.arv.app.core.model.PromptStatus
 
 class PromptLibraryViewModel(application: Application) : AndroidViewModel(application) {
     private val repo = ServiceLocator.storyRepository(application)
     private val familyId = ServiceLocator.familyId
+
+    init{
+        viewModelScope.launch {
+            repo.seedPromptsIfEmpty(
+                familyId = familyId,
+                now = System.currentTimeMillis()
+            )
+        }
+    }
     val savedPrompts =
         repo.observeSavedPrompts(familyId)
             .stateIn(
@@ -18,4 +28,29 @@ class PromptLibraryViewModel(application: Application) : AndroidViewModel(applic
                 SharingStarted.WhileSubscribed(5_000),
                 emptyList()
             )
+    val prompts =
+        repo.observePromptsFor(familyId, "Suggested")
+            .stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5_000),
+                emptyList()
+            )
+    fun savePrompt(promptId: String) {
+        viewModelScope.launch {
+            repo.setPromptStatus(
+                promptId = promptId,
+                status = PromptStatus.SAVED,
+                now = System.currentTimeMillis()
+            )
+        }
+    }
+    fun removeSavedPrompt(promptId: String){
+        viewModelScope.launch {
+            repo.setPromptStatus(
+                promptId = promptId,
+                status = PromptStatus.SUGGESTED,
+                now = System.currentTimeMillis()
+            )
+        }
+    }
 }

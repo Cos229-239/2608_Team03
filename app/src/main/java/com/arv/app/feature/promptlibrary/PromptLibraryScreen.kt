@@ -30,12 +30,19 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.Alignment
 import androidx.compose.material3.TextButton
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.arv.app.core.model.PromptStatus
 
 @Composable
 fun PromptLibraryScreen(
     modifier: Modifier = Modifier
 ){
     val viewModel: PromptLibraryViewModel = viewModel()
+
+    val savedPrompts by viewModel.savedPrompts.collectAsStateWithLifecycle()
+
+    val prompts by viewModel.prompts.collectAsStateWithLifecycle()
+
 
     var selectedCategory by remember{
         mutableStateOf("Suggested")
@@ -44,6 +51,8 @@ fun PromptLibraryScreen(
     val savedQuestions = remember {
         mutableStateListOf<String>()
     }
+
+
 
     var showOwnQuestion by remember{
         mutableStateOf(false)
@@ -220,6 +229,10 @@ fun PromptLibraryScreen(
         }
         Spacer(modifier = Modifier.height(16.dp))
 
+        val cookingPrompt = prompts.find{
+            it.text == "Who taught you to cook?"
+        }
+
         if (selectedCategory == "Suggested" || selectedCategory == "Food") {
 
             Card(
@@ -243,14 +256,16 @@ fun PromptLibraryScreen(
                         )
                     }
 
-                    val isSaved = savedQuestions.contains("Who taught you to cook?")
+                    val isSaved = cookingPrompt?.status == PromptStatus.SAVED
 
                     OutlinedIconButton(
                         onClick = {
-                            if(!isSaved){
-                                savedQuestions.add("Who taught you to cook?")
-
+                            cookingPrompt?.let { prompt ->
+                                if(!isSaved){
+                                    viewModel.savePrompt(prompt.promptId)
+                                }
                             }
+
                         },
                         modifier = Modifier.size(36.dp)
 
@@ -289,13 +304,20 @@ fun PromptLibraryScreen(
                         )
                     }
 
-                    val isSaved = savedQuestions.contains("What did your street sound like at night?")
+                    val streetPrompt = prompts.find {
+                        it.text == "What did your street sound like at night?"
+                    }
+
+                    val isSaved = streetPrompt?.status == PromptStatus.SAVED
 
                     OutlinedIconButton(
                         onClick = {
-                            if(!isSaved) {
-                                savedQuestions.add("What did your street sound like at night?")
+                            streetPrompt?.let {prompt ->
+                                if(!isSaved) {
+                                    viewModel.savePrompt(prompt.promptId)
+                                }
                             }
+
                         },
                         modifier = Modifier.size(36.dp)
                     ) {
@@ -531,7 +553,7 @@ fun PromptLibraryScreen(
             }
         }
 
-    if(savedQuestions.isNotEmpty()){
+    if(savedPrompts.isNotEmpty()){
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
@@ -541,7 +563,7 @@ fun PromptLibraryScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        savedQuestions.forEach { question ->
+        savedPrompts.forEach { prompt ->
             Card(
                 modifier = Modifier.fillMaxWidth()
                     .padding(vertical = 4.dp)
@@ -555,13 +577,13 @@ fun PromptLibraryScreen(
 
                 ){
                     Text(
-                        text = question,
+                        text = prompt.text,
                         modifier = Modifier.weight(1f)
                     )
 
                     TextButton(
                         onClick = {
-                            savedQuestions.remove(question)
+                            viewModel.removeSavedPrompt(prompt.promptId)
                         }
                     ){
                         Text("Remove")
