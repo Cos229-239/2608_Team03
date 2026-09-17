@@ -38,83 +38,41 @@ class LocalLibrarianService(
 
         // Score everything first, then filter by permission, so the withheld count is
         // honest: "it matched, and you may not read it" is real information.
-        val scored = all.mapNotNull { story ->
-            val score = scoreStory(story, parsed)
-            if (score <= 0) null else story to score
+        val matched = all.mapNotNull { story ->
+            reasonsFor(story, parsed, people).takeIf { it.isNotEmpty() }
+                ?.let { AnswerAssembly.Match(story, it) }
         }
-        if (scored.isEmpty()) return LibrarianOutcome.NoMatches
+        if (matched.isEmpty()) return LibrarianOutcome.NoMatches
 
         val (usable, withheldCount) =
-            MemoryAccess.partition(scored.map { it.first }, viewer, scope, people)
+            MemoryAccess.partition(matched.map { it.story }, viewer, scope, people)
         if (usable.isEmpty()) return LibrarianOutcome.AllWithheld(withheldCount)
 
-        val byScore = usable.sortedWith(
-            compareByDescending<Story> { story -> scored.first { it.first == story }.second }
-                .thenByDescending { it.createdAt }
-        ).take(AnswerAssembly.MAX_SOURCES)
+        val usableIds = usable.map { it.storyId }.toSet()
+        val ranked = AnswerAssembly.rank(matched.filter { it.story.storyId in usableIds })
 
-        val sources = byScore.map { story ->
-            AnswerAssembly.sourceFor(story, parsed, segmentsForStory)
+        val sources = ranked.take(AnswerAssembly.MAX_SOURCES).map { match ->
+            AnswerAssembly.sourceFor(match, parsed, segmentsForStory)
         }
 
         return LibrarianOutcome.Answered(
             LibrarianAnswer(
                 question = question,
                 scope = scope,
-                text = AnswerAssembly.composeLead(byScore, people, withheldCount),
+                text = AnswerAssembly.composeLead(ranked, people, withheldCount),
                 sources = sources,
                 withheldCount = withheldCount
             )
         )
     }
 
-    // --- scoring ---
-
-    private suspend fun scoreStory(story: Story, parsed: QuestionParse): Int {
-        var score = 0
-
-        // People are the strongest signal. "What did Ruth say" should beat any word
-        // overlap, because that is how a family actually asks.
-        if (parsed.personIds.isNotEmpty()) {
-            if (story.narratorIds.any { it in parsed.personIds }) score += 6
-            if (story.subjectPersonIds.any { it in parsed.personIds }) score += 4
-        }
-
-        // A year in the question lands inside the story's era.
-        parsed.years.forEach { year ->
-            val start = story.eraStart
-            val end = story.eraEnd ?: story.eraStart
-            if (start != null && end != null && year in start..end) score += 5
-        }
-
-        val title = story.title.lowercase()
-        parsed.terms.forEach { term ->
-            if (title.contains(term)) score += 3
-            if (story.tags.any { it.lowercase().contains(term) }) score += 2
-        }
-
-        // Where it happened. A family archive holds the same place across decades, and
-        // without this the librarian could not tell Vicksburg 1953 from Vicksburg 1980:
-        // place matched nothing, so the year match alone picked the story. Weighted just
-        // under a year hit so place-plus-year beats either alone.
-        story.placeLabel?.lowercase()?.let { place ->
-            if (parsed.terms.any { it.length > 2 && place.contains(it) }) score += 4
-        }
-
-        // The words inside the recording count. This is what makes it retrieval rather
-        // than filename search: the archive is searched by what people actually said.
-        if (parsed.terms.isNotEmpty() && story.durationMs > 0) {
-            val segments = segmentsForStory(story.storyId)
-            val transcriptHits = segments.sumOf { segment ->
-                val text = segment.text.lowercase()
-                parsed.terms.count { text.contains(it) }
-            }
-            score += minOf(transcriptHits * 2, 8)
-        }
-
-        return score
-    }
-
+    /** Every signal at once. The hive asks the same [Signals] one shelf at a time. */
+    private suspend fun reasonsFor(story: Story, parsed: QuestionParse, people: List<Person>): List<Reason> =
+        people.flatMap { Signals.person(story, it, parsed) } +
+            Signals.era(story, parsed.years) +
+            listOfNotNull(Signals.place(story, parsed)) +
+            Signals.written(story, parsed) +
+            listOfNotNull(Signals.spoken(story, parsed, segmentsForStory))
 }
 
 /**
@@ -128,39 +86,59 @@ class LocalLibrarianService(
 data class QuestionParse(
     val terms: List<String>,
     val personIds: Set<String>,
-    val years: List<Int>
+    val years: List<Int>,
+    /** The whole question as [Matching.normalize] leaves it, for phrases like a place's name. */
+    val text: String = ""
 ) {
+    private val patterns = HashMap<String, Regex>()
+
+    /** The whole-word pattern for one of [terms], built once per question. */
+    fun patternFor(term: String): Regex = patterns.getOrPut(term) { Matching.wordPattern(term) }
+
     companion object {
         private val STOPWORDS = setOf(
             "the", "and", "was", "were", "what", "when", "where", "who", "why", "how",
             "did", "does", "about", "tell", "with", "that", "this", "from", "have",
             "has", "had", "her", "his", "she", "him", "they", "them", "their", "our",
             "your", "you", "for", "are", "can", "could", "would", "will", "say", "said",
-            "talk", "talked", "story", "stories", "memory", "memories", "anything"
+            "talk", "talked", "story", "stories", "memory", "memories", "anything",
+            // Words that ask rather than name. "What happened in Mom's house" is about the
+            // house, and "happened" matched every recording where anything did.
+            "happened", "happen", "happens", "which", "there", "been", "remember", "know", "its",
+            // Contractions arrive without their apostrophe (see Matching.normalize).
+            "whats", "didnt", "dont", "doesnt", "wasnt"
         )
 
         fun of(question: String, people: List<Person>): QuestionParse {
-            val lower = question.lowercase()
+            val text = Matching.normalize(question)
 
             val years = Regex("\\b(1[89]\\d{2}|20\\d{2})\\b")
-                .findAll(lower).map { it.value.toInt() }.toList()
+                .findAll(text).map { it.value.toInt() }.toList()
 
+            // A name is a whole word, so Ray is not found in "array", and "Ruth's" still
+            // finds Ruth. Another name for somebody is matched whole, the way it is written.
             val personIds = people.filter { person ->
-                val names = person.displayName.lowercase().split(" ") + person.alsoKnownAs.map { it.lowercase() }
-                names.any { name -> name.length > 2 && lower.contains(name) }
+                val names = Matching.normalize(person.displayName).split(" ") +
+                    person.alsoKnownAs.map(Matching::normalize)
+                names.any { name -> name.length > 2 && Matching.wordPattern(name).containsMatchIn(text) }
             }.map { it.personId }.toSet()
 
-            val matchedNameWords = people.flatMap {
-                it.displayName.lowercase().split(" ") + it.alsoKnownAs.map { aka -> aka.lowercase() }
+            val nameWords = people.flatMap { person ->
+                Matching.normalize(person.displayName).split(" ") +
+                    person.alsoKnownAs.map(Matching::normalize)
             }.toSet()
 
-            val terms = Regex("[a-z']+").findAll(lower)
-                .map { it.value }
-                .filter { it.length > 2 && it !in STOPWORDS && it !in matchedNameWords }
+            val terms = text.split(" ")
+                .filter { word ->
+                    word.length > 2 &&
+                        word.any(Char::isLetter) &&
+                        word !in STOPWORDS &&
+                        word !in nameWords &&
+                        word.removeSuffix("s") !in nameWords
+                }
                 .distinct()
-                .toList()
 
-            return QuestionParse(terms = terms, personIds = personIds, years = years)
+            return QuestionParse(terms = terms, personIds = personIds, years = years, text = text)
         }
     }
 }

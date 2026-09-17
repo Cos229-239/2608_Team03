@@ -12,6 +12,7 @@ import com.arv.app.core.model.TranscriptSegment
 import com.arv.app.core.model.Visibility
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -278,5 +279,113 @@ class LibrarianHiveTest {
         assertTrue(answered.answer.medicalRecordsPresent)
         assertTrue(answered.answer.text.contains("Bring them to a doctor"))
         assertTrue(answered.answer.routedThrough.contains("the health shelf"))
+    }
+
+    // --- places, and saying how sure an answer is (weekly tester report, 13 September) ---
+
+    private val porch = Story(
+        storyId = "s_porch",
+        title = "The porch swing",
+        kind = StoryKind.AUDIO,
+        placeLabel = "Mom's house",
+        durationMs = 60_000,
+        visibility = Visibility.FAMILY,
+        createdBy = "u_dana",
+        createdAt = 5L
+    )
+
+    private val canning = Story(
+        storyId = "s_canning",
+        title = "Canning tomatoes every August",
+        kind = StoryKind.PHOTO_SET,
+        placeLabel = "Mom's house",
+        visibility = Visibility.FAMILY,
+        createdBy = "u_dana",
+        createdAt = 6L
+    )
+
+    /** Saved with no place. Its recording mentions a house, which is not the same thing. */
+    private val radio = Story(
+        storyId = "s_radio",
+        title = "The gospel station on Sunday",
+        kind = StoryKind.AUDIO,
+        durationMs = 90_000,
+        visibility = Visibility.FAMILY,
+        createdBy = "u_dana",
+        createdAt = 7L
+    )
+
+    private val placeSegments = mapOf(
+        "s_porch" to listOf(
+            TranscriptSegment(assetId = "a_porch", startMs = 0, endMs = 9_000, text = "We sat out there every night it was warm.")
+        ),
+        "s_radio" to listOf(
+            TranscriptSegment(assetId = "a_radio", startMs = 4_000, endMs = 15_000, text = "Sunday mornings the whole house smelled like biscuits and coffee.")
+        )
+    )
+
+    @Test
+    fun `a place asked about finds the memories saved there before a recording that only says its word`() = runBlocking {
+        val outcome = hive(listOf(porch, canning, radio), segments = placeSegments)
+            .ask("What happened in Mom's house?", LibrarianScope.FAMILY, owner, "fam")
+
+        val answer = (outcome as LibrarianOutcome.Answered).answer
+        assertEquals(setOf("s_porch", "s_canning"), answer.sources.take(2).map { it.storyId }.toSet())
+        assertTrue(answer.text, answer.text.startsWith("2 memories are saved with the place Mom's house."))
+        assertTrue(answer.routedThrough.contains("the Mom's house shelf"))
+
+        answer.sources.take(2).forEach { saved ->
+            assertFalse(saved.tentative)
+            assertEquals("Saved with the place Mom's house.", saved.why)
+        }
+        val guess = answer.sources.last()
+        assertEquals("s_radio", guess.storyId)
+        assertTrue(guess.tentative)
+        assertTrue(guess.why!!, guess.why!!.startsWith("Might be related."))
+    }
+
+    @Test
+    fun `a phone keyboard's curly apostrophe asks for the same place`() = runBlocking {
+        val outcome = hive(listOf(porch, canning, radio), segments = placeSegments)
+            .ask("Which stories are explicitly associated with Mom\u2019s house?", LibrarianScope.FAMILY, owner, "fam")
+
+        val answer = (outcome as LibrarianOutcome.Answered).answer
+        assertEquals(setOf("s_porch", "s_canning"), answer.sources.take(2).map { it.storyId }.toSet())
+    }
+
+    @Test
+    fun `a place the family saved outranks a recording with more points from words`() = runBlocking {
+        val houseTitled = radio.copy(title = "The house on Sunday mornings")
+        val outcome = hive(listOf(porch, houseTitled), segments = placeSegments)
+            .ask("What happened in Mom's house?", LibrarianScope.FAMILY, owner, "fam")
+
+        val answer = (outcome as LibrarianOutcome.Answered).answer
+        assertEquals("s_porch", answer.sources.first().storyId)
+    }
+
+    @Test
+    fun `when only a recording's words match, the answer says the memory might be related`() = runBlocking {
+        val outcome = hive(listOf(radio), segments = placeSegments)
+            .ask("What happened in Mom's house?", LibrarianScope.FAMILY, owner, "fam")
+
+        val answer = (outcome as LibrarianOutcome.Answered).answer
+        assertTrue(answer.text, answer.text.contains("might be related"))
+        assertTrue(answer.sources.single().tentative)
+    }
+
+    @Test
+    fun `a word is matched whole, so house is not found in household`() = runBlocking {
+        val chores = Story(
+            storyId = "s_chores",
+            title = "Household chores",
+            kind = StoryKind.DOCUMENT,
+            visibility = Visibility.FAMILY,
+            createdBy = "u_dana",
+            createdAt = 8L
+        )
+        val outcome = hive(listOf(chores), segments = emptyMap())
+            .ask("Tell me about the house", LibrarianScope.FAMILY, owner, "fam")
+
+        assertTrue(outcome is LibrarianOutcome.NoMatches)
     }
 }
