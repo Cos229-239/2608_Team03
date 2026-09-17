@@ -137,7 +137,8 @@ class StoryRepository(
      *
      * Idempotent by name: importing the same file twice updates people rather than
      * creating a second copy of everyone, because the realistic use is importing, fixing
-     * something in the source, and importing again.
+     * something in the source, and importing again. What an import may change about
+     * somebody already here is decided in [FamilyImport.merge].
      *
      * Links are attached to the importing user's own person. That is the only viewpoint the
      * file describes, since every label in it was written relative to whoever compiled it.
@@ -148,61 +149,52 @@ class StoryRepository(
         parsed: FamilyImport.Parsed,
         nowMillis: Long
     ): Int {
-        val existing = db.personDao().all(familyId)
-        val me = existing.firstOrNull { it.linkedUserId == userId }
+        // Reads and writes in one transaction. Otherwise sync could send half a file, and a
+        // pull landing between the plan and the writes could put the same person in twice.
+        val count = db.withTransaction {
+            val existing = db.personDao().all(familyId)
+            val me = existing.firstOrNull { it.linkedUserId == userId }
 
-        // All name resolution happens in FamilyImport.plan, in two passes, so people
-        // defined by this same file can name each other. This function only writes.
-        val plan = FamilyImport.plan(
-            parsed = parsed,
-            existingIdsByName = existing.associate { it.displayName to it.personId },
-            meId = me?.personId,
-            meName = me?.displayName,
-            newId = { "p_" + UUID.randomUUID().toString().take(8) }
-        )
-
-        for (planned in plan.people) {
-            val person = planned.imported
-            db.personDao().upsert(
-                PersonEntity(
-                    personId = planned.personId,
-                    familyId = familyId,
-                    displayName = person.displayName,
-                    alsoKnownAs = person.alsoKnownAs,
-                    birthYear = person.birthYear,
-                    deathYear = person.deathYear,
-                    deathYearEnd = person.deathYearEnd,
-                    note = person.note,
-                    birthPlace = person.birthPlace,
-                    relationLabel = person.relationLabel,
-                    // A stated death counts as much as a dated one. Requiring a year meant
-                    // somebody known to have died, with no year anybody recorded, imported
-                    // as living.
-                    state = if (person.deceased) ProfileState.MEMORIAL
-                    else ProfileState.LIVING,
-                    confidence = person.confidence,
-                    source = person.source,
-                    updatedAt = nowMillis
-                )
+            // All name resolution happens in FamilyImport.plan, in two passes, so people
+            // defined by this same file can name each other. This function only writes.
+            val plan = FamilyImport.plan(
+                parsed = parsed,
+                existingIdsByName = existing.associate { it.displayName to it.personId },
+                meId = me?.personId,
+                meName = me?.displayName,
+                newId = { "p_" + UUID.randomUUID().toString().take(8) }
             )
-        }
 
-        for (edge in plan.edges) {
-            db.relationshipDao().upsert(
-                RelationshipEntity(
-                    familyId = familyId,
-                    fromPersonId = edge.fromId,
-                    toPersonId = edge.toId,
-                    kind = edge.kind,
-                    uncertain = edge.uncertain,
-                    updatedAt = nowMillis
+            for (planned in plan.people) {
+                // Read here rather than from the list above, so a name the file repeats
+                // merges onto its own first row instead of both rows landing on the old one.
+                val current = db.personDao().byId(planned.personId)
+                val row = if (current == null) {
+                    FamilyImport.newPerson(planned.personId, familyId, planned.imported, nowMillis)
+                } else {
+                    FamilyImport.merge(current, planned.imported, nowMillis)
+                }
+                if (row != current) db.personDao().upsert(row)
+            }
+
+            for (edge in plan.edges) {
+                db.relationshipDao().upsert(
+                    RelationshipEntity(
+                        familyId = familyId,
+                        fromPersonId = edge.fromId,
+                        toPersonId = edge.toId,
+                        kind = edge.kind,
+                        uncertain = edge.uncertain,
+                        updatedAt = nowMillis
+                    )
                 )
-            )
+            }
+            plan.people.size
         }
 
         // The graph just changed, so the viewer's own lineage is stale.
         refreshLineage(familyId, userId)
-        return plan.people.size
+        return count
     }
 
     /**
