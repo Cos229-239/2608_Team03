@@ -7,6 +7,8 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Upsert
 import com.arv.app.core.model.MemberRole
+import com.arv.app.core.model.RelationshipKind
+import com.arv.app.core.model.TranscriptStatus
 import com.arv.app.core.model.UploadState
 import com.arv.app.core.model.PromptStatus
 import kotlinx.coroutines.flow.Flow
@@ -14,23 +16,35 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface StoryDao {
 
-    @Query("SELECT * FROM stories WHERE familyId = :familyId ORDER BY createdAt DESC")
+    // Every read a screen, search, export or the librarian makes says deletedAt IS NULL.
+    // A deleted story is hidden, not erased (see StoryEntity.deletedAt), so the filter is
+    // what makes it gone. The few reads without it are named for why they need the rest.
+
+    @Query("SELECT * FROM stories WHERE familyId = :familyId AND deletedAt IS NULL ORDER BY createdAt DESC")
     fun observeRecent(familyId: String): Flow<List<StoryEntity>>
 
     @Query(
         """
         SELECT * FROM stories
-        WHERE familyId = :familyId AND eraStart IS NOT NULL
+        WHERE familyId = :familyId AND eraStart IS NOT NULL AND deletedAt IS NULL
         ORDER BY eraStart ASC, createdAt ASC
         """
     )
     fun observeDated(familyId: String): Flow<List<StoryEntity>>
 
-    @Query("SELECT * FROM stories WHERE familyId = :familyId AND eraStart IS NULL")
+    @Query("SELECT * FROM stories WHERE familyId = :familyId AND eraStart IS NULL AND deletedAt IS NULL")
     fun observeUndated(familyId: String): Flow<List<StoryEntity>>
 
-    @Query("SELECT * FROM stories WHERE storyId = :storyId")
+    @Query("SELECT * FROM stories WHERE storyId = :storyId AND deletedAt IS NULL")
     fun observeById(storyId: String): Flow<StoryEntity?>
+
+    /** One story whether or not it was deleted. Restoring is the one reason to ask. */
+    @Query("SELECT * FROM stories WHERE storyId = :storyId")
+    suspend fun byIdIncludingDeleted(storyId: String): StoryEntity?
+
+    /** What has been deleted in this family and can still come back, newest first. */
+    @Query("SELECT * FROM stories WHERE familyId = :familyId AND deletedAt IS NOT NULL ORDER BY deletedAt DESC")
+    fun observeDeleted(familyId: String): Flow<List<StoryEntity>>
 
     /**
      * Records rather than recordings: marriage certificates, death records, ship
@@ -47,7 +61,7 @@ interface StoryDao {
     @Query(
         """
         SELECT * FROM stories
-        WHERE familyId = :familyId AND kind IN ('DOCUMENT', 'PHOTO_SET')
+        WHERE familyId = :familyId AND kind IN ('DOCUMENT', 'PHOTO_SET') AND deletedAt IS NULL
         ORDER BY (assetCount > 0) ASC, eraStart ASC, title ASC
         """
     )
@@ -61,7 +75,7 @@ interface StoryDao {
     @Query(
         """
         SELECT * FROM stories
-        WHERE familyId = :familyId AND kind = 'AUDIO'
+        WHERE familyId = :familyId AND kind = 'AUDIO' AND deletedAt IS NULL
           AND transcriptStatus IN ('PENDING', 'FAILED')
         ORDER BY createdAt ASC
         """
@@ -82,7 +96,7 @@ interface StoryDao {
      * Unfiltered. Callers MUST run [com.arv.app.core.ai.MemoryAccess]
      * over the result before anything reaches a screen or a model.
      */
-    @Query("SELECT * FROM stories WHERE familyId = :familyId ORDER BY createdAt DESC")
+    @Query("SELECT * FROM stories WHERE familyId = :familyId AND deletedAt IS NULL ORDER BY createdAt DESC")
     suspend fun all(familyId: String): List<StoryEntity>
 
     /**
@@ -94,7 +108,7 @@ interface StoryDao {
         SELECT DISTINCT s.* FROM stories s
         LEFT JOIN assets a ON a.storyId = s.storyId
         LEFT JOIN transcript_segments t ON t.assetId = a.assetId
-        WHERE s.familyId = :familyId
+        WHERE s.familyId = :familyId AND s.deletedAt IS NULL
           AND (s.title LIKE '%' || :query || '%' ESCAPE ''
                OR s.tags LIKE '%' || :query || '%' ESCAPE ''
                OR t.text LIKE '%' || :query || '%' ESCAPE ''
@@ -103,6 +117,43 @@ interface StoryDao {
         """
     )
     suspend fun searchKeyword(familyId: String, query: String): List<StoryEntity>
+
+    /**
+     * Only the status column. Transcribing takes minutes, and writing back the whole row it
+     * read at the start would undo any edit that arrived in the meantime, from this phone or
+     * from another one.
+     */
+    @Query("UPDATE stories SET transcriptStatus = :status WHERE storyId = :storyId")
+    suspend fun setTranscriptStatus(storyId: String, status: TranscriptStatus)
+
+    // --- Sync. Deleted stories included on purpose: a delete is an edit the family needs.
+
+    /** Every story in the family, deleted ones too. What a pull is compared against. */
+    @Query("SELECT * FROM stories WHERE familyId = :familyId")
+    suspend fun allIncludingDeleted(familyId: String): List<StoryEntity>
+
+    /**
+     * Rows holding something the server has not confirmed. Which of them may actually go
+     * is [com.arv.app.core.sync.SyncPolicy]'s decision, not this query's.
+     */
+    @Query("SELECT * FROM stories WHERE familyId = :familyId AND (syncedAt IS NULL OR syncedAt != updatedAt)")
+    suspend fun unsynced(familyId: String): List<StoryEntity>
+
+    @Query("SELECT * FROM stories WHERE familyId = :familyId AND (syncedAt IS NULL OR syncedAt != updatedAt)")
+    fun observeUnsynced(familyId: String): Flow<List<StoryEntity>>
+
+    /** Null says the server no longer holds it: a story taken back to private. */
+    @Query("UPDATE stories SET syncedAt = :at WHERE storyId = :storyId")
+    suspend fun markSynced(storyId: String, at: Long?)
+
+    @Query("UPDATE stories SET refusedAt = :at WHERE storyId = :storyId")
+    suspend fun markRefused(storyId: String, at: Long)
+
+    @Query("UPDATE stories SET refusedAt = NULL WHERE familyId = :familyId")
+    suspend fun clearRefusals(familyId: String)
+
+    @Query("DELETE FROM stories WHERE storyId = :storyId")
+    suspend fun deleteById(storyId: String)
 
     @Upsert
     suspend fun upsert(story: StoryEntity)
@@ -131,7 +182,8 @@ interface PersonDao {
     @Query(
         """
         SELECT COALESCE(SUM(durationMs), 0) FROM stories
-        WHERE familyId = :familyId AND narratorIds LIKE '%' || :personId || '%'
+        WHERE familyId = :familyId AND deletedAt IS NULL
+          AND narratorIds LIKE '%' || :personId || '%'
         """
     )
     fun observeRecordedMsFor(familyId: String, personId: String): Flow<Long>
@@ -141,6 +193,22 @@ interface PersonDao {
 
     @Upsert
     suspend fun upsertAll(people: List<PersonEntity>)
+
+    /** As [StoryDao.unsynced]. */
+    @Query("SELECT * FROM people WHERE familyId = :familyId AND (syncedAt IS NULL OR syncedAt != updatedAt)")
+    suspend fun unsynced(familyId: String): List<PersonEntity>
+
+    @Query("SELECT * FROM people WHERE familyId = :familyId AND (syncedAt IS NULL OR syncedAt != updatedAt)")
+    fun observeUnsynced(familyId: String): Flow<List<PersonEntity>>
+
+    @Query("UPDATE people SET syncedAt = :at WHERE personId = :personId")
+    suspend fun markSynced(personId: String, at: Long)
+
+    @Query("UPDATE people SET refusedAt = :at WHERE personId = :personId")
+    suspend fun markRefused(personId: String, at: Long)
+
+    @Query("UPDATE people SET refusedAt = NULL WHERE familyId = :familyId")
+    suspend fun clearRefusals(familyId: String)
 
     /**
      * Points a person at the photograph that stands for their face, or clears it.
@@ -183,6 +251,9 @@ interface RelationshipDao {
     )
     fun observeFor(familyId: String, personId: String): Flow<List<RelationshipEntity>>
 
+    @Query("SELECT * FROM relationships WHERE fromPersonId = :from AND toPersonId = :to AND kind = :kind")
+    suspend fun byKey(from: String, to: String, kind: RelationshipKind): RelationshipEntity?
+
     @Upsert
     suspend fun upsert(relationship: RelationshipEntity)
 
@@ -191,6 +262,22 @@ interface RelationshipDao {
 
     @Delete
     suspend fun delete(relationship: RelationshipEntity)
+
+    /** As [StoryDao.unsynced]. */
+    @Query("SELECT * FROM relationships WHERE familyId = :familyId AND (syncedAt IS NULL OR syncedAt != updatedAt)")
+    suspend fun unsynced(familyId: String): List<RelationshipEntity>
+
+    @Query("SELECT * FROM relationships WHERE familyId = :familyId AND (syncedAt IS NULL OR syncedAt != updatedAt)")
+    fun observeUnsynced(familyId: String): Flow<List<RelationshipEntity>>
+
+    @Query("UPDATE relationships SET syncedAt = :at WHERE fromPersonId = :from AND toPersonId = :to AND kind = :kind")
+    suspend fun markSynced(from: String, to: String, kind: RelationshipKind, at: Long)
+
+    @Query("UPDATE relationships SET refusedAt = :at WHERE fromPersonId = :from AND toPersonId = :to AND kind = :kind")
+    suspend fun markRefused(from: String, to: String, kind: RelationshipKind, at: Long)
+
+    @Query("UPDATE relationships SET refusedAt = NULL WHERE familyId = :familyId")
+    suspend fun clearRefusals(familyId: String)
 }
 
 @Dao
@@ -209,6 +296,10 @@ interface AssetDao {
     /** One-shot read, for writing the whole archive out to a file. */
     @Query("SELECT * FROM assets WHERE familyId = :familyId ORDER BY createdAt ASC")
     suspend fun forFamily(familyId: String): List<AssetEntity>
+
+    /** One-shot read of a story's assets, for work that runs inside a transaction. */
+    @Query("SELECT * FROM assets WHERE storyId = :storyId ORDER BY createdAt ASC")
+    suspend fun forStory(storyId: String): List<AssetEntity>
 
     @Query("SELECT * FROM assets WHERE uploadState IN (:states) ORDER BY createdAt ASC")
     fun observeByUploadState(states: List<UploadState>): Flow<List<AssetEntity>>
@@ -270,7 +361,7 @@ interface TranscriptDao {
         SELECT s.* FROM stories s
         JOIN assets a ON a.storyId = s.storyId
         JOIN transcript_segments t ON t.assetId = a.assetId
-        WHERE t.id = :segmentId
+        WHERE t.id = :segmentId AND s.deletedAt IS NULL
         """
     )
     suspend fun storyForSegment(segmentId: Long): StoryEntity?
@@ -300,6 +391,13 @@ interface OutboxDao {
     /** A deleted story's queued uploads must die with it, or the queue uploads ghosts. */
     @Query("DELETE FROM outbox WHERE docId = :docId")
     suspend fun deleteForDoc(docId: String)
+
+    /** Removals waiting to reach the server for one collection, oldest first. */
+    @Query("SELECT * FROM outbox WHERE op = 'DELETE' AND collectionPath = :collectionPath ORDER BY createdAt ASC")
+    suspend fun pendingDeletes(collectionPath: String): List<OutboxEntity>
+
+    @Query("SELECT * FROM outbox WHERE op = 'DELETE' AND collectionPath = :collectionPath ORDER BY createdAt ASC")
+    fun observePendingDeletes(collectionPath: String): Flow<List<OutboxEntity>>
 }
 
 @Dao
@@ -338,6 +436,16 @@ interface PromptDao {
 }
 
 @Dao
+interface FamilyDao {
+
+    @Query("SELECT * FROM families WHERE familyId = :familyId")
+    suspend fun byId(familyId: String): FamilyEntity?
+
+    @Upsert
+    suspend fun upsert(family: FamilyEntity)
+}
+
+@Dao
 interface MemberDao {
 
     @Query("SELECT * FROM members WHERE familyId = :familyId AND userId = :userId")
@@ -346,7 +454,10 @@ interface MemberDao {
     @Query("SELECT * FROM members WHERE familyId = :familyId ORDER BY joinedAt ASC")
     fun observeAll(familyId: String): Flow<List<MemberEntity>>
 
-    /** Every family this account belongs to. The archive picker, once there is one. */
+    @Query("SELECT * FROM members WHERE familyId = :familyId")
+    suspend fun all(familyId: String): List<MemberEntity>
+
+    /** Every family this account belongs to. What the archive picker offers after sign-in. */
     @Query("SELECT * FROM members WHERE userId = :userId ORDER BY joinedAt ASC")
     suspend fun familiesFor(userId: String): List<MemberEntity>
 

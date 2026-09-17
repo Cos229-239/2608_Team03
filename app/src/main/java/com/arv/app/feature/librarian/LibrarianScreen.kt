@@ -185,10 +185,23 @@ fun LibrarianScreen(
                                         onClick = { onOpenStory(source.storyId) },
                                         label = { Text(source.provenance.label()) }
                                     )
-                                    Text(
-                                        source.quote,
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            source.quote,
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                        // Why it was picked, so a family can tell a memory
+                                        // saved at the place they asked about from one that
+                                        // only mentions a word from the question.
+                                        source.why?.let { why ->
+                                            Text(
+                                                why,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontStyle = if (source.tentative) FontStyle.Italic else FontStyle.Normal,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }

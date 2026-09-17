@@ -121,6 +121,35 @@ class LocalLibrarianServiceTest {
     }
 
     @Test
+    fun `finds the memories saved at a place, and ranks them like the hive does`() = runBlocking {
+        val porch = levee.copy(
+            storyId = "s_porch", title = "The porch swing", narratorIds = emptyList(), tags = emptyList(),
+            eraStart = null, eraEnd = null, placeLabel = "Mom's house", durationMs = 0L, createdAt = 5L
+        )
+        val canning = porch.copy(storyId = "s_canning", title = "Canning tomatoes every August", createdAt = 6L)
+        val radio = porch.copy(
+            storyId = "s_radio", title = "The gospel station on Sunday", placeLabel = null,
+            durationMs = 90_000, createdAt = 7L
+        )
+        val said = mapOf(
+            "s_radio" to listOf(
+                TranscriptSegment(
+                    assetId = "a_radio", startMs = 4_000, endMs = 15_000,
+                    text = "Sunday mornings the whole house smelled like biscuits and coffee."
+                )
+            )
+        )
+
+        val outcome = service(listOf(porch, canning, radio), segments = said)
+            .ask("What happened in Mom's house?", LibrarianScope.FAMILY, owner, "fam")
+
+        val answer = (outcome as LibrarianOutcome.Answered).answer
+        assertEquals(setOf("s_porch", "s_canning"), answer.sources.take(2).map { it.storyId }.toSet())
+        assertTrue(answer.text, answer.text.startsWith("2 memories are saved with the place Mom's house."))
+        assertTrue(answer.sources.last().tentative)
+    }
+
+    @Test
     fun `unrelated question returns NoMatches, never an invented answer`() = runBlocking {
         val outcome = service(listOf(levee, shipyard))
             .ask("Tell me about spaceships", LibrarianScope.FAMILY, owner, "fam")

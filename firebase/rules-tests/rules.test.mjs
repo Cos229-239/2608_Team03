@@ -16,7 +16,8 @@ import {
   assertFails
 } from '@firebase/rules-unit-testing'
 import {
-  doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, writeBatch
+  doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, writeBatch,
+  runTransaction
 } from 'firebase/firestore'
 import { ref, uploadBytes, getBytes } from 'firebase/storage'
 
@@ -330,6 +331,14 @@ test('people are added by anyone who can contribute', async () => {
   await assertFails(setDoc(doc(as('u_contrib'), `families/${FAM}/people/p_new`), { familyId: OTHER, displayName: 'New' }))
 })
 
+test('a steward answers for the person they steward whatever their role, and only about consent', async () => {
+  const ruth = `families/${FAM}/people/p_ruth`
+  const answer = { consentGranted: false, postMortemOk: true, consentDeclined: false, consentDecidedAt: 9, consentMethod: 'ON_THEIR_BEHALF', consentRecordedBy: 'u_steward', updatedAt: 9 }
+  await assertSucceeds(updateDoc(doc(as('u_steward'), ruth), answer))
+  await assertFails(updateDoc(doc(as('u_steward'), ruth), { displayName: 'Ruth D.', updatedAt: 10 }))
+  await assertFails(updateDoc(doc(as('u_viewer'), ruth), { ...answer, consentRecordedBy: 'u_viewer' }))
+})
+
 test('invites are written by keepers of the family they open', async () => {
   await assertSucceeds(setDoc(doc(as('u_keeper'), 'invites/CODE2'), invite('CODE2', 'u_keeper')))
   await assertFails(setDoc(doc(as('u_contrib'), 'invites/CODE3'), invite('CODE3', 'u_contrib')))
@@ -401,6 +410,128 @@ test('assets and transcripts read like their story', async () => {
   await assertFails(setDoc(doc(as('u_owner'), `families/${FAM}/transcripts/a_new`), { ...story(), storyId: 's_family', status: 'READY' }))
   await assertSucceeds(updateDoc(doc(as('u_contrib'), `families/${FAM}/transcripts/a_family`), { fullText: 'corrected words' }))
   await assertFails(updateDoc(doc(as('u_viewer'), `families/${FAM}/transcripts/a_family`), { fullText: 'x' }))
+})
+
+// ---------------------------------------------------------------- sync between phones
+
+// The queries FirestoreSyncRemote.storyQueries builds, built the same way: familyId and
+// restricted on every one, keepers asking for restricted too, and branch stories asked for by
+// the ancestors on the member row the server holds, ten at a time.
+const syncStoryQueries = (db, uid, keeper, ancestors) => {
+  const out = []
+  for (const restricted of keeper ? [false, true] : [false]) {
+    const base = [where('familyId', '==', FAM), where('restricted', '==', restricted)]
+    out.push(query(stories(db), ...base, where('visibility', '==', 'FAMILY')))
+    out.push(query(stories(db), ...base, where('visibility', '==', 'SELECTED'), where('sharedWithUserIds', 'array-contains', uid)))
+    out.push(query(stories(db), ...base, where('visibility', '==', 'SELECTED'), where('createdBy', '==', uid)))
+    for (let i = 0; i < ancestors.length; i += 10) {
+      out.push(query(stories(db), ...base, where('visibility', '==', 'BRANCH'), where('branchRootPersonId', 'in', ancestors.slice(i, i + 10))))
+    }
+  }
+  return out
+}
+
+// Everything a phone's pull asks for, as the phone asks for it. Returns the story ids it got.
+const pull = async (uid) => {
+  const db = as(uid)
+  const mine = await assertSucceeds(getDoc(doc(db, `families/${FAM}/members/${uid}`)))
+  const role = mine.data().role
+  const ancestors = mine.data().ancestorPersonIds
+  await assertSucceeds(getDocs(collection(db, `families/${FAM}/members`)))
+  await assertSucceeds(getDocs(collection(db, `families/${FAM}/people`)))
+  await assertSucceeds(getDocs(collection(db, `families/${FAM}/relationships`)))
+  const ids = new Set()
+  for (const q of syncStoryQueries(db, uid, role === 'OWNER' || role === 'KEEPER', ancestors)) {
+    const snap = await assertSucceeds(getDocs(q))
+    snap.forEach((d) => ids.add(d.id))
+  }
+  return [...ids].sort()
+}
+
+// What SyncDocs.story writes: every field, the null and false ones included.
+const phoneStory = (id, over = {}) => ({
+  storyId: id,
+  familyId: FAM,
+  title: 'Sent from a phone',
+  kind: 'AUDIO',
+  area: 'STORIES',
+  narratorIds: [],
+  subjectPersonIds: [],
+  eraStart: null,
+  eraEnd: null,
+  eraPrecision: 'UNKNOWN',
+  placeLabel: null,
+  tags: [],
+  visibility: 'FAMILY',
+  aiUsePolicy: 'SUMMARY_OK',
+  provenance: 'AUTHENTIC_RECORDING',
+  sharedWithUserIds: [],
+  restricted: false,
+  branchRootPersonId: null,
+  durationMs: 0,
+  assetCount: 0,
+  primaryAssetId: null,
+  createdBy: 'u_contrib',
+  createdAt: 1,
+  updatedAt: 1,
+  deletedAt: null,
+  deletedBy: null,
+  ...over
+})
+
+test('every query a pull makes is accepted, and each role gets exactly what it may read', async () => {
+  // s_health is here only because the seed writes one; a phone never sends a health record,
+  // and a phone that receives one drops it (SyncMerge). The rules do not read the area.
+  assert.deepEqual(await pull('u_owner'), ['s_branch', 's_family', 's_health', 's_restricted'])
+  assert.deepEqual(await pull('u_keeper'), ['s_branch', 's_family', 's_health', 's_restricted'])
+  assert.deepEqual(await pull('u_contrib'), ['s_family', 's_health', 's_selected'])
+  assert.deepEqual(await pull('u_viewer'), ['s_branch', 's_family', 's_health', 's_selected'])
+  assert.deepEqual(await pull('u_steward'), ['s_family', 's_health'])
+})
+
+test('a pull by somebody removed from the family stops at the member list', async () => {
+  await assertSucceeds(deleteDoc(doc(as('u_owner'), `families/${FAM}/members/u_contrib`)))
+  await assertFails(getDocs(collection(as('u_contrib'), `families/${FAM}/members`)))
+})
+
+test('a story sent from a phone is accepted as its creator\'s, and refused in anyone else\'s name', async () => {
+  await assertSucceeds(setDoc(doc(as('u_contrib'), S('s_new')), phoneStory('s_new')))
+  await assertFails(setDoc(doc(as('u_viewer'), S('s_new2')), phoneStory('s_new2', { createdBy: 'u_viewer' })))
+  await assertFails(setDoc(doc(as('u_keeper'), S('s_new3')), phoneStory('s_new3')))
+})
+
+test('a story not on the server cannot be read to check it, which is why a new one is written straight', async () => {
+  await assertFails(getDoc(doc(as('u_contrib'), S('s_not_there'))))
+  // One that is there goes through the later-edit check: read, then write, in a transaction.
+  await assertSucceeds(setDoc(doc(as('u_contrib'), S('s_sent')), phoneStory('s_sent')))
+  const db = as('u_contrib')
+  await assertSucceeds(runTransaction(db, async (tx) => {
+    const theirs = await tx.get(doc(db, S('s_sent')))
+    assert.equal(theirs.data().updatedAt, 1)
+    tx.set(doc(db, S('s_sent')), phoneStory('s_sent', { title: 'Edited', updatedAt: 2 }))
+  }))
+})
+
+test('a delete is an edit: whoever may edit a story may hide it and bring it back, and nobody else', async () => {
+  await assertSucceeds(updateDoc(doc(as('u_contrib'), S('s_family')), { deletedAt: 5, deletedBy: 'u_contrib', updatedAt: 5 }))
+  await assertSucceeds(updateDoc(doc(as('u_keeper'), S('s_family')), { deletedAt: null, deletedBy: null, updatedAt: 6 }))
+  await assertFails(updateDoc(doc(as('u_viewer'), S('s_family')), { deletedAt: 7, deletedBy: 'u_viewer', updatedAt: 7 }))
+  await assertFails(updateDoc(doc(as('u_keeper'), S('s_health')), { deletedAt: 8, deletedBy: 'u_keeper', updatedAt: 8 }))
+})
+
+test('taking a story back to private removes it from the server, and only an editor can', async () => {
+  await assertFails(deleteDoc(doc(as('u_viewer'), S('s_family'))))
+  await assertSucceeds(deleteDoc(doc(as('u_contrib'), S('s_family'))))
+  assert.ok(!(await pull('u_viewer')).includes('s_family'))
+})
+
+test('anyone who can contribute adds a family link, and only a keeper removes one', async () => {
+  const link = `families/${FAM}/relationships/p_ruth~PARENT~p_contrib`
+  const edge = { familyId: FAM, fromPersonId: 'p_ruth', toPersonId: 'p_contrib', kind: 'PARENT', uncertain: false, updatedAt: 1 }
+  await assertSucceeds(setDoc(doc(as('u_contrib'), link), edge))
+  await assertFails(setDoc(doc(as('u_viewer'), link), { ...edge, uncertain: true, updatedAt: 2 }))
+  await assertFails(deleteDoc(doc(as('u_contrib'), link)))
+  await assertSucceeds(deleteDoc(doc(as('u_keeper'), link)))
 })
 
 // ---------------------------------------------------------------- storage

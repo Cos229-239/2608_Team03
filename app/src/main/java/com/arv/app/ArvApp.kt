@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import androidx.core.content.getSystemService
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.core.session.ActiveSession
+import com.arv.app.core.sync.SyncScheduler
 import kotlinx.coroutines.launch
 
 class ArvApp : Application() {
@@ -20,6 +21,10 @@ class ArvApp : Application() {
         ServiceLocator.playback.attach(this)
         createRecordingChannel()
 
+        // Edits on this phone go to the family's server a few seconds after they stop, when
+        // this archive is shared. Watching costs nothing when it is not.
+        SyncScheduler.watch(this, ServiceLocator.appScope)
+
         // Work out who this person is in the family and who they descend from. BRANCH
         // visibility reads the result, and it starts empty, so until this finishes
         // branch-scoped material is hidden rather than shown. That is the right way round:
@@ -30,6 +35,11 @@ class ArvApp : Application() {
         if (familyId != null && userId != null) {
             ServiceLocator.appScope.launch {
                 runCatching { ServiceLocator.storyRepository(this@ArvApp).refreshLineage(familyId, userId) }
+                // An archive from before names were kept learns its name from the session
+                // that has been holding it, so a sign-out later can still offer it back.
+                runCatching {
+                    ServiceLocator.storyRepository(this@ArvApp).rememberFamily(familyId, ActiveSession.familyName)
+                }
                 // Whatever transcription the last run left behind, picked back up. A
                 // crash must cost a retry, never a permanently stuck "Transcribing".
                 runCatching {
