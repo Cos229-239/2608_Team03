@@ -43,6 +43,8 @@ fun PromptLibraryScreen(
 
     val prompts by viewModel.prompts.collectAsStateWithLifecycle()
 
+    val myQuestions by viewModel.myQuestions.collectAsStateWithLifecycle()
+
 
     var selectedCategory by remember{
         mutableStateOf("Suggested")
@@ -354,14 +356,20 @@ fun PromptLibraryScreen(
                         )
                     }
 
-                    val isSaved = savedQuestions.contains("What's a word your family used that nobody else did?")
+                    val wordPrompt = prompts.find {
+                        it.text == "What's a word your family used that nobody else did?"
+                    }
+
+                    val isSaved = wordPrompt?.status == PromptStatus.SAVED
 
                     OutlinedIconButton(
                         onClick = {
-                            if(!isSaved) {
-                                savedQuestions.add("What's a word your family used that nobody else did?")
-
+                            wordPrompt?.let { prompt ->
+                                if(!isSaved) {
+                                    viewModel.savePrompt(prompt.promptId)
+                                }
                             }
+
                         },
                         modifier = Modifier.size(36.dp)
                     ) {
@@ -398,13 +406,20 @@ fun PromptLibraryScreen(
                         )
                     }
 
-                    val isSaved = savedQuestions.contains("Tell me about a day you'd live again.")
+                    val dayPrompt = prompts.find {
+                        it.text == "Tell me about a day you'd live again."
+                    }
+
+                    val isSaved = dayPrompt?.status == PromptStatus.SAVED
 
                     OutlinedIconButton(
                         onClick = {
-                            if(!isSaved) {
-                                savedQuestions.add("Tell me about a day you'd live again.")
+                            dayPrompt?.let { prompt ->
+                                if(!isSaved) {
+                                    viewModel.savePrompt(prompt.promptId)
+                                }
                             }
+
                         },
                         modifier = Modifier.size(36.dp)
                     ) {
@@ -443,14 +458,21 @@ fun PromptLibraryScreen(
                         )
                     }
 
-                    val isSaved = savedQuestions.contains("What was your first job, and what do you remember most about it?")
+                    val jobPrompt = prompts.find {
+                        it.text == "What was your first job, and what do you remember most about it?"
+                    }
+
+                    val isSaved = jobPrompt?.status == PromptStatus.SAVED
 
                     OutlinedIconButton(
                         onClick = {
-                            if (!isSaved) {
-                                savedQuestions.add("What was your first job, and what do you remember most about it?")
+                            jobPrompt?.let { prompt ->
+                                if (!isSaved) {
+                                    viewModel.savePrompt(prompt.promptId)
 
+                                }
                             }
+
                         },
                         modifier = Modifier.size(36.dp)
                     ) {
@@ -489,14 +511,20 @@ fun PromptLibraryScreen(
                         )
                     }
 
-                    val isSaved = savedQuestions.contains("What was one difficult time your family made it through together?")
+                    val hardThingsPrompt = prompts.find {
+                        it.text == "What was one difficult time your family made it through together?"
+                    }
+
+                    val isSaved = hardThingsPrompt?.status == PromptStatus.SAVED
 
                     OutlinedIconButton(
                         onClick = {
-                            if(!isSaved) {
-                                savedQuestions.add("What was one difficult time your family made it through together?")
-
+                            hardThingsPrompt?.let { prompt ->
+                                if(!isSaved) {
+                                    viewModel.savePrompt(prompt.promptId)
+                                }
                             }
+
                         },
                         modifier = Modifier.size(36.dp)
                     ) {
@@ -534,14 +562,20 @@ fun PromptLibraryScreen(
                         )
                     }
 
-                    val isSaved = savedQuestions.contains("Was there a tradition, prayer, or belief that brought your family comfort?")
+                    val faithPrompt = prompts.find {
+                        it.text == "Was there a tradition, prayer, or belief that brought your family comfort?"
+                    }
+
+                    val isSaved = faithPrompt?.status == PromptStatus.SAVED
 
                     OutlinedIconButton(
                         onClick = {
-                            if(!isSaved) {
-                                savedQuestions.add("Was there a tradition, prayer, or belief that brought your family comfort?")
-
+                            faithPrompt?.let { prompt ->
+                                if(!isSaved) {
+                                    viewModel.savePrompt(prompt.promptId)
+                                }
                             }
+
                         },
                         modifier = Modifier.size(36.dp)
                     ) {
@@ -594,8 +628,9 @@ fun PromptLibraryScreen(
         }
 
    }
-
         Spacer(modifier = Modifier.height(16.dp))
+
+
 
      if(!showOwnQuestion){
          OutlinedButton(
@@ -629,7 +664,7 @@ fun PromptLibraryScreen(
          Button(
              onClick = {
                  if (ownQuestion.isNotBlank()) {
-                     savedQuestions.add(ownQuestion)
+                     viewModel.addUserPrompt(ownQuestion)
                      ownQuestion = ""
                      showOwnQuestion = false
                    }

@@ -35,11 +35,30 @@ class PromptLibraryViewModel(application: Application) : AndroidViewModel(applic
                 SharingStarted.WhileSubscribed(5_000),
                 emptyList()
             )
+
+    val myQuestions =
+        repo.observePromptsFor(familyId, "My Questions")
+            .stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5_000),
+                emptyList()
+            )
+
     fun savePrompt(promptId: String) {
         viewModelScope.launch {
             repo.setPromptStatus(
                 promptId = promptId,
                 status = PromptStatus.SAVED,
+                now = System.currentTimeMillis()
+            )
+        }
+    }
+    fun addUserPrompt(text: String) {
+        viewModelScope.launch {
+            repo.addUserPrompt(
+                familyId = familyId,
+                text = text,
+                category = "My Questions",
                 now = System.currentTimeMillis()
             )
         }
