@@ -1077,12 +1077,93 @@ class StoryRepository(
             true
         }
 
+    /**
+     * Erases a deleted story for good: its row, its assets, its transcript, its place in the
+     * queue, and its files. Gone from the server too when the server had it and this account
+     * may take it off.
+     *
+     * Only from Recently deleted, so nothing is erased that was not deleted first and given
+     * its thirty days. [purgeExpiredDeleted] is the same act on a timer.
+     */
+    suspend fun eraseStory(
+        storyId: String,
+        viewer: Viewer,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean {
+        val entity = db.storyDao().byIdIncludingDeleted(storyId)
+            ?.takeIf { it.deletedAt != null } ?: return false
+        if (!MemoryAccess.canEdit(entity.toDomain(), viewer)) return false
+        erase(entity, fromServer = true, nowMillis = nowMillis)
+        return true
+    }
+
+    /**
+     * Erases every story whose thirty days in Recently deleted have run out.
+     *
+     * Runs on every launch. A phone erases its own copy whatever its account may do, because
+     * a hidden story it cannot edit is still a recording sitting on this phone; the server
+     * copy is taken off by a phone whose account may, and the others let their copy go.
+     */
+    suspend fun purgeExpiredDeleted(
+        familyId: String,
+        viewer: Viewer,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Int {
+        val expired = db.storyDao().allIncludingDeleted(familyId)
+            .filter { SyncPolicy.dueToErase(it.deletedAt, nowMillis) }
+        expired.forEach { story ->
+            erase(story, fromServer = MemoryAccess.canEdit(story.toDomain(), viewer), nowMillis = nowMillis)
+        }
+        return expired.size
+    }
+
+    /**
+     * The rows first, in one transaction, then the files.
+     *
+     * That order on purpose: a crash between the two leaves files nothing points at, which
+     * costs disk. The other order leaves a listed story whose recording is already gone.
+     */
+    private suspend fun erase(entity: StoryEntity, fromServer: Boolean, nowMillis: Long) {
+        val assets = db.assetDao().forStory(entity.storyId)
+        db.withTransaction {
+            for (asset in assets) {
+                db.transcriptDao().clearForAsset(asset.assetId)
+                db.outboxDao().deleteForDoc(asset.assetId)
+            }
+            db.assetDao().deleteForStory(entity.storyId)
+            db.outboxDao().deleteForDoc(entity.storyId)
+            db.storyDao().deleteById(entity.storyId)
+            // The server holds a copy and this phone is erasing the last local trace of it,
+            // so the row that would have carried the removal is about to be gone. The queue
+            // carries it instead, the same way a removed family link travels.
+            if (fromServer && entity.syncedAt != null) {
+                db.outboxDao().enqueue(
+                    OutboxEntity(
+                        op = OutboxOp.DELETE,
+                        collectionPath = SyncPaths.stories(entity.familyId),
+                        docId = entity.storyId,
+                        payloadJson = "{}",
+                        createdAt = nowMillis
+                    )
+                )
+            }
+        }
+        for (asset in assets) {
+            runCatching {
+                val f = File(asset.localPath)
+                if (f.exists()) f.delete()
+            }
+        }
+    }
+
     /** One entry in Recently deleted. Who deleted it is a name when the archive knows one. */
     data class DeletedStory(
         val storyId: String,
         val title: String,
         val deletedAt: Long,
-        val deletedByName: String?
+        val deletedByName: String?,
+        /** When this one is erased for good if nobody brings it back. */
+        val erasedAt: Long
     )
 
     /**
@@ -1101,7 +1182,8 @@ class StoryRepository(
                         storyId = row.storyId,
                         title = row.title,
                         deletedAt = row.deletedAt ?: 0L,
-                        deletedByName = people.firstOrNull { it.linkedUserId == row.deletedBy }?.displayName
+                        deletedByName = people.firstOrNull { it.linkedUserId == row.deletedBy }?.displayName,
+                        erasedAt = (row.deletedAt ?: 0L) + SyncPolicy.ERASE_AFTER_MS
                     )
                 }
         }.flowOn(Dispatchers.IO)

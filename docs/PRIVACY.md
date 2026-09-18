@@ -202,8 +202,13 @@ For an archive that is not shared there is no retention schedule, because none o
 on a server. It lives on your phone for as long as you keep it there.
 
 For a shared archive, what sharing sent stays in the database for as long as the family
-keeps the archive. Deleting a story hides it rather than erasing it, so it can be brought
-back. There is no in-app way yet to erase a shared archive from the database;
+keeps the archive.
+
+Deleting a story hides it for thirty days, on this phone and on every phone the archive is
+shared with, so a mis-tap can be undone. After that it is erased for good: the recording,
+the transcript, the record of it, and the copy on the server. Recently deleted, in Settings,
+lists what is waiting, says the day each one goes, and has a Delete forever button that does
+it now. There is no in-app way yet to erase a whole shared archive from the database;
 `docs/PLAY_DATA_SAFETY.md` lists that as a blocker.
 
 The family name, membership rows and invitation codes described above stay in the database

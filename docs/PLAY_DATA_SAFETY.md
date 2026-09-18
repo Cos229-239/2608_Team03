@@ -111,11 +111,12 @@ What it needs:
 - Removal of the family, member and invitation rows Firestore holds for that account,
   since deleting the Firebase account alone leaves them behind.
 
-**2. Erasing a shared archive.** With sharing on, a family's stories, people and links sit
-in Firestore until somebody removes them, and nothing in the app can yet. Deleting a story
-hides it on purpose, so it can be restored. Play's deletion requirement needs a real erase:
-a keeper action that removes the archive's documents, and a written answer about what
-happens to what other members already hold.
+**2. Erasing a shared archive.** A single story now erases for real: hidden for thirty days
+so it can be brought back, then erased on every phone and on the server, with a Delete
+forever button for doing it sooner. What is still missing is the whole archive. A family's
+people, links and family record sit in Firestore until somebody removes them, and nothing in
+the app can. Play's deletion requirement needs a keeper action that removes the archive's
+documents, and a written answer about what happens to what other members already hold.
 
 **3. A hosted privacy policy URL.** Play requires the policy at a public address.
 `docs/PRIVACY.md` is written and has an unfilled contact placeholder.

@@ -40,6 +40,12 @@ class ArvApp : Application() {
                 runCatching {
                     ServiceLocator.storyRepository(this@ArvApp).rememberFamily(familyId, ActiveSession.familyName)
                 }
+                // Anything that has sat in Recently deleted for thirty days is erased now,
+                // files included. A delete that never erases is not a delete.
+                runCatching {
+                    ServiceLocator.storyRepository(this@ArvApp)
+                        .purgeExpiredDeleted(familyId, ServiceLocator.viewer)
+                }
                 // Whatever transcription the last run left behind, picked back up. A
                 // crash must cost a retry, never a permanently stuck "Transcribing".
                 runCatching {

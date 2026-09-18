@@ -46,6 +46,19 @@ object SyncPolicy {
     }
 
     /**
+     * How long a deleted story waits in Recently deleted before it is erased for good.
+     *
+     * A delete that never erases is a promise the app cannot keep: the recording stays on the
+     * phone, and on the server if it was shared, for as long as the archive lives. Thirty days
+     * is what a phone's own trash gives somebody to change their mind.
+     */
+    const val ERASE_AFTER_MS = 30L * 24 * 60 * 60 * 1000
+
+    /** True once a deleted story has waited out [ERASE_AFTER_MS]. */
+    fun dueToErase(deletedAt: Long?, now: Long): Boolean =
+        deletedAt != null && now - deletedAt >= ERASE_AFTER_MS
+
+    /**
      * The updatedAt for an edit: now, or one past the version it replaces when this phone's
      * clock is behind the phone that wrote that version.
      *
