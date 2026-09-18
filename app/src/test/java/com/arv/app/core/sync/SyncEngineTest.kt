@@ -41,13 +41,15 @@ class SyncEngineTest {
         people: List<PersonEntity> = emptyList(),
         edges: List<RelationshipEntity> = emptyList(),
         members: List<MemberEntity> = emptyList(),
-        removals: List<OutboxEntity> = emptyList()
+        removals: List<OutboxEntity> = emptyList(),
+        storyRemovals: List<OutboxEntity> = emptyList()
     ) : SyncLocal {
         val stories = stories.associateBy { it.storyId }.toMutableMap()
         val people = people.associateBy { it.personId }.toMutableMap()
         val edges = edges.associateBy { SyncDocs.edgeId(it) }.toMutableMap()
         val members = members.associateBy { it.userId }.toMutableMap()
         val removals = removals.toMutableList()
+        val storyRemovals = storyRemovals.toMutableList()
 
         /** Runs while a story is being sent, to stand in for an edit made at that moment. */
         var duringSend: (() -> Unit)? = null
@@ -58,6 +60,7 @@ class SyncEngineTest {
         override suspend fun unsyncedPeople(familyId: String) = people.values.filter { unsent(it.updatedAt, it.syncedAt) }
         override suspend fun unsyncedRelationships(familyId: String) = edges.values.filter { unsent(it.updatedAt, it.syncedAt) }
         override suspend fun pendingRelationshipRemovals(familyId: String) = removals.toList()
+        override suspend fun pendingStoryRemovals(familyId: String) = storyRemovals.toList()
 
         override suspend fun storySent(storyId: String, updatedAt: Long?) {
             stories[storyId]?.let { stories[storyId] = it.copy(syncedAt = updatedAt) }
@@ -79,7 +82,10 @@ class SyncEngineTest {
             val id = SyncDocs.edgeId(edge)
             edges[id]?.let { edges[id] = it.copy(refusedAt = edge.updatedAt) }
         }
-        override suspend fun removalFinished(outboxId: Long) { removals.removeAll { it.id == outboxId } }
+        override suspend fun removalFinished(outboxId: Long) {
+            removals.removeAll { it.id == outboxId }
+            storyRemovals.removeAll { it.id == outboxId }
+        }
         override suspend fun removalFailed(outboxId: Long, why: String) = Unit
 
         override suspend fun merge(familyId: String, plan: (SyncMerge.Local) -> SyncMerge.Plan): SyncMerge.Plan {
@@ -290,6 +296,52 @@ class SyncEngineTest {
         assertEquals(1, result.refused)
         assertTrue(local.removals.isEmpty())
         assertEquals(setOf(SyncDocs.edgeId(kept)), local.edges.keys)
+    }
+
+    @Test
+    fun `a story erased here is taken off the server before the pull can bring it back`() = runBlocking {
+        val erased = story("s_gone", createdBy = "u_ruth", syncedAt = 100L)
+        val removal = OutboxEntity(
+            id = 3L, op = OutboxOp.DELETE, collectionPath = SyncPaths.stories(fam),
+            docId = "s_gone", payloadJson = "{}"
+        )
+        val local = FakeLocal(storyRemovals = listOf(removal))
+        val remote = FakeRemote().apply { stories["s_gone"] = erased }
+
+        engine(local, remote).run(fam, me, pull = true)
+
+        assertEquals(listOf("withdraw:s_gone", "fetch"), remote.calls)
+        assertTrue(remote.stories.isEmpty())
+        assertTrue(local.storyRemovals.isEmpty())
+        assertTrue("nothing comes back", local.stories.isEmpty())
+    }
+
+    @Test
+    fun `a withdraw the rules refuse is not asked for again`() = runBlocking {
+        val removal = OutboxEntity(
+            id = 4L, op = OutboxOp.DELETE, collectionPath = SyncPaths.stories(fam),
+            docId = "s_gone", payloadJson = "{}"
+        )
+        val local = FakeLocal(storyRemovals = listOf(removal))
+        val remote = FakeRemote().apply { withdrawAnswer = Sent.Refused }
+
+        engine(local, remote).run(fam, me, pull = false)
+
+        assertTrue(local.storyRemovals.isEmpty())
+    }
+
+    @Test
+    fun `with no connection an erased story stays in the queue`() = runBlocking {
+        val removal = OutboxEntity(
+            id = 5L, op = OutboxOp.DELETE, collectionPath = SyncPaths.stories(fam),
+            docId = "s_gone", payloadJson = "{}"
+        )
+        val local = FakeLocal(storyRemovals = listOf(removal))
+        val remote = FakeRemote().apply { withdrawAnswer = Sent.Unreachable }
+
+        assertEquals(SyncEngine.Result.Offline, engine(local, remote).run(fam, me, pull = true))
+        assertEquals(1, local.storyRemovals.size)
+        assertTrue("fetch" !in remote.calls)
     }
 
     @Test

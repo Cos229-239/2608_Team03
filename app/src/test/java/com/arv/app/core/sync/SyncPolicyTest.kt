@@ -88,6 +88,15 @@ class SyncPolicyTest {
     }
 
     @Test
+    fun `a deleted story waits thirty days, then is due to be erased`() {
+        val deletedAt = 1_000_000L
+        val thirtyDays = 30L * 24 * 60 * 60 * 1000
+        assertFalse(SyncPolicy.dueToErase(deletedAt, deletedAt + thirtyDays - 1))
+        assertTrue(SyncPolicy.dueToErase(deletedAt, deletedAt + thirtyDays))
+        assertFalse("a story nobody deleted is never erased", SyncPolicy.dueToErase(null, deletedAt + thirtyDays))
+    }
+
+    @Test
     fun `an edit is stamped later than the version it replaces, even on a slow clock`() {
         assertEquals("a clock behind the last edit still lands after it", 1_001L, SyncPolicy.stamp(1_000L, 900L))
         assertEquals("a clock ahead uses the clock", 5_000L, SyncPolicy.stamp(1_000L, 5_000L))

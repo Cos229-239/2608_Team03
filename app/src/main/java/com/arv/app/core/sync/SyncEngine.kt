@@ -14,6 +14,9 @@ interface SyncLocal {
     suspend fun unsyncedRelationships(familyId: String): List<RelationshipEntity>
     suspend fun pendingRelationshipRemovals(familyId: String): List<OutboxEntity>
 
+    /** Stories erased here that the server still holds. Erasing left no row to compare. */
+    suspend fun pendingStoryRemovals(familyId: String): List<OutboxEntity>
+
     /** Null records that the server no longer holds it. */
     suspend fun storySent(storyId: String, updatedAt: Long?)
     suspend fun storyRefused(storyId: String, updatedAt: Long)
@@ -82,6 +85,18 @@ class SyncEngine(
 
         var sent = 0
         var refused = 0
+
+        for (removal in local.pendingStoryRemovals(familyId)) {
+            when (remote.withdrawStory(familyId, removal.docId)) {
+                // Already gone, or never this account's to take down. Either way, asking
+                // again changes nothing and the story is erased here.
+                Sent.Done, Sent.Stale, Sent.Refused -> { local.removalFinished(removal.id); sent++ }
+                Sent.Unreachable -> {
+                    local.removalFailed(removal.id, "unreachable")
+                    return Result.Offline
+                }
+            }
+        }
 
         for (removal in local.pendingRelationshipRemovals(familyId)) {
             when (remote.removeRelationship(familyId, removal.docId)) {

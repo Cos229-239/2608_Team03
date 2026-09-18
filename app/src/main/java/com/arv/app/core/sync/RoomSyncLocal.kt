@@ -22,6 +22,9 @@ class RoomSyncLocal(private val db: ArvDatabase) : SyncLocal {
     override suspend fun pendingRelationshipRemovals(familyId: String): List<OutboxEntity> =
         db.outboxDao().pendingDeletes(SyncPaths.relationships(familyId))
 
+    override suspend fun pendingStoryRemovals(familyId: String): List<OutboxEntity> =
+        db.outboxDao().pendingDeletes(SyncPaths.stories(familyId))
+
     override suspend fun storySent(storyId: String, updatedAt: Long?) =
         db.storyDao().markSynced(storyId, updatedAt)
 
