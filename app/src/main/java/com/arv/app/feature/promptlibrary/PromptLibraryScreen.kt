@@ -164,6 +164,16 @@ fun PromptLibraryScreen(
                 modifier = Modifier.padding(16.dp)
 
             ) {
+                val whyThisOneText = when (selectedCategory) {
+                    "Childhood" -> "What is one childhood memory you can still picture clearly?"
+                    "Food" -> "Is there a family recipe that brings back a specific memory?"
+                    "Work" -> "What is something your first job taught you that stayed with you?"
+                    "Hard Things" -> "What helped your family get through a difficult time?"
+                    "Faith" -> "Was there a belief or tradition that helped guide your family?"
+                    else -> "You mentioned a song your mother hummed. Can you try to sing it?"
+                }
+
+
                 Text(
                     text = "WHY THIS ONE?"
                 )
@@ -171,14 +181,7 @@ fun PromptLibraryScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = when (selectedCategory){
-                        "Childhood" -> "What is one childhood memory you can still picture clearly?"
-                        "Food" -> "Is there a family recipe that brings back a specific memory?"
-                        "Work" -> "What is something your first job taught you that stayed with you?"
-                        "Hard Things" -> "What helped your family get through a difficult time?"
-                        "Faith" -> "Was there a belief or tradition that helped guide your family?"
-                        else -> "You mentioned a song your mother hummed. Can you try to sing it?"
-                    }
+                    text = whyThisOneText
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -194,6 +197,12 @@ fun PromptLibraryScreen(
                     }
 
                 )
+
+                val whyThisOnePrompt = prompts.find {
+                    it.text == whyThisOneText
+                }
+
+
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Row(
@@ -206,19 +215,13 @@ fun PromptLibraryScreen(
                     }
                     Button(
                         onClick = {
-                            savedQuestions.add(
-                                when (selectedCategory) {
-                                    "Childhood" -> "What is one childhood memory you can still picture clearly?"
-                                    "Food" -> "Is there a family recipe that brings back a specific memory?"
-                                    "Work" -> "What is something your first job taught you that stayed with you?"
-                                    "Hard things" -> "What helped your family get through a difficult time?"
-                                    "Faith" -> "Was there a belief or tradition that helped guide your family?"
-                                    else -> "You mentioned a song your mother hummed. Can you try to sing it?"
+                            whyThisOnePrompt?.let { prompt ->
+                                if (prompt.status != PromptStatus.SAVED) {
+                                    viewModel.savePrompt(prompt.promptId)
                                 }
-                            )
+                            }
 
                             questionSaved = true
-
                         }
                     ) {
                         Text(
@@ -229,6 +232,7 @@ fun PromptLibraryScreen(
 
             }
         }
+
         Spacer(modifier = Modifier.height(16.dp))
 
         val cookingPrompt = prompts.find{
@@ -586,6 +590,51 @@ fun PromptLibraryScreen(
                 }
             }
         }
+
+    if (myQuestions.isNotEmpty()) {
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = "My Questions",
+            style  = MaterialTheme.typography.titleMedium
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        myQuestions.forEach { prompt ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            ){
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ){
+                    Text(
+                        text = prompt.text,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    OutlinedIconButton(
+                        onClick = {
+                            if (prompt.status != PromptStatus.SAVED) {
+                                viewModel.savePrompt(prompt.promptId)
+                            }
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ){
+                        Text(
+                            if (prompt.status == PromptStatus.SAVED) "✓" else "+"
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     if(savedPrompts.isNotEmpty()){
         Spacer(modifier = Modifier.height(16.dp))
