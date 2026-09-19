@@ -63,6 +63,17 @@ class PromptLibraryViewModel(application: Application) : AndroidViewModel(applic
             )
         }
     }
+
+    fun saveWhyThisOnePrompt(text: String) {
+        viewModelScope.launch {
+            repo.saveWhyThisOnePrompt(
+                familyId = familyId,
+                text = text,
+                now = System.currentTimeMillis()
+            )
+
+        }
+    }
     fun removeSavedPrompt(promptId: String){
         viewModelScope.launch {
             repo.setPromptStatus(

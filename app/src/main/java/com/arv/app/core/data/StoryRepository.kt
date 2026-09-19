@@ -1129,6 +1129,31 @@ class StoryRepository(
         return promptId
     }
 
+    suspend fun saveWhyThisOnePrompt(
+        familyId: String,
+        text: String,
+        now: Long
+    ): String? {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return null
+
+        val promptId = "Why_" + UUID.randomUUID().toString().take(12)
+
+        db.promptDao().upsert(
+            PromptEntity(
+                promptId = promptId,
+                familyId = familyId,
+                text = trimmed,
+                category = "Why This One",
+                origin = PromptOrigin.LIBRARY,
+                status = PromptStatus.SAVED,
+                createdAt = now,
+                updatedAt = now
+            )
+        )
+        return promptId
+    }
+
     /**
      * Move a question along: saved for later, answered, or skipped.
      *
@@ -1221,6 +1246,7 @@ class StoryRepository(
                 "Faith",
                 "Beliefs and traditions can preserve meaningful family memories"
             )
+
         )
     }
 

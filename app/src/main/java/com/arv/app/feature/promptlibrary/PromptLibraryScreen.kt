@@ -32,6 +32,7 @@ import androidx.compose.material3.TextButton
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arv.app.core.model.PromptStatus
+import android.util.Log
 
 @Composable
 fun PromptLibraryScreen(
@@ -49,11 +50,6 @@ fun PromptLibraryScreen(
     var selectedCategory by remember{
         mutableStateOf("Suggested")
     }
-
-    val savedQuestions = remember {
-        mutableStateListOf<String>()
-    }
-
 
 
     var showOwnQuestion by remember{
@@ -198,11 +194,6 @@ fun PromptLibraryScreen(
 
                 )
 
-                val whyThisOnePrompt = prompts.find {
-                    it.text == whyThisOneText
-                }
-
-
                 Spacer(modifier = Modifier.height(10.dp))
 
                 Row(
@@ -215,12 +206,7 @@ fun PromptLibraryScreen(
                     }
                     Button(
                         onClick = {
-                            whyThisOnePrompt?.let { prompt ->
-                                if (prompt.status != PromptStatus.SAVED) {
-                                    viewModel.savePrompt(prompt.promptId)
-                                }
-                            }
-
+                           viewModel.saveWhyThisOnePrompt(whyThisOneText)
                             questionSaved = true
                         }
                     ) {
