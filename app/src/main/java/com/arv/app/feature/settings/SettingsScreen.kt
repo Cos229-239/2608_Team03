@@ -222,6 +222,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 fun SettingsScreen(
     onSignedOut: () -> Unit,
     onAccountSignedOut: () -> Unit,
+    onJoinWithCode: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = viewModel()
 ) {
@@ -524,6 +525,37 @@ fun SettingsScreen(
 
         // Draws its own heading, and nothing at all when nothing has been deleted.
         item { RecentlyDeletedSection() }
+
+        // Onboarding asks for a code once, right after the account is made. Somebody who
+        // started their own family first, or went straight to the sample one, may still be
+        // holding a code they never typed, so this asks again for as long as there is an
+        // account to join with.
+        if (ActiveSession.isAuthenticated) {
+            item { SectionLabel("Joining a family") }
+
+            item {
+                Text(
+                    "Got a code from a relative? Joining opens their archive on this phone. " +
+                        "Nothing here is deleted. This archive stays on this phone, and the " +
+                        "first screen offers it again.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = onJoinWithCode,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 52.dp)
+                ) {
+                    Text("I have an invite code")
+                }
+            }
+
+            item { HorizontalDivider() }
+        }
 
         item { SectionLabel("This archive") }
 
