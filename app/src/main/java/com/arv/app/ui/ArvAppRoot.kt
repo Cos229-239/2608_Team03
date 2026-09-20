@@ -415,7 +415,8 @@ fun ArvAppRoot() {
                             navController.navigate(Destination.Onboarding.route) {
                                 popUpTo(navController.graph.id) { inclusive = true }
                             }
-                        }
+                        },
+                        onJoinWithCode = { navController.navigate(Destination.JoinFamily.route) }
                     )
                 }
                 composable(Destination.Invite.route) {
