@@ -4,10 +4,12 @@ import com.arv.app.core.data.local.InviteEntity
 import com.arv.app.core.data.local.MemberEntity
 import com.arv.app.core.model.MemberRole
 import com.arv.app.core.remote.InviteRemote
+import com.arv.app.core.remote.RemoteLookup
 import com.arv.app.core.remote.RemoteRedeem
 import com.arv.app.core.remote.RemoteWrite
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -38,10 +40,14 @@ class InviteServiceTest {
         var localAnswer: Invitation.Result = Invitation.Result.Unknown,
         var me: MemberEntity? = null,
         /** Rows by account, for the tests that need more than one person in the family. */
-        var rows: Map<String, MemberEntity> = emptyMap()
+        var rows: Map<String, MemberEntity> = emptyMap(),
+        /** What this phone already knows about a typed code, before any server is asked. */
+        var knownHere: InviteEntity? = null
     ) : InviteLocal {
         val admitted = mutableListOf<MemberEntity>()
         val removed = mutableListOf<String>()
+        /** Fates the server reported and this phone wrote down, in order. */
+        val fates = mutableListOf<InviteEntity>()
 
         override suspend fun inviteCodeFor(familyId: String, userId: String, familyName: String?, nowMillis: Long): InviteEntity =
             live ?: fresh(familyId, userId, familyName, nowMillis, "FRESH1").also { live = it }
@@ -55,6 +61,15 @@ class InviteServiceTest {
             live?.takeIf { it.revokedAt == null }
 
         override suspend fun redeemInvite(typed: String?, userId: String, nowMillis: Long) = localAnswer
+
+        override suspend fun previewInvite(typed: String?) = knownHere
+
+        // The real row stops being live once it is spent or withdrawn, which is what lets the
+        // next ask mint a fresh one.
+        override suspend fun recordInviteFate(theirs: InviteEntity) {
+            fates += theirs
+            if (live?.code == theirs.code) live = null
+        }
 
         override suspend fun memberRowFor(familyId: String, userId: String) = rows[userId] ?: me
 
@@ -80,7 +95,10 @@ class InviteServiceTest {
         var registerAnswer: RemoteWrite = RemoteWrite.Done,
         var publishAnswer: RemoteWrite = RemoteWrite.Done,
         var redeemAnswer: RemoteRedeem = RemoteRedeem.Unreachable,
-        var removeAnswer: RemoteWrite = RemoteWrite.Done
+        var removeAnswer: RemoteWrite = RemoteWrite.Done,
+        var lookupAnswer: RemoteLookup = RemoteLookup.Unreachable,
+        /** Answers for particular codes, ahead of [publishAnswer]. */
+        var publishByCode: Map<String, RemoteWrite> = emptyMap()
     ) : InviteRemote {
         val calls = mutableListOf<String>()
 
@@ -91,7 +109,12 @@ class InviteServiceTest {
 
         override suspend fun publish(invite: InviteEntity): RemoteWrite {
             calls += "publish:${invite.code}"
-            return publishAnswer
+            return publishByCode[invite.code] ?: publishAnswer
+        }
+
+        override suspend fun lookup(code: String): RemoteLookup {
+            calls += "lookup:$code"
+            return lookupAnswer
         }
 
         override suspend fun revoke(invite: InviteEntity, nowMillis: Long): RemoteWrite {
@@ -244,6 +267,120 @@ class InviteServiceTest {
             val m = InviteService(local, remote).ensureCode("fam_1", "u_ghost", "Delaney", now)
             assertEquals(InviteService.Reach.ThisPhoneOnly, m.reach)
             assertTrue(remote.calls.isEmpty())
+        }
+    }
+
+    // --- a code spent on somebody else's phone ---
+
+    @Test
+    fun `a code spent on another phone is written down here and replaced, not blamed on the signal`() {
+        runBlocking {
+            val old = invite("K7M2QX")
+            val spentThere = old.copy(usedAt = 4_000L, usedByUserId = "u_dana")
+            val local = FakeLocal(live = old, me = owner())
+            val remote = FakeRemote(
+                publishByCode = mapOf("K7M2QX" to RemoteWrite.Failed),
+                lookupAnswer = RemoteLookup.Found(spentThere)
+            )
+
+            val m = InviteService(local, remote).ensureCode("fam_1", "u_ruth", "Delaney", now)
+
+            assertEquals("FRESH1", m.invite.code)
+            assertEquals(InviteService.Reach.OtherPhones, m.reach)
+            assertEquals(spentThere, m.replaced)
+            assertEquals(listOf(spentThere), local.fates)
+            assertEquals(
+                listOf(
+                    "registerFamily:Delaney:OWNER", "publish:K7M2QX", "lookup:K7M2QX",
+                    "registerFamily:Delaney:OWNER", "publish:FRESH1"
+                ),
+                remote.calls
+            )
+        }
+    }
+
+    @Test
+    fun `a code withdrawn on the server is replaced the same way`() {
+        runBlocking {
+            val old = invite("K7M2QX")
+            val pulled = old.copy(revokedAt = 4_000L)
+            val local = FakeLocal(live = old, me = keeper())
+            val remote = FakeRemote(
+                publishByCode = mapOf("K7M2QX" to RemoteWrite.Failed),
+                lookupAnswer = RemoteLookup.Found(pulled)
+            )
+
+            val m = InviteService(local, remote).ensureCode("fam_1", "u_kev", "Delaney", now)
+
+            assertEquals("FRESH1", m.invite.code)
+            assertEquals(pulled, m.replaced)
+        }
+    }
+
+    @Test
+    fun `a failed publish with no answer from the server still says this phone only`() {
+        runBlocking {
+            val old = invite("K7M2QX")
+            val local = FakeLocal(live = old, me = owner())
+            val remote = FakeRemote(publishAnswer = RemoteWrite.Failed, lookupAnswer = RemoteLookup.Unreachable)
+
+            val m = InviteService(local, remote).ensureCode("fam_1", "u_ruth", "Delaney", now)
+
+            assertEquals("K7M2QX", m.invite.code)
+            assertEquals(InviteService.Reach.ThisPhoneOnly, m.reach)
+            assertNull(m.replaced)
+            assertTrue(local.fates.isEmpty())
+        }
+    }
+
+    @Test
+    fun `a code the server still holds live is left alone when a publish fails`() {
+        runBlocking {
+            val old = invite("K7M2QX")
+            val local = FakeLocal(live = old, me = owner())
+            val remote = FakeRemote(publishAnswer = RemoteWrite.Failed, lookupAnswer = RemoteLookup.Found(old))
+
+            val m = InviteService(local, remote).ensureCode("fam_1", "u_ruth", "Delaney", now)
+
+            assertEquals("K7M2QX", m.invite.code)
+            assertNull(m.replaced)
+            assertTrue(local.fates.isEmpty())
+        }
+    }
+
+    // --- naming the family before anyone agrees ---
+
+    @Test
+    fun `a code this phone knows is named here and the server is never asked`() {
+        runBlocking {
+            val mine = invite("K7M2QX")
+            val remote = FakeRemote()
+            val seen = InviteService(FakeLocal(knownHere = mine), remote).preview("k7m-2qx")
+            assertEquals(mine, seen)
+            assertTrue(remote.calls.isEmpty())
+        }
+    }
+
+    @Test
+    fun `a code from another phone is named by the server`() {
+        runBlocking {
+            val theirs = invite("K7M2QX")
+            val remote = FakeRemote(lookupAnswer = RemoteLookup.Found(theirs))
+            val seen = InviteService(FakeLocal(), remote).preview("k7m-2qx")
+            assertEquals(theirs, seen)
+            assertEquals(listOf("lookup:K7M2QX"), remote.calls)
+        }
+    }
+
+    @Test
+    fun `half a code is not sent anywhere, and a missing one names nobody`() {
+        runBlocking {
+            val remote = FakeRemote(lookupAnswer = RemoteLookup.Missing)
+            val service = InviteService(FakeLocal(), remote)
+            assertNull(service.preview("k7m"))
+            assertTrue(remote.calls.isEmpty())
+            assertNull(service.preview("k7m-2qx"))
+            assertNull(InviteService(FakeLocal(), InviteRemote.None).preview("k7m-2qx"))
         }
     }
 

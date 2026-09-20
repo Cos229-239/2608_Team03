@@ -37,6 +37,13 @@ interface InviteRemote {
     suspend fun revoke(invite: InviteEntity, nowMillis: Long): RemoteWrite
 
     /**
+     * What the server holds for one code, read by its exact id, which is the only read of a
+     * code the rules allow. It is how the phone that issued a code finds out it was spent on
+     * somebody else's, and how a join screen names a family before anyone agrees to it.
+     */
+    suspend fun lookup(code: String): RemoteLookup
+
+    /**
      * Redeems a code this phone has never seen: reads it, decides with [Invitation.redeem],
      * and writes the standing and the spend as one batch the rules accept only as a pair.
      */
@@ -56,6 +63,7 @@ interface InviteRemote {
             RemoteWrite.Skipped
         override suspend fun publish(invite: InviteEntity) = RemoteWrite.Skipped
         override suspend fun revoke(invite: InviteEntity, nowMillis: Long) = RemoteWrite.Skipped
+        override suspend fun lookup(code: String): RemoteLookup = RemoteLookup.Unreachable
         override suspend fun redeem(typed: String, userId: String, nowMillis: Long): RemoteRedeem =
             RemoteRedeem.Unreachable
         override suspend fun removeMember(familyId: String, userId: String) = RemoteWrite.Skipped
@@ -69,6 +77,17 @@ enum class RemoteWrite {
     Failed,
     /** There is no server on this build. */
     Skipped
+}
+
+/** What the server said when asked about one code. */
+sealed interface RemoteLookup {
+    data class Found(val invite: InviteEntity) : RemoteLookup
+
+    /** The server answered, and it holds no such code. */
+    data object Missing : RemoteLookup
+
+    /** Never got an answer. */
+    data object Unreachable : RemoteLookup
 }
 
 /** What the server said when asked to redeem a code. */

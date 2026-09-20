@@ -9,6 +9,7 @@ import com.google.android.gms.tasks.Task
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.firestore.Source
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -75,6 +76,16 @@ class FirebaseInviteRemote(
     override suspend fun revoke(invite: InviteEntity, nowMillis: Long): RemoteWrite = write {
         db.document("invites/${invite.code}").update("revokedAt", nowMillis).awaitTask()
     }
+
+    // From the server and never the cache. The phone that issued a code holds its own copy
+    // of it, written before anyone spent it, and that copy is the one answer not wanted here.
+    override suspend fun lookup(code: String): RemoteLookup =
+        try {
+            db.document("invites/$code").get(Source.SERVER).awaitTask().toInvite()
+                ?.let { RemoteLookup.Found(it) } ?: RemoteLookup.Missing
+        } catch (t: Throwable) {
+            RemoteLookup.Unreachable
+        }
 
     // Deleting a row that is already gone succeeds, so a second tap is harmless. A refusal
     // from the rules comes back as Failed, and the phone keeps the member rather than

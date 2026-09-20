@@ -80,10 +80,18 @@ class JoinFamilyViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         viewModelScope.launch {
-            val invite = repo.previewInvite(input)
-            // Only a live code previews. A spent or revoked one has nothing to offer and
-            // saying which family it used to open would leak the name to anyone guessing.
-            val live = invite?.takeIf { it.usedAt == null && it.revokedAt == null }
+            // This phone first, then the server. A code read down a phone line was never on
+            // the phone typing it in, so the local answer alone named nobody for the one
+            // case this screen exists for, and the yes came before the family's name.
+            val invite = invites.preview(input)
+            // The answer to a code that has since been typed over is not an answer.
+            if (state.typed != input) return@launch
+            // Only a live code previews. A spent, revoked or expired one has nothing to offer
+            // and saying which family it used to open would leak the name to anyone guessing.
+            val now = System.currentTimeMillis()
+            val live = invite?.takeIf {
+                it.usedAt == null && it.revokedAt == null && (it.expiresAt?.let { ends -> ends > now } ?: true)
+            }
             state = state.copy(
                 preview = live?.let {
                     JoinPreview(
@@ -260,9 +268,9 @@ fun JoinFamilyScreen(
         if (state.joined) {
             Text(
                 if (state.emptyOnThisPhone) {
-                    "You are in. This phone does not hold the family's recordings yet, " +
-                        "because nothing syncs between phones so far. What you record here " +
-                        "is yours and it stays here."
+                    "You are in. The family's stories are not on this phone yet. Turn on " +
+                        "sharing in Settings and they arrive, along with the family tree. " +
+                        "Recordings themselves stay on the phone that made them for now."
                 } else {
                     "You are in."
                 },

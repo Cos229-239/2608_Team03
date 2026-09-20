@@ -828,6 +828,26 @@ class StoryRepository(
         return result
     }
 
+    /**
+     * Writes down what the server says became of a code this phone issued.
+     *
+     * A code spent on another phone is spent there, and nothing tells the phone that made it.
+     * Only ever moves a code toward finished, and only for the same family and the same
+     * issuer, so a stray document under the same id cannot retire a code it has nothing to
+     * do with.
+     */
+    suspend fun recordInviteFate(theirs: InviteEntity) {
+        val mine = db.inviteDao().byCode(theirs.code) ?: return
+        if (mine.familyId != theirs.familyId || mine.issuedByUserId != theirs.issuedByUserId) return
+        db.inviteDao().upsert(
+            mine.copy(
+                usedAt = mine.usedAt ?: theirs.usedAt,
+                usedByUserId = mine.usedByUserId ?: theirs.usedByUserId,
+                revokedAt = mine.revokedAt ?: theirs.revokedAt
+            )
+        )
+    }
+
     /** This person's live code, if any: what the invite screen shows and what replacing retires. */
     suspend fun liveInviteFor(familyId: String, userId: String, nowMillis: Long): InviteEntity? =
         db.inviteDao().liveFor(familyId, userId, nowMillis)

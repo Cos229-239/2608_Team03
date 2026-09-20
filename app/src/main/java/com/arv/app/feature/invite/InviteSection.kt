@@ -59,6 +59,10 @@ class InviteViewModel(app: Application) : AndroidViewModel(app) {
     var reach by mutableStateOf<InviteService.Reach?>(null)
         private set
 
+    /** The code this one took over from, when the server said that one was finished. */
+    var replaced by mutableStateOf<InviteEntity?>(null)
+        private set
+
     /** Everything this account has issued here, so the trail is visible to whoever made it. */
     val issued: StateFlow<List<InviteEntity>> =
         repo.observeInvitesIssuedBy(familyId, userId)
@@ -84,6 +88,7 @@ class InviteViewModel(app: Application) : AndroidViewModel(app) {
             }.getOrNull()?.let { minted ->
                 _code.value = minted.invite
                 reach = minted.reach
+                replaced = minted.replaced
             }
             working = false
         }
@@ -103,6 +108,7 @@ class InviteViewModel(app: Application) : AndroidViewModel(app) {
             }.getOrNull()?.let { minted ->
                 _code.value = minted.invite
                 reach = minted.reach
+                replaced = null
             }
             working = false
         }
@@ -185,6 +191,21 @@ fun InviteSection(
                         color = MaterialTheme.colorScheme.error
                     )
                     else -> Unit
+                }
+                // A code that changed with no explanation reads as a fault. This one changed
+                // because the last one did its job, or was pulled, on another phone.
+                viewModel.replaced?.let { old ->
+                    Text(
+                        if (old.usedAt != null) {
+                            "Your last code, " + InviteCode.format(old.code) + ", was used on " +
+                                dayOf(old.usedAt) + ". This is a new one."
+                        } else {
+                            "Your last code, " + InviteCode.format(old.code) +
+                                ", was withdrawn. This is a new one."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
