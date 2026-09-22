@@ -51,7 +51,12 @@ data class EditStoryUiState(
     val branchRootPersonId: String? = null,
     val aiUsePolicy: AiUsePolicy = AiUsePolicy.SUMMARY_OK,
     val saving: Boolean = false,
-    val done: Boolean = false
+    val done: Boolean = false,
+    /**
+     * Set when the story was deleted rather than saved. The two leave differently: a save
+     * returns to the story, a delete has no story to return to.
+     */
+    val deleted: Boolean = false
 ) {
     /** BRANCH with no line named is readable by nobody. Block that save, never make it. */
     val canSave: Boolean
@@ -127,7 +132,7 @@ class EditStoryViewModel(
     fun delete() {
         viewModelScope.launch {
             val ok = repo.deleteStory(storyId, ServiceLocator.viewer)
-            if (ok) _state.value = _state.value.copy(done = true)
+            if (ok) _state.value = _state.value.copy(deleted = true)
         }
     }
 
@@ -172,6 +177,7 @@ class EditStoryViewModel(
 fun EditStoryScreen(
     onAddRecording: (String) -> Unit,
     onDone: () -> Unit,
+    onDeleted: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: EditStoryViewModel = viewModel()
 ) {
@@ -179,6 +185,9 @@ fun EditStoryScreen(
     val branchChoices by viewModel.branchChoices.collectAsStateWithLifecycle()
 
     LaunchedEffect(state.done) { if (state.done) onDone() }
+    // A deleted story's own page has nothing left to show, so leaving lands past it.
+    // Going back one screen used to stop on that page, which sat on "Loading" for good.
+    LaunchedEffect(state.deleted) { if (state.deleted) onDeleted() }
 
     if (state.loaded && !state.allowed) {
         Text(
@@ -369,8 +378,9 @@ fun EditStoryScreen(
                     text = {
                         Text(
                             "It disappears from this archive, and from every phone the " +
-                                "archive is shared with. Nothing is erased, and it can be " +
-                                "brought back from Settings, under Recently deleted."
+                                "archive is shared with. For thirty days it can be brought " +
+                                "back from Settings, under Recently deleted. After that it " +
+                                "is erased for good."
                         )
                     },
                     confirmButton = {

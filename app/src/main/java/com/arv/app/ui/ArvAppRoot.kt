@@ -523,7 +523,9 @@ fun ArvAppRoot() {
                 ) {
                     com.arv.app.feature.story.EditStoryScreen(
                         onAddRecording = { navController.navigate(Destination.RecordForStory.of(it)) },
-                        onDone = { navController.popBackStack() }
+                        onDone = { navController.popBackStack() },
+                        // Past the story's own page too, back to the list it was opened from.
+                        onDeleted = { navController.popBackStack(Destination.StoryDetail.route, inclusive = true) }
                     )
                 }
             }
