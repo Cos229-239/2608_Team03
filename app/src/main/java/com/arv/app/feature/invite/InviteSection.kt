@@ -3,11 +3,13 @@ package com.arv.app.feature.invite
 import android.app.Application
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -94,7 +96,11 @@ class InviteViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun replaceCode() {
+    /**
+     * Retires the live code and mints a new one. With a [role], the new code grants that
+     * role instead; a code's role is fixed when it is minted, so changing it is a replace.
+     */
+    fun replaceCode(role: MemberRole = _code.value?.grantsRole ?: MemberRole.CONTRIBUTOR) {
         if (working) return
         working = true
         viewModelScope.launch {
@@ -103,7 +109,8 @@ class InviteViewModel(app: Application) : AndroidViewModel(app) {
                     familyId = familyId,
                     userId = userId,
                     familyName = ActiveSession.familyName,
-                    nowMillis = System.currentTimeMillis()
+                    nowMillis = System.currentTimeMillis(),
+                    grantsRole = role
                 )
             }.getOrNull()?.let { minted ->
                 _code.value = minted.invite
@@ -118,15 +125,17 @@ class InviteViewModel(app: Application) : AndroidViewModel(app) {
 /**
  * The inviting half of the invitation, for whoever already has an archive open.
  *
- * Hidden from viewers on purpose. A viewer reads what the family shows everyone; deciding
- * who else gets to stand in the family is not a reading.
+ * Shown to the owner and keepers only, which is who the server lets mint a code. A
+ * contributor used to see this section too, and every code it made was refused on the
+ * server and reported as the server being unreachable.
  */
 @Composable
 fun InviteSection(
     modifier: Modifier = Modifier,
     viewModel: InviteViewModel = viewModel()
 ) {
-    if (ActiveSession.role == MemberRole.VIEWER) return
+    val myRole = ServiceLocator.viewer.role
+    if (myRole != MemberRole.OWNER && myRole != MemberRole.KEEPER) return
 
     val code by viewModel.code.collectAsStateWithLifecycle()
     val issued by viewModel.issued.collectAsStateWithLifecycle()
@@ -162,8 +171,25 @@ fun InviteSection(
                     code?.let { InviteCode.format(it.code) } ?: "Making one",
                     style = MaterialTheme.typography.headlineMedium
                 )
+                // What the next person becomes. Picking a different one mints a new code,
+                // because a code's role is set when it is minted and the rules hold it there.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GRANTABLE.forEach { role ->
+                        FilterChip(
+                            selected = code?.grantsRole == role,
+                            onClick = {
+                                if (code?.grantsRole != role) {
+                                    copied = false
+                                    viewModel.replaceCode(role)
+                                }
+                            },
+                            enabled = !viewModel.working && code != null,
+                            label = { Text(roleName(role)) }
+                        )
+                    }
+                }
                 Text(
-                    "They join as a contributor, who can add recordings and people.",
+                    roleSentence(code?.grantsRole ?: MemberRole.CONTRIBUTOR),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -255,6 +281,27 @@ fun InviteSection(
             }
         }
     }
+}
+
+/** The roles a code may grant, in the order the chips show them. OWNER is never grantable. */
+private val GRANTABLE = listOf(MemberRole.CONTRIBUTOR, MemberRole.KEEPER, MemberRole.VIEWER)
+
+private fun roleName(role: MemberRole): String = when (role) {
+    MemberRole.OWNER -> "Owner"
+    MemberRole.KEEPER -> "Keeper"
+    MemberRole.CONTRIBUTOR -> "Contributor"
+    MemberRole.VIEWER -> "Viewer"
+}
+
+/** What each role may do, in the words the permission rules enforce (docs/SPEC.md, section 4). */
+private fun roleSentence(role: MemberRole): String = when (role) {
+    MemberRole.KEEPER ->
+        "They join as a keeper, who can add and edit the family's records, and invite others."
+    MemberRole.CONTRIBUTOR ->
+        "They join as a contributor, who can add recordings and people."
+    MemberRole.VIEWER ->
+        "They join as a viewer, who can read what the family shares and add nothing."
+    MemberRole.OWNER -> "They join as the owner."
 }
 
 private fun dayOf(millis: Long?): String =

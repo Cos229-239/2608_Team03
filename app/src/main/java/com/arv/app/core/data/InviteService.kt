@@ -13,8 +13,8 @@ import com.arv.app.core.remote.RemoteWrite
  * [RepositoryInviteLocal]; tests provide a fake.
  */
 interface InviteLocal {
-    suspend fun inviteCodeFor(familyId: String, userId: String, familyName: String?, nowMillis: Long): InviteEntity
-    suspend fun replaceInviteCode(familyId: String, userId: String, familyName: String?, nowMillis: Long): InviteEntity
+    suspend fun inviteCodeFor(familyId: String, userId: String, familyName: String?, nowMillis: Long, grantsRole: MemberRole): InviteEntity
+    suspend fun replaceInviteCode(familyId: String, userId: String, familyName: String?, nowMillis: Long, grantsRole: MemberRole): InviteEntity
     suspend fun liveInviteFor(familyId: String, userId: String, nowMillis: Long): InviteEntity?
     suspend fun redeemInvite(typed: String?, userId: String, nowMillis: Long): Invitation.Result
     suspend fun previewInvite(typed: String?): InviteEntity?
@@ -74,8 +74,18 @@ class InviteService(private val local: InviteLocal, private val remote: InviteRe
         data class Refused(val why: Invitation.Result) : Joined
     }
 
-    suspend fun ensureCode(familyId: String, userId: String, familyName: String?, nowMillis: Long): Minted {
-        val invite = local.inviteCodeFor(familyId, userId, familyName, nowMillis)
+    /**
+     * [grantsRole] is what a fresh code will grant. A live code keeps the role it was minted
+     * with; changing what the next person becomes is [replaceCode].
+     */
+    suspend fun ensureCode(
+        familyId: String,
+        userId: String,
+        familyName: String?,
+        nowMillis: Long,
+        grantsRole: MemberRole = MemberRole.CONTRIBUTOR
+    ): Minted {
+        val invite = local.inviteCodeFor(familyId, userId, familyName, nowMillis, grantsRole)
         val sent = publish(invite, familyName, userId)
         if (!sent.codeRefusedOrUnreached) return Minted(invite, sent.reach)
 
@@ -88,7 +98,7 @@ class InviteService(private val local: InviteLocal, private val remote: InviteRe
         val finished = theirs?.takeIf { it.usedAt != null || it.revokedAt != null }
             ?: return Minted(invite, sent.reach)
         local.recordInviteFate(finished)
-        val fresh = local.inviteCodeFor(familyId, userId, familyName, nowMillis)
+        val fresh = local.inviteCodeFor(familyId, userId, familyName, nowMillis, grantsRole)
         // The same code back means the phone could not write the fate down. Say what is
         // known rather than going round again.
         if (fresh.code == invite.code) return Minted(invite, sent.reach)
@@ -106,9 +116,15 @@ class InviteService(private val local: InviteLocal, private val remote: InviteRe
         return (remote.lookup(code) as? RemoteLookup.Found)?.invite
     }
 
-    suspend fun replaceCode(familyId: String, userId: String, familyName: String?, nowMillis: Long): Minted {
+    suspend fun replaceCode(
+        familyId: String,
+        userId: String,
+        familyName: String?,
+        nowMillis: Long,
+        grantsRole: MemberRole = MemberRole.CONTRIBUTOR
+    ): Minted {
         val retiring = local.liveInviteFor(familyId, userId, nowMillis)
-        val fresh = local.replaceInviteCode(familyId, userId, familyName, nowMillis)
+        val fresh = local.replaceInviteCode(familyId, userId, familyName, nowMillis, grantsRole)
         // Best effort: the local row is already withdrawn. If this does not reach, the old
         // code keeps working on other phones until it expires, which is the one thing a
         // replaced code cannot fully answer for offline. Two weeks bounds it.
@@ -188,11 +204,11 @@ class InviteService(private val local: InviteLocal, private val remote: InviteRe
 
 /** [InviteLocal] over the repository. One line each; the repository already knows how. */
 class RepositoryInviteLocal(private val repo: StoryRepository) : InviteLocal {
-    override suspend fun inviteCodeFor(familyId: String, userId: String, familyName: String?, nowMillis: Long) =
-        repo.inviteCodeFor(familyId, userId, familyName, nowMillis)
+    override suspend fun inviteCodeFor(familyId: String, userId: String, familyName: String?, nowMillis: Long, grantsRole: MemberRole) =
+        repo.inviteCodeFor(familyId, userId, familyName, nowMillis, grantsRole = grantsRole)
 
-    override suspend fun replaceInviteCode(familyId: String, userId: String, familyName: String?, nowMillis: Long) =
-        repo.replaceInviteCode(familyId, userId, familyName, nowMillis)
+    override suspend fun replaceInviteCode(familyId: String, userId: String, familyName: String?, nowMillis: Long, grantsRole: MemberRole) =
+        repo.replaceInviteCode(familyId, userId, familyName, nowMillis, grantsRole = grantsRole)
 
     override suspend fun liveInviteFor(familyId: String, userId: String, nowMillis: Long) =
         repo.liveInviteFor(familyId, userId, nowMillis)

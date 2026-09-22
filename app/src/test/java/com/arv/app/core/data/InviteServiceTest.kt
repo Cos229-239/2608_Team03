@@ -49,12 +49,12 @@ class InviteServiceTest {
         /** Fates the server reported and this phone wrote down, in order. */
         val fates = mutableListOf<InviteEntity>()
 
-        override suspend fun inviteCodeFor(familyId: String, userId: String, familyName: String?, nowMillis: Long): InviteEntity =
-            live ?: fresh(familyId, userId, familyName, nowMillis, "FRESH1").also { live = it }
+        override suspend fun inviteCodeFor(familyId: String, userId: String, familyName: String?, nowMillis: Long, grantsRole: MemberRole): InviteEntity =
+            live ?: fresh(familyId, userId, familyName, nowMillis, "FRESH1", grantsRole).also { live = it }
 
-        override suspend fun replaceInviteCode(familyId: String, userId: String, familyName: String?, nowMillis: Long): InviteEntity {
+        override suspend fun replaceInviteCode(familyId: String, userId: String, familyName: String?, nowMillis: Long, grantsRole: MemberRole): InviteEntity {
             live = live?.copy(revokedAt = nowMillis)
-            return fresh(familyId, userId, familyName, nowMillis, "FRESH2")
+            return fresh(familyId, userId, familyName, nowMillis, "FRESH2", grantsRole)
         }
 
         override suspend fun liveInviteFor(familyId: String, userId: String, nowMillis: Long) =
@@ -77,12 +77,12 @@ class InviteServiceTest {
 
         override suspend fun removeMember(familyId: String, userId: String) { removed += userId }
 
-        private fun fresh(familyId: String, userId: String, familyName: String?, nowMillis: Long, code: String) =
+        private fun fresh(familyId: String, userId: String, familyName: String?, nowMillis: Long, code: String, role: MemberRole = MemberRole.CONTRIBUTOR) =
             InviteEntity(
                 code = code,
                 familyId = familyId,
                 issuedByUserId = userId,
-                grantsRole = MemberRole.CONTRIBUTOR,
+                grantsRole = role,
                 createdAt = nowMillis,
                 familyName = familyName,
                 expiresAt = nowMillis + Invitation.LIFETIME_MILLIS
@@ -381,6 +381,31 @@ class InviteServiceTest {
             assertTrue(remote.calls.isEmpty())
             assertNull(service.preview("k7m-2qx"))
             assertNull(InviteService(FakeLocal(), InviteRemote.None).preview("k7m-2qx"))
+        }
+    }
+
+    // --- what a code grants ---
+
+    @Test
+    fun `a fresh code carries the role it was asked for, and contributor when nobody asked`() {
+        runBlocking {
+            val asked = InviteService(FakeLocal(me = owner()), FakeRemote()).ensureCode("fam_1", "u_ruth", "Delaney", now, MemberRole.KEEPER)
+            assertEquals(MemberRole.KEEPER, asked.invite.grantsRole)
+            val unasked = InviteService(FakeLocal(me = owner()), FakeRemote()).ensureCode("fam_1", "u_ruth", "Delaney", now)
+            assertEquals(MemberRole.CONTRIBUTOR, unasked.invite.grantsRole)
+        }
+    }
+
+    @Test
+    fun `a live code keeps its role until it is replaced with another`() {
+        runBlocking {
+            val local = FakeLocal(live = invite("K7M2QX"), me = owner())
+            val service = InviteService(local, FakeRemote())
+            assertEquals(MemberRole.CONTRIBUTOR, service.ensureCode("fam_1", "u_ruth", "Delaney", now, MemberRole.VIEWER).invite.grantsRole)
+            val replaced = service.replaceCode("fam_1", "u_ruth", "Delaney", now, MemberRole.VIEWER)
+            assertEquals("FRESH2", replaced.invite.code)
+            assertEquals(MemberRole.VIEWER, replaced.invite.grantsRole)
+            assertEquals(now, local.live?.revokedAt)
         }
     }
 
