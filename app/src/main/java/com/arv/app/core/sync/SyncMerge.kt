@@ -1,5 +1,6 @@
 package com.arv.app.core.sync
 
+import com.arv.app.core.data.local.AssetEntity
 import com.arv.app.core.data.local.MemberEntity
 import com.arv.app.core.data.local.PersonEntity
 import com.arv.app.core.data.local.RelationshipEntity
@@ -41,7 +42,9 @@ object SyncMerge {
         val relationships: List<RelationshipEntity>,
         val members: List<MemberEntity>,
         /** Links removed on this phone whose removal has not reached the server yet. */
-        val removingEdgeIds: Set<String>
+        val removingEdgeIds: Set<String>,
+        /** Records of files this phone holds, so a pull knows which are already here. */
+        val assets: List<AssetEntity> = emptyList()
     )
 
     data class Plan(
@@ -51,13 +54,40 @@ object SyncMerge {
         val writeRelationships: List<RelationshipEntity> = emptyList(),
         val removeRelationships: List<RelationshipEntity> = emptyList(),
         val writeMembers: List<MemberEntity> = emptyList(),
-        val removeMembers: List<String> = emptyList()
+        val removeMembers: List<String> = emptyList(),
+        /** Records of files the server has that this phone did not. */
+        val writeAssets: List<AssetEntity> = emptyList()
     ) {
         val changesAnything: Boolean
             get() = writeStories.isNotEmpty() || removeStories.isNotEmpty() ||
                 writePeople.isNotEmpty() || writeRelationships.isNotEmpty() ||
                 removeRelationships.isNotEmpty() || writeMembers.isNotEmpty() ||
-                removeMembers.isNotEmpty()
+                removeMembers.isNotEmpty() || writeAssets.isNotEmpty()
+    }
+
+    /**
+     * Records of files, which arrive without their bytes.
+     *
+     * A record this phone already has keeps its local path, because that path is where the
+     * recording actually is and the server's copy of the record has no idea. What the server
+     * can tell this phone is where the file lives on the server, so that is what is taken.
+     *
+     * A record for a story this phone cannot see is dropped. The permission answer is the
+     * story's, and a file record without its story is a row nothing can open.
+     */
+    private fun assets(mine: List<AssetEntity>, theirs: List<AssetEntity>, familyId: String): List<AssetEntity> {
+        val here = mine.associateBy { it.assetId }
+        return theirs
+            .filter { it.familyId == familyId }
+            .mapNotNull { arrived ->
+                val existing = here[arrived.assetId]
+                when {
+                    existing == null -> arrived
+                    // Already has the file. Only the server's path is news.
+                    existing.remotePath == arrived.remotePath -> null
+                    else -> existing.copy(remotePath = arrived.remotePath)
+                }
+            }
     }
 
     fun plan(local: Local, got: Fetched.Got, familyId: String, me: String): Plan = Plan(
@@ -80,7 +110,8 @@ object SyncMerge {
         writeMembers = local.members.associateBy { it.userId }.let { mine ->
             got.members.filter { it.familyId == familyId && mine[it.userId] != it }
         },
-        removeMembers = local.members.filter { it.userId !in got.memberIds }.map { it.userId }
+        removeMembers = local.members.filter { it.userId !in got.memberIds }.map { it.userId },
+        writeAssets = assets(local.assets, got.assets, familyId)
     )
 
     /** This row's current version is the one the server turned down. */

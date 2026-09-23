@@ -1,5 +1,7 @@
 package com.arv.app.core.sync
 
+import android.net.Uri
+import com.arv.app.core.data.local.AssetEntity
 import com.arv.app.core.data.local.PersonEntity
 import com.arv.app.core.data.local.RelationshipEntity
 import com.arv.app.core.data.local.StoryEntity
@@ -11,15 +13,21 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.Source
+import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.storage.StorageReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
+import java.io.File
 import kotlin.coroutines.resumeWithException
 
 /**
- * [SyncRemote] on Firestore, on the free plan. Files are not part of this: nothing here
- * touches Cloud Storage.
+ * [SyncRemote] on Firestore for the records and Cloud Storage for the files.
+ *
+ * Cloud Storage needs the paid Firebase plan. On a project without it, every file call comes
+ * back [Sent.Unreachable], which is the same answer as no connection: the records still
+ * travel, the bytes wait, and nothing is lost. So the class works on either plan.
  *
  * Construction throws when the app has no Firebase configuration, which is how a build
  * without google-services.json ends up with [SyncRemote.None]. See ServiceLocator.
@@ -29,7 +37,8 @@ import kotlin.coroutines.resumeWithException
  * missing things that are still there.
  */
 class FirestoreSyncRemote(
-    private val db: FirebaseFirestore = FirebaseFirestore.getInstance()
+    private val db: FirebaseFirestore = FirebaseFirestore.getInstance(),
+    private val files: StorageReference? = runCatching { FirebaseStorage.getInstance().reference }.getOrNull()
 ) : SyncRemote {
 
     override val available = true
@@ -83,6 +92,44 @@ class FirestoreSyncRemote(
             if (wrote) Sent.Done else Sent.Stale
         }
 
+    // ---- files
+    //
+    // The record first, then the bytes, because storage.rules reads the record to decide
+    // whether this account may write the file.
+
+    override suspend fun sendAsset(asset: AssetEntity, story: StoryEntity): Sent = attempt {
+        db.document("${'$'}{SyncPaths.assets(asset.familyId)}/${'$'}{asset.assetId}")
+            .set(SyncDocs.asset(asset, story)).awaitTask()
+        Sent.Done
+    }
+
+    override suspend fun uploadAssetFile(remotePath: String, file: File): Sent {
+        val ref = files ?: return Sent.Unreachable
+        if (!file.isFile) return Sent.Refused
+        return attempt(FILE_TIMEOUT_MS) {
+            ref.child(remotePath).putFile(Uri.fromFile(file)).awaitTask()
+            Sent.Done
+        }
+    }
+
+    override suspend fun downloadAssetFile(remotePath: String, into: File): Sent {
+        val ref = files ?: return Sent.Unreachable
+        into.parentFile?.mkdirs()
+        val outcome = attempt(FILE_TIMEOUT_MS) {
+            ref.child(remotePath).getFile(into).awaitTask()
+            Sent.Done
+        }
+        // A part-written file is worse than none: it would look like the recording and play
+        // as nothing. Anything short of Done leaves the phone as it was.
+        if (outcome != Sent.Done) into.delete()
+        return outcome
+    }
+
+    override suspend fun removeAssetFile(remotePath: String): Sent {
+        val ref = files ?: return Sent.Unreachable
+        return attempt { ref.child(remotePath).delete().awaitTask(); Sent.Done }
+    }
+
     override suspend fun fetch(familyId: String, userId: String): Fetched =
         withTimeoutOrNull(FETCH_TIMEOUT_MS) { fetchNow(familyId, userId) } ?: Fetched.Unreachable
 
@@ -104,7 +151,13 @@ class FirestoreSyncRemote(
         return try {
             val people = db.collection(SyncPaths.people(familyId)).get(Source.SERVER).awaitTask()
             val edges = db.collection(SyncPaths.relationships(familyId)).get(Source.SERVER).awaitTask()
-            val stories = storyQueries(familyId, userId, role, ancestors)
+            val stories = permissionQueries(SyncPaths.stories(familyId), familyId, userId, role, ancestors)
+                .flatMap { it.get(Source.SERVER).awaitTask().documents }
+                .distinctBy { it.id }
+            // Asset records carry the same permission fields, so they are asked for in the
+            // same shapes. One set of queries, so the two can never disagree about who may
+            // see what.
+            val assets = permissionQueries(SyncPaths.assets(familyId), familyId, userId, role, ancestors)
                 .flatMap { it.get(Source.SERVER).awaitTask().documents }
                 .distinctBy { it.id }
 
@@ -115,7 +168,9 @@ class FirestoreSyncRemote(
                 relationships = edges.documents.mapNotNull { SyncDocs.relationshipFrom(it.fields()) },
                 relationshipIds = edges.documents.map { it.id }.toSet(),
                 stories = stories.mapNotNull { SyncDocs.storyFrom(it.id, it.fields()) },
-                storyIds = stories.map { it.id }.toSet()
+                storyIds = stories.map { it.id }.toSet(),
+                assets = assets.mapNotNull { SyncDocs.assetFrom(it.id, it.fields()) },
+                assetIds = assets.map { it.id }.toSet()
             )
         } catch (c: CancellationException) {
             throw c
@@ -125,19 +180,22 @@ class FirestoreSyncRemote(
     }
 
     /**
-     * Every story this account may read, asked for in the shapes firestore.rules can prove.
-     * The rules are not filters: a query that could return one document the reader may not
-     * see is refused whole, so each of these names the fields its rule reads.
+     * Everything in [path] this account may read, asked for in the shapes firestore.rules can
+     * prove. The rules are not filters: a query that could return one document the reader may
+     * not see is refused whole, so each of these names the fields its rule reads.
      *
-     * Private stories are never on the server, so there is no query for them. A branch story
-     * is asked for by the ancestors on this account's member row as the server holds it, not
-     * as this phone works them out, because the rule reads the server's row.
+     * Stories and asset records both carry those fields and are both asked for here, so the
+     * two cannot drift into different ideas of who may see what.
+     *
+     * Private material is never on the server, so there is no query for it. A branch story is
+     * asked for by the ancestors on this account's member row as the server holds it, not as
+     * this phone works them out, because the rule reads the server's row.
      */
-    private fun storyQueries(familyId: String, userId: String, role: MemberRole, ancestors: List<String>): List<Query> {
+    private fun permissionQueries(path: String, familyId: String, userId: String, role: MemberRole, ancestors: List<String>): List<Query> {
         val keeper = role == MemberRole.OWNER || role == MemberRole.KEEPER
-        val stories = db.collection(SyncPaths.stories(familyId))
+        val collection = db.collection(path)
         return (if (keeper) listOf(false, true) else listOf(false)).flatMap { restricted ->
-            val base = stories.whereEqualTo("familyId", familyId).whereEqualTo("restricted", restricted)
+            val base = collection.whereEqualTo("familyId", familyId).whereEqualTo("restricted", restricted)
             listOf(
                 base.whereEqualTo("visibility", "FAMILY"),
                 base.whereEqualTo("visibility", "SELECTED").whereArrayContains("sharedWithUserIds", userId),
@@ -149,9 +207,9 @@ class FirestoreSyncRemote(
     }
 
     /** Sent or refused or unreachable, never a throw. The caller keeps its row either way. */
-    private suspend fun attempt(block: suspend () -> Sent): Sent =
+    private suspend fun attempt(timeoutMs: Long = WRITE_TIMEOUT_MS, block: suspend () -> Sent): Sent =
         try {
-            withTimeoutOrNull(WRITE_TIMEOUT_MS) { block() } ?: Sent.Unreachable
+            withTimeoutOrNull(timeoutMs) { block() } ?: Sent.Unreachable
         } catch (c: CancellationException) {
             // The work was stopped, not refused. Let it stop.
             throw c
@@ -184,6 +242,12 @@ class FirestoreSyncRemote(
 
         /** A whole pull, every query in it. Past this, call it offline and try later. */
         const val FETCH_TIMEOUT_MS = 90_000L
+
+        /**
+         * One file. An hour of audio over a slow connection is minutes, not seconds, and a
+         * recording that almost finished uploading is worth waiting for.
+         */
+        const val FILE_TIMEOUT_MS = 10 * 60_000L
     }
 }
 

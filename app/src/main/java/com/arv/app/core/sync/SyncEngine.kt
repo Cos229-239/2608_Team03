@@ -1,11 +1,19 @@
 package com.arv.app.core.sync
 
+import com.arv.app.core.data.local.AssetEntity
 import com.arv.app.core.data.local.OutboxEntity
 import com.arv.app.core.data.local.PersonEntity
 import com.arv.app.core.data.local.RelationshipEntity
 import com.arv.app.core.data.local.StoryEntity
+import java.io.File
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+
+/**
+ * A file this phone holds and the story that decides whether it may travel. They come
+ * together because the permission answer lives on the story and nowhere else.
+ */
+data class AssetWork(val asset: AssetEntity, val story: StoryEntity)
 
 /** The phone half of sync, behind an interface for the same reason [SyncRemote] is. */
 interface SyncLocal {
@@ -16,6 +24,26 @@ interface SyncLocal {
 
     /** Stories erased here that the server still holds. Erasing left no row to compare. */
     suspend fun pendingStoryRemovals(familyId: String): List<OutboxEntity>
+
+    /** Files on this phone the server has not confirmed, each with its story. */
+    suspend fun unsentAssets(familyId: String): List<AssetWork>
+
+    /** The record landed. The bytes have not yet, so the row is not SYNCED. */
+    suspend fun assetRecorded(assetId: String, remotePath: String)
+
+    /** The bytes landed too. */
+    suspend fun assetUploaded(assetId: String)
+
+    /** The rules refused it, or the file is not on this phone any more. */
+    suspend fun assetRefused(assetId: String)
+
+    /** Records this phone has with no file behind them yet. */
+    suspend fun assetsToFetch(familyId: String): List<AssetEntity>
+
+    /** Where a downloaded file belongs on this phone. */
+    fun fileFor(asset: AssetEntity): File
+
+    suspend fun assetArrived(assetId: String, localPath: String)
 
     /** Null records that the server no longer holds it. */
     suspend fun storySent(storyId: String, updatedAt: Long?)
@@ -132,6 +160,33 @@ class SyncEngine(
             }
         }
 
+        // Files, after the stories they belong to. The record goes first and the bytes
+        // follow, because storage.rules reads the record to decide who may write the file.
+        for (work in local.unsentAssets(familyId)) {
+            if (!SyncPolicy.sharesFile(work.story)) continue
+            val file = File(work.asset.localPath)
+            if (!file.isFile) continue
+            val remotePath = work.asset.remotePath ?: SyncPaths.assetFile(
+                familyId, work.asset.assetId, SyncPaths.fileNameFor(work.asset.localPath)
+            )
+            if (work.asset.remotePath == null) {
+                when (remote.sendAsset(work.asset.copy(remotePath = remotePath), work.story)) {
+                    Sent.Done -> local.assetRecorded(work.asset.assetId, remotePath)
+                    Sent.Stale -> Unit
+                    Sent.Refused -> { local.assetRefused(work.asset.assetId); refused++; continue }
+                    Sent.Unreachable -> return Result.Offline
+                }
+            }
+            when (remote.uploadAssetFile(remotePath, file)) {
+                Sent.Done -> { local.assetUploaded(work.asset.assetId); sent++ }
+                Sent.Stale -> Unit
+                Sent.Refused -> { local.assetRefused(work.asset.assetId); refused++ }
+                // The record is on the server and the bytes are not. The row stays
+                // unfinished, so the next run sends only what is missing.
+                Sent.Unreachable -> return Result.Offline
+            }
+        }
+
         for (person in local.unsyncedPeople(familyId)) {
             if (!SyncPolicy.hasNews(person.updatedAt, person.syncedAt, person.refusedAt)) continue
             when (remote.sendPerson(person)) {
@@ -155,14 +210,33 @@ class SyncEngine(
         if (!pull) return Result.Done(sent, refused, merged = null)
 
         return when (val got = remote.fetch(familyId, userId)) {
-            is Fetched.Got -> Result.Done(
-                sent,
-                refused,
-                merged = local.merge(familyId) { snapshot -> SyncMerge.plan(snapshot, got, familyId, userId) }
-            )
+            is Fetched.Got -> {
+                val merged = local.merge(familyId) { snapshot -> SyncMerge.plan(snapshot, got, familyId, userId) }
+                // Files last, and only after their records are written, so a download that
+                // cannot finish leaves a phone that still knows what it is missing.
+                fetchFiles(familyId)
+                Result.Done(sent, refused, merged = merged)
+            }
             Fetched.NotAMember -> Result.NotAMember
             Fetched.Refused -> Result.Done(sent, refused, merged = null, pullRefused = true)
             Fetched.Unreachable -> Result.Offline
+        }
+    }
+
+    /**
+     * Brings down the files behind records this phone now has.
+     *
+     * A failure here is not an offline result. The records arrived, which is the part that
+     * makes the archive readable, and a recording that has not landed yet is a row the next
+     * run will try again. Saying the whole pull failed would undo work that succeeded.
+     */
+    private suspend fun fetchFiles(familyId: String) {
+        for (asset in local.assetsToFetch(familyId)) {
+            val remotePath = asset.remotePath ?: continue
+            val into = local.fileFor(asset)
+            if (remote.downloadAssetFile(remotePath, into) == Sent.Done) {
+                local.assetArrived(asset.assetId, into.path)
+            }
         }
     }
 }

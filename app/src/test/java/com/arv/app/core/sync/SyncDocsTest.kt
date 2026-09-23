@@ -1,10 +1,12 @@
 package com.arv.app.core.sync
 
+import com.arv.app.core.data.local.AssetEntity
 import com.arv.app.core.data.local.PersonEntity
 import com.arv.app.core.data.local.RelationshipEntity
 import com.arv.app.core.data.local.StoryEntity
 import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.ArchiveArea
+import com.arv.app.core.model.AssetType
 import com.arv.app.core.model.Confidence
 import com.arv.app.core.model.ConsentMethod
 import com.arv.app.core.model.EraPrecision
@@ -63,6 +65,22 @@ class SyncDocsTest {
         refusedAt = 1_700L
     )
 
+    private fun asset() = AssetEntity(
+        assetId = "a_1",
+        storyId = "s_levee",
+        familyId = "fam_1",
+        type = AssetType.AUDIO,
+        localPath = "/data/user/0/com.arv.app/files/recordings/a_1.m4a",
+        remotePath = "families/fam_1/assets/a_1/file.m4a",
+        mimeType = "audio/mp4",
+        bytes = 4_812_004L,
+        durationMs = 2_700_000L,
+        sha256 = "abc123",
+        ocrText = null,
+        uploadState = UploadState.SYNCED,
+        createdAt = 1_000L
+    )
+
     private fun person() = PersonEntity(
         personId = "p_ruth",
         familyId = "fam_1",
@@ -108,6 +126,51 @@ class SyncDocsTest {
         )
     }
 
+    // ---- assets: the record storage.rules reads before it hands over a file
+
+    @Test
+    fun `an asset record carries every permission field the storage rules read`() {
+        val doc = SyncDocs.asset(asset(), story())
+        // storage.rules canRead and canEdit ask for exactly these, off the asset document.
+        listOf(
+            "familyId", "restricted", "visibility", "branchRootPersonId", "sharedWithUserIds",
+            "createdBy", "area", "subjectPersonIds"
+        ).forEach { assertTrue("storage.rules reads $it", it in doc.keys) }
+        val s = story()
+        assertEquals(s.visibility.name, doc["visibility"])
+        assertEquals(s.restricted, doc["restricted"])
+        assertEquals(s.createdBy, doc["createdBy"])
+        assertEquals(s.sharedWithUserIds, doc["sharedWithUserIds"])
+    }
+
+    @Test
+    fun `an asset comes back without the story's fields and without a local file`() {
+        val a = asset()
+        val back = SyncDocs.assetFrom(a.assetId, SyncDocs.asset(a, story()))
+        // localPath empty is the signal that the bytes are not here yet.
+        assertEquals(a.copy(localPath = "", ocrText = null, uploadState = UploadState.SYNCED), back)
+    }
+
+    @Test
+    fun `an asset record with no remote path is not usable and comes back null`() {
+        val doc = SyncDocs.asset(asset().copy(remotePath = null), story()).toMutableMap()
+        assertNull(SyncDocs.assetFrom("a_1", doc))
+        doc.remove("storyId")
+        assertNull(SyncDocs.assetFrom("a_1", doc))
+    }
+
+    @Test
+    fun `what the family typed never becomes part of a storage path`() {
+        assertEquals("file.m4a", SyncPaths.fileNameFor("/files/recordings/Ruth Delaney 1953.m4a"))
+        assertEquals("file.jpg", SyncPaths.fileNameFor("C:\\Users\\Angela\\grandma at the lake.jpg"))
+        assertEquals("file", SyncPaths.fileNameFor("/files/no-extension"))
+        assertEquals("file", SyncPaths.fileNameFor("/files/odd.extensionthatistoolong"))
+        assertEquals(
+            "families/fam_1/assets/a_1/file.m4a",
+            SyncPaths.assetFile("fam_1", "a_1", SyncPaths.fileNameFor("/x/y.m4a"))
+        )
+    }
+
     @Test
     fun `what only this phone knows never goes in a document`() {
         val storyKeys = SyncDocs.story(story()).keys
@@ -117,6 +180,10 @@ class SyncDocsTest {
         val personKeys = SyncDocs.person(person()).keys
         listOf("portraitPath", "portraitAssetId", "relationLabel", "syncedAt", "refusedAt").forEach {
             assertFalse("$it must stay on the phone", it in personKeys)
+        }
+        val assetKeys = SyncDocs.asset(asset(), story()).keys
+        listOf("localPath", "ocrText", "uploadState").forEach {
+            assertFalse("$it must stay on the phone", it in assetKeys)
         }
     }
 

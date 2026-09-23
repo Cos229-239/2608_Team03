@@ -55,6 +55,15 @@ object SyncPolicy {
     const val ERASE_AFTER_MS = 30L * 24 * 60 * 60 * 1000
 
     /** True once a deleted story has waited out [ERASE_AFTER_MS]. */
+    /**
+     * Whether a recording or photograph may leave the phone.
+     *
+     * It asks the story, and only the story. A file has no audience of its own, so there is
+     * no second place for the answer to be different, and a file whose story was never
+     * shareable has never been offered to the server in the first place.
+     */
+    fun sharesFile(story: StoryEntity): Boolean = shares(story) && story.deletedAt == null
+
     fun dueToErase(deletedAt: Long?, now: Long): Boolean =
         deletedAt != null && now - deletedAt >= ERASE_AFTER_MS
 

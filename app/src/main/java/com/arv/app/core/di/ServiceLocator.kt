@@ -163,7 +163,13 @@ object ServiceLocator {
     fun syncEngine(context: Context): SyncEngine =
         sync ?: synchronized(this) {
             sync ?: SyncEngine(
-                local = RoomSyncLocal(ArvDatabase.get(context)),
+                // The same folder the recorder writes to, so a recording that arrived from
+                // another phone sits beside one made here and nothing downstream can tell
+                // them apart.
+                local = RoomSyncLocal(
+                    ArvDatabase.get(context),
+                    java.io.File(context.applicationContext.filesDir, "recordings")
+                ),
                 remote = runCatching<SyncRemote> { FirestoreSyncRemote() }.getOrElse { SyncRemote.None }
             ).also { sync = it }
         }

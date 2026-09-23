@@ -1,9 +1,11 @@
 package com.arv.app.core.sync
 
+import com.arv.app.core.data.local.AssetEntity
 import com.arv.app.core.data.local.MemberEntity
 import com.arv.app.core.data.local.PersonEntity
 import com.arv.app.core.data.local.RelationshipEntity
 import com.arv.app.core.data.local.StoryEntity
+import java.io.File
 
 /**
  * The family's server, as sync sees it. Behind an interface so everything above it is tested
@@ -11,9 +13,11 @@ import com.arv.app.core.data.local.StoryEntity
  * [com.arv.app.core.remote.InviteRemote].
  *
  * What can cross is exactly what these methods carry: stories, people, the links between
- * them, and the member list the invitation code already keeps there. No method takes a file
- * or a transcript. A story only reaches [sendStory] through [SyncEngine], which asks
- * [SyncPolicy.shares] first, so a private story or a health record never does.
+ * them, the member list the invitation code already keeps there, and the recordings and
+ * photographs belonging to stories that may travel. A story only reaches [sendStory] through
+ * [SyncEngine], which asks [SyncPolicy.shares] first, so a private story or a health record
+ * never does, and a file only reaches [uploadAssetFile] after [SyncPolicy.sharesFile] says
+ * the same about the story it belongs to.
  */
 interface SyncRemote {
 
@@ -41,6 +45,22 @@ interface SyncRemote {
     suspend fun removeRelationship(familyId: String, edgeId: String): Sent
 
     /**
+     * Puts the record of a recording or photograph on the server. It has to land before the
+     * bytes do: storage.rules decides who may write the file by reading this document, so
+     * uploading first is asking permission from something that is not there yet.
+     */
+    suspend fun sendAsset(asset: AssetEntity, story: StoryEntity): Sent
+
+    /** The bytes themselves, to the path the record already names. */
+    suspend fun uploadAssetFile(remotePath: String, file: File): Sent
+
+    /** Brings a file down to [into]. The caller keeps nothing on a failure. */
+    suspend fun downloadAssetFile(remotePath: String, into: File): Sent
+
+    /** Takes a file off the server when its story is withdrawn or erased. */
+    suspend fun removeAssetFile(remotePath: String): Sent
+
+    /**
      * Everything in the family this account may read, asked for in the shapes the rules can
      * prove, all of it or nothing.
      */
@@ -54,6 +74,10 @@ interface SyncRemote {
         override suspend fun sendPerson(person: PersonEntity) = Sent.Unreachable
         override suspend fun sendRelationship(edge: RelationshipEntity) = Sent.Unreachable
         override suspend fun removeRelationship(familyId: String, edgeId: String) = Sent.Unreachable
+        override suspend fun sendAsset(asset: AssetEntity, story: StoryEntity) = Sent.Unreachable
+        override suspend fun uploadAssetFile(remotePath: String, file: File) = Sent.Unreachable
+        override suspend fun downloadAssetFile(remotePath: String, into: File) = Sent.Unreachable
+        override suspend fun removeAssetFile(remotePath: String) = Sent.Unreachable
         override suspend fun fetch(familyId: String, userId: String): Fetched = Fetched.Unreachable
     }
 }
@@ -85,7 +109,10 @@ sealed interface Fetched {
         val relationships: List<RelationshipEntity>,
         val relationshipIds: Set<String>,
         val stories: List<StoryEntity>,
-        val storyIds: Set<String>
+        val storyIds: Set<String>,
+        /** Records of files, in the same permission shapes the stories came in. */
+        val assets: List<AssetEntity> = emptyList(),
+        val assetIds: Set<String> = emptySet()
     ) : Fetched
 
     /** The server does not count this account as in the family: never registered, or removed. */

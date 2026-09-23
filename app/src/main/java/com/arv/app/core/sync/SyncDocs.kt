@@ -1,11 +1,13 @@
 package com.arv.app.core.sync
 
+import com.arv.app.core.data.local.AssetEntity
 import com.arv.app.core.data.local.MemberEntity
 import com.arv.app.core.data.local.PersonEntity
 import com.arv.app.core.data.local.RelationshipEntity
 import com.arv.app.core.data.local.StoryEntity
 import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.ArchiveArea
+import com.arv.app.core.model.AssetType
 import com.arv.app.core.model.Confidence
 import com.arv.app.core.model.ConsentMethod
 import com.arv.app.core.model.EraPrecision
@@ -14,6 +16,7 @@ import com.arv.app.core.model.ProfileState
 import com.arv.app.core.model.Provenance
 import com.arv.app.core.model.RelationshipKind
 import com.arv.app.core.model.StoryKind
+import com.arv.app.core.model.UploadState
 import com.arv.app.core.model.Visibility
 
 /** Where each kind of record lives on the server. One place, so the paths never drift. */
@@ -22,6 +25,28 @@ object SyncPaths {
     fun people(familyId: String) = "families/$familyId/people"
     fun relationships(familyId: String) = "families/$familyId/relationships"
     fun members(familyId: String) = "families/$familyId/members"
+
+    /** The record of a recording or a photograph, which is what storage.rules reads. */
+    fun assets(familyId: String) = "families/$familyId/assets"
+
+    /**
+     * Where the bytes live, under the same assetId the record uses, because storage.rules
+     * asks the record at that id whether this account may have the file.
+     */
+    fun assetFile(familyId: String, assetId: String, fileName: String) =
+        "families/$familyId/assets/$assetId/$fileName"
+
+    /**
+     * The name to store a file under. The extension is kept so a downloaded file opens with
+     * the right player, and everything else is dropped: a name somebody typed is not needed
+     * on the server and can carry a person's name into a path.
+     */
+    fun fileNameFor(localPath: String): String {
+        val base = localPath.substringAfterLast('/').substringAfterLast('\\')
+        val ext = base.substringAfterLast('.', "")
+        val usable = ext.isNotBlank() && ext.length <= 8 && ext.all { it.isLetterOrDigit() }
+        return if (usable) "file.$ext" else "file"
+    }
 }
 
 /**
@@ -103,6 +128,59 @@ object SyncDocs {
             updatedAt = d.long("updatedAt") ?: return null,
             deletedAt = d.long("deletedAt"),
             deletedBy = d.string("deletedBy")
+        )
+    }
+
+    // ---- assets
+    //
+    // The record carries a copy of its story's permission fields, because storage.rules
+    // decides who may have the bytes by reading this document and nothing else. That is the
+    // whole design: one permission decision, written in firestore.rules, asked twice.
+
+    fun asset(a: AssetEntity, s: StoryEntity): Map<String, Any?> = mapOf(
+        "assetId" to a.assetId,
+        "storyId" to a.storyId,
+        "familyId" to a.familyId,
+        "type" to a.type.name,
+        "mimeType" to a.mimeType,
+        "bytes" to a.bytes,
+        "durationMs" to a.durationMs,
+        "sha256" to a.sha256,
+        "remotePath" to a.remotePath,
+        "createdAt" to a.createdAt,
+        // Copied from the story so the rules can read them here. Never read back onto the
+        // asset row: the story is where they live, and a copy that drifted would be a
+        // second opinion about who may read something.
+        "visibility" to s.visibility.name,
+        "restricted" to s.restricted,
+        "branchRootPersonId" to s.branchRootPersonId,
+        "sharedWithUserIds" to s.sharedWithUserIds,
+        "area" to s.area.name,
+        "subjectPersonIds" to s.subjectPersonIds,
+        "createdBy" to s.createdBy
+    )
+
+    /**
+     * The record as this phone's row. The permission fields are deliberately not read back:
+     * they belong to the story, which arrives in the same pull.
+     *
+     * [localPath] is empty because the file is not here yet. A row with no local path and a
+     * remote one is exactly what the engine looks for when it decides what to download.
+     */
+    fun assetFrom(id: String, d: Map<String, Any?>): AssetEntity? {
+        return AssetEntity(
+            assetId = id,
+            storyId = d.string("storyId") ?: return null,
+            familyId = d.string("familyId") ?: return null,
+            type = d.enum<AssetType>("type") ?: return null,
+            localPath = "",
+            remotePath = d.string("remotePath") ?: return null,
+            mimeType = d.string("mimeType") ?: return null,
+            bytes = d.long("bytes") ?: 0L,
+            durationMs = d.long("durationMs"),
+            sha256 = d.string("sha256"),
+            uploadState = UploadState.SYNCED,
+            createdAt = d.long("createdAt") ?: 0L
         )
     }
 

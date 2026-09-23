@@ -1,6 +1,7 @@
 package com.arv.app.core.sync
 
 import com.arv.app.core.data.local.MemberEntity
+import com.arv.app.core.data.local.AssetEntity
 import com.arv.app.core.data.local.OutboxEntity
 import com.arv.app.core.data.local.PersonEntity
 import com.arv.app.core.data.local.RelationshipEntity
@@ -9,7 +10,9 @@ import com.arv.app.core.model.ArchiveArea
 import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.OutboxOp
 import com.arv.app.core.model.RelationshipKind
+import com.arv.app.core.model.AssetType
 import com.arv.app.core.model.StoryKind
+import com.arv.app.core.model.UploadState
 import com.arv.app.core.model.Visibility
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -35,6 +38,25 @@ class SyncEngineTest {
         visibility = visibility, createdBy = createdBy, updatedAt = updatedAt, syncedAt = syncedAt
     )
 
+    /**
+     * A real file on disk, because the engine will not send bytes it cannot find. Written to
+     * the JVM's temp folder and deleted when the JVM exits, so nothing is left behind.
+     */
+    private fun recording(name: String): java.io.File =
+        java.io.File.createTempFile(name, ".m4a").apply { writeBytes(ByteArray(32) { 7 }); deleteOnExit() }
+
+    private fun asset(
+        id: String,
+        storyId: String,
+        localPath: String,
+        remotePath: String? = null,
+        state: UploadState = UploadState.LOCAL_ONLY
+    ) = AssetEntity(
+        assetId = id, storyId = storyId, familyId = fam, type = AssetType.AUDIO,
+        localPath = localPath, remotePath = remotePath, mimeType = "audio/mp4",
+        uploadState = state, createdAt = 10L
+    )
+
     /** A phone's database. Holds rows and applies what it is told, the way Room would. */
     private class FakeLocal(
         stories: List<StoryEntity> = emptyList(),
@@ -42,8 +64,11 @@ class SyncEngineTest {
         edges: List<RelationshipEntity> = emptyList(),
         members: List<MemberEntity> = emptyList(),
         removals: List<OutboxEntity> = emptyList(),
-        storyRemovals: List<OutboxEntity> = emptyList()
+        storyRemovals: List<OutboxEntity> = emptyList(),
+        assets: List<AssetEntity> = emptyList()
     ) : SyncLocal {
+        val assets = assets.associateBy { it.assetId }.toMutableMap()
+        val downloads = mutableListOf<String>()
         val stories = stories.associateBy { it.storyId }.toMutableMap()
         val people = people.associateBy { it.personId }.toMutableMap()
         val edges = edges.associateBy { SyncDocs.edgeId(it) }.toMutableMap()
@@ -88,13 +113,43 @@ class SyncEngineTest {
         }
         override suspend fun removalFailed(outboxId: Long, why: String) = Unit
 
+        override suspend fun unsentAssets(familyId: String) =
+            assets.values
+                .filter { it.uploadState != UploadState.SYNCED }
+                .mapNotNull { a -> stories[a.storyId]?.let { AssetWork(a, it) } }
+
+        override suspend fun assetRecorded(assetId: String, remotePath: String) {
+            assets[assetId] = assets.getValue(assetId).copy(remotePath = remotePath, uploadState = UploadState.UPLOADING)
+        }
+
+        override suspend fun assetUploaded(assetId: String) {
+            assets[assetId] = assets.getValue(assetId).copy(uploadState = UploadState.SYNCED)
+        }
+
+        override suspend fun assetRefused(assetId: String) {
+            assets[assetId] = assets.getValue(assetId).copy(uploadState = UploadState.FAILED)
+        }
+
+        override suspend fun assetsToFetch(familyId: String) =
+            assets.values.filter { it.remotePath != null && it.localPath.isBlank() }
+
+        override fun fileFor(asset: AssetEntity): java.io.File =
+            java.io.File(System.getProperty("java.io.tmpdir"), "arv-test-" + asset.assetId)
+
+        override suspend fun assetArrived(assetId: String, localPath: String) {
+            downloads += assetId
+            assets[assetId] = assets.getValue(assetId).copy(localPath = localPath, uploadState = UploadState.SYNCED)
+        }
+
         override suspend fun merge(familyId: String, plan: (SyncMerge.Local) -> SyncMerge.Plan): SyncMerge.Plan {
             val p = plan(
                 SyncMerge.Local(
                     stories.values.toList(), people.values.toList(), edges.values.toList(),
-                    members.values.toList(), removals.map { it.docId }.toSet()
+                    members.values.toList(), removals.map { it.docId }.toSet(),
+                    assets.values.toList()
                 )
             )
+            p.writeAssets.forEach { assets[it.assetId] = it }
             p.writeStories.forEach { stories[it.storyId] = it }
             p.removeStories.forEach { stories.remove(it) }
             p.writePeople.forEach { people[it.personId] = it }
@@ -122,6 +177,11 @@ class SyncEngineTest {
         var withdrawAnswer: Sent = Sent.Done
         var removeAnswer: Sent = Sent.Done
         var fetchAnswer: Fetched? = null
+        val assetDocs = mutableMapOf<String, AssetEntity>()
+        val uploaded = mutableMapOf<String, Long>()
+        var assetDocAnswer: Sent = Sent.Done
+        var uploadAnswer: Sent = Sent.Done
+        var downloadAnswer: Sent = Sent.Done
 
         override suspend fun sendStory(story: StoryEntity, neverSent: Boolean): Sent {
             calls += "story:${story.storyId}:${if (neverSent) "new" else "checked"}"
@@ -137,6 +197,34 @@ class SyncEngineTest {
             calls += "withdraw:$storyId"
             if (withdrawAnswer == Sent.Done) stories.remove(storyId)
             return withdrawAnswer
+        }
+
+        override suspend fun sendAsset(asset: AssetEntity, story: StoryEntity): Sent {
+            calls += "assetdoc:${asset.assetId}"
+            if (assetDocAnswer == Sent.Done) assetDocs[asset.assetId] = asset
+            return assetDocAnswer
+        }
+
+        override suspend fun uploadAssetFile(remotePath: String, file: java.io.File): Sent {
+            calls += "upload:$remotePath"
+            if (uploadAnswer == Sent.Done) uploaded[remotePath] = file.length()
+            return uploadAnswer
+        }
+
+        override suspend fun downloadAssetFile(remotePath: String, into: java.io.File): Sent {
+            calls += "download:$remotePath"
+            if (downloadAnswer == Sent.Done) {
+                into.parentFile?.mkdirs()
+                into.writeBytes(ByteArray(32) { 7 })
+                into.deleteOnExit()
+            }
+            return downloadAnswer
+        }
+
+        override suspend fun removeAssetFile(remotePath: String): Sent {
+            calls += "rmfile:$remotePath"
+            uploaded.remove(remotePath)
+            return Sent.Done
         }
 
         override suspend fun sendPerson(person: PersonEntity): Sent {
@@ -167,7 +255,9 @@ class SyncEngineTest {
                 relationships = edges.values.toList(),
                 relationshipIds = edges.keys.toSet(),
                 stories = stories.values.toList(),
-                storyIds = stories.keys.toSet()
+                storyIds = stories.keys.toSet(),
+                assets = assetDocs.values.toList(),
+                assetIds = assetDocs.keys.toSet()
             )
         }
     }
@@ -342,6 +432,120 @@ class SyncEngineTest {
         assertEquals(SyncEngine.Result.Offline, engine(local, remote).run(fam, me, pull = true))
         assertEquals(1, local.storyRemovals.size)
         assertTrue("fetch" !in remote.calls)
+    }
+
+    // --- recordings and photographs ---
+
+    @Test
+    fun `a recording goes up as a record first and bytes second, because the rules read the record`() = runBlocking {
+        val file = recording("levee")
+        val local = FakeLocal(
+            stories = listOf(story("s_1", visibility = Visibility.FAMILY)),
+            assets = listOf(asset("a_1", "s_1", file.path))
+        )
+        val remote = FakeRemote()
+
+        engine(local, remote).run(fam, me, pull = false)
+
+        val path = "families/$fam/assets/a_1/file.m4a"
+        assertEquals(listOf("story:s_1:new", "assetdoc:a_1", "upload:$path"), remote.calls)
+        assertEquals(file.length(), remote.uploaded[path])
+        assertEquals(UploadState.SYNCED, local.assets.getValue("a_1").uploadState)
+        assertEquals(path, local.assets.getValue("a_1").remotePath)
+    }
+
+    @Test
+    fun `the recording of a private story never leaves the phone, and neither does a health one`() = runBlocking {
+        val file = recording("private")
+        val local = FakeLocal(
+            stories = listOf(
+                story("s_priv", visibility = Visibility.PRIVATE),
+                story("s_health", area = ArchiveArea.HEALTH)
+            ),
+            assets = listOf(asset("a_priv", "s_priv", file.path), asset("a_health", "s_health", file.path))
+        )
+        val remote = FakeRemote()
+
+        engine(local, remote).run(fam, me, pull = false)
+
+        assertTrue("nothing about a private or health file was sent", remote.calls.isEmpty())
+        assertTrue(remote.assetDocs.isEmpty())
+        assertTrue(remote.uploaded.isEmpty())
+    }
+
+    @Test
+    fun `a record the rules refuse is never followed by its bytes`() = runBlocking {
+        val file = recording("refused")
+        val local = FakeLocal(stories = listOf(story("s_1")), assets = listOf(asset("a_1", "s_1", file.path)))
+        val remote = FakeRemote().apply { assetDocAnswer = Sent.Refused }
+
+        engine(local, remote).run(fam, me, pull = false)
+
+        assertTrue("no upload was attempted", remote.calls.none { it.startsWith("upload:") })
+        assertEquals(UploadState.FAILED, local.assets.getValue("a_1").uploadState)
+    }
+
+    @Test
+    fun `a file that is not on this phone any more is passed over, not failed`() = runBlocking {
+        val local = FakeLocal(
+            stories = listOf(story("s_1")),
+            assets = listOf(asset("a_gone", "s_1", "/nowhere/gone.m4a"))
+        )
+        val remote = FakeRemote()
+
+        engine(local, remote).run(fam, me, pull = false)
+
+        assertTrue(remote.calls.none { it.startsWith("assetdoc:") || it.startsWith("upload:") })
+        assertEquals(UploadState.LOCAL_ONLY, local.assets.getValue("a_gone").uploadState)
+    }
+
+    @Test
+    fun `a record that already landed is not sent twice when the bytes had to wait`() = runBlocking {
+        val file = recording("waiting")
+        val local = FakeLocal(
+            stories = listOf(story("s_1")),
+            assets = listOf(
+                asset("a_1", "s_1", file.path, remotePath = "families/$fam/assets/a_1/file.m4a", state = UploadState.UPLOADING)
+            )
+        )
+        val remote = FakeRemote()
+
+        engine(local, remote).run(fam, me, pull = false)
+
+        assertTrue("the record was already there", remote.calls.none { it.startsWith("assetdoc:") })
+        assertTrue(remote.calls.any { it.startsWith("upload:") })
+        assertEquals(UploadState.SYNCED, local.assets.getValue("a_1").uploadState)
+    }
+
+    @Test
+    fun `a pull brings down the file behind a record that just arrived`() = runBlocking {
+        val local = FakeLocal()
+        val remote = FakeRemote()
+        remote.stories["s_theirs"] = story("s_theirs", createdBy = "u_ruth")
+        remote.assetDocs["a_theirs"] =
+            asset("a_theirs", "s_theirs", localPath = "", remotePath = "families/$fam/assets/a_theirs/file.m4a")
+
+        engine(local, remote).run(fam, me, pull = true)
+
+        assertEquals(listOf("a_theirs"), local.downloads)
+        assertTrue(local.assets.getValue("a_theirs").localPath.isNotBlank())
+        assertEquals(UploadState.SYNCED, local.assets.getValue("a_theirs").uploadState)
+    }
+
+    @Test
+    fun `a file that will not come down does not undo the records that did`() = runBlocking {
+        val local = FakeLocal()
+        val remote = FakeRemote().apply { downloadAnswer = Sent.Unreachable }
+        remote.stories["s_theirs"] = story("s_theirs", createdBy = "u_ruth")
+        remote.assetDocs["a_theirs"] =
+            asset("a_theirs", "s_theirs", localPath = "", remotePath = "families/$fam/assets/a_theirs/file.m4a")
+
+        val result = engine(local, remote).run(fam, me, pull = true)
+
+        assertTrue("the pull still counts as done", result is SyncEngine.Result.Done)
+        assertTrue("the story arrived", "s_theirs" in local.stories)
+        assertTrue("and so did the record of its file", "a_theirs" in local.assets)
+        assertTrue("only the bytes are still missing", local.downloads.isEmpty())
     }
 
     @Test
