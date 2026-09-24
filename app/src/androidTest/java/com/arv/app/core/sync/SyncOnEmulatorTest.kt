@@ -1,5 +1,12 @@
 package com.arv.app.core.sync
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -12,6 +19,7 @@ import com.arv.app.core.data.local.StoryEntity
 import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.ArchiveArea
 import com.arv.app.core.model.AssetType
+import com.arv.app.core.model.EraPrecision
 import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.StoryKind
 import com.arv.app.core.model.UploadState
@@ -309,6 +317,93 @@ class SyncOnEmulatorTest {
         assertTrue("the file did not reach Dana: " + hers.localPath, landed.isFile)
         assertArrayEquals("the bytes changed on the way", spoken, landed.readBytes())
         assertTrue("Dana's copy is not Ruth's file", landed.path != onRuthsPhone.path)
+    }
+
+    /**
+     * A photograph saved the way the Add Document screen saves one, and checked on the other
+     * phone as a picture rather than as bytes: the same file, still a JPEG that opens at its
+     * size, and the story's card finds it to show.
+     */
+    @Test
+    fun aPhotographReachesTheOtherPhone_andStillOpensAsAPicture() = runBlocking {
+        val f = familyOfTwo()
+        val onRuthsPhone = File(f.ruth.fileDir, "wedding.jpg").apply {
+            parentFile?.mkdirs()
+            val picture = Bitmap.createBitmap(64, 48, Bitmap.Config.ARGB_8888)
+            picture.eraseColor(Color.rgb(200, 120, 40))
+            outputStream().use { picture.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+        }
+        val storyId = f.ruth.repo.saveDocument(
+            familyId = f.id, createdByUserId = f.ruth.uid, localPath = onRuthsPhone.path,
+            mimeType = "image/jpeg", title = "The wedding", subjectPersonIds = emptyList(),
+            eraStart = 1961, eraEnd = null, eraPrecision = EraPrecision.EXACT, placeLabel = null,
+            tags = emptyList(), visibility = Visibility.FAMILY, aiUsePolicy = AiUsePolicy.SUMMARY_OK,
+            area = ArchiveArea.STORIES, now = now
+        )
+        val assetId = f.ruth.db.storyDao().byIdIncludingDeleted(storyId)!!.primaryAssetId!!
+
+        f.ruth.syncOk(f.id)
+        f.dana.syncOk(f.id)
+
+        assertEquals(StoryKind.PHOTO_SET, f.dana.db.storyDao().byIdIncludingDeleted(storyId)?.kind)
+        val hers = f.dana.db.assetDao().byId(assetId)
+        assertNotNull("the photograph's record did not reach Dana", hers)
+        assertEquals(AssetType.IMAGE, hers!!.type)
+        assertEquals("image/jpeg", hers.mimeType)
+        val landed = File(hers.localPath)
+        assertTrue("the photograph did not reach Dana: " + hers.localPath, landed.isFile)
+        assertTrue("it lost its extension: " + landed.name, landed.name.endsWith(".jpg"))
+        assertArrayEquals("the bytes changed on the way", onRuthsPhone.readBytes(), landed.readBytes())
+        val opened = BitmapFactory.decodeFile(landed.path)
+        assertNotNull("it arrived but does not open as a picture", opened)
+        assertEquals(64, opened.width)
+        assertEquals(48, opened.height)
+        assertEquals(
+            "the story's card on Dana's phone does not find it",
+            landed.path, f.dana.repo.observeImagePaths(f.id).first()[storyId]
+        )
+    }
+
+    /** The same for a document, checked as a PDF that still opens on the other phone. */
+    @Test
+    fun aDocumentReachesTheOtherPhone_andStillOpensAsAPdf() = runBlocking {
+        val f = familyOfTwo()
+        val onRuthsPhone = File(f.ruth.fileDir, "deed.pdf").apply {
+            parentFile?.mkdirs()
+            val pdf = PdfDocument()
+            val page = pdf.startPage(PdfDocument.PageInfo.Builder(200, 200, 1).create())
+            page.canvas.drawText("Deed to the farm, 1948", 10f, 20f, Paint())
+            pdf.finishPage(page)
+            outputStream().use { pdf.writeTo(it) }
+            pdf.close()
+        }
+        val storyId = f.ruth.repo.saveDocument(
+            familyId = f.id, createdByUserId = f.ruth.uid, localPath = onRuthsPhone.path,
+            mimeType = "application/pdf", title = "The deed", subjectPersonIds = emptyList(),
+            eraStart = 1948, eraEnd = null, eraPrecision = EraPrecision.EXACT, placeLabel = null,
+            tags = emptyList(), visibility = Visibility.FAMILY, aiUsePolicy = AiUsePolicy.SUMMARY_OK,
+            area = ArchiveArea.STORIES, now = now
+        )
+        val assetId = f.ruth.db.storyDao().byIdIncludingDeleted(storyId)!!.primaryAssetId!!
+
+        f.ruth.syncOk(f.id)
+        f.dana.syncOk(f.id)
+
+        assertEquals(StoryKind.DOCUMENT, f.dana.db.storyDao().byIdIncludingDeleted(storyId)?.kind)
+        val hers = f.dana.db.assetDao().byId(assetId)
+        assertNotNull("the document's record did not reach Dana", hers)
+        assertEquals(AssetType.DOCUMENT, hers!!.type)
+        assertEquals("application/pdf", hers.mimeType)
+        val landed = File(hers.localPath)
+        assertTrue("the document did not reach Dana: " + hers.localPath, landed.isFile)
+        assertTrue("it lost its extension: " + landed.name, landed.name.endsWith(".pdf"))
+        assertArrayEquals("the bytes changed on the way", onRuthsPhone.readBytes(), landed.readBytes())
+        val opened = PdfRenderer(ParcelFileDescriptor.open(landed, ParcelFileDescriptor.MODE_READ_ONLY))
+        try {
+            assertEquals("it arrived but does not open as a PDF", 1, opened.pageCount)
+        } finally {
+            opened.close()
+        }
     }
 
     /**

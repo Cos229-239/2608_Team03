@@ -7,7 +7,7 @@ Arv is the Swedish word for inheritance.
 
 ## Where the build stands
 
-Updated 2026-09-24. 341 unit tests, 0 failures, and 7 two-phone tests against the
+Updated 2026-09-24. 341 unit tests, 0 failures, and 9 two-phone tests against the
 Firebase emulator.
 
 Working end to end:
@@ -43,15 +43,18 @@ Partly built:
 - Timeline shows dated memories and gaps. Undated memories still need a home.
 - Sync. With sharing turned on in Settings, stories set to Family, Branch or Selected,
   the family tree and the member list go between phones, the later edit wins, and
-  deleting hides a story everywhere with an undo under Recently deleted. Recordings and
-  photographs travel as well. Each file gets a record carrying a copy of its story's
-  permission fields, and `storage.rules` reads that record to decide who may have the
-  bytes, so one permission decision written once is asked twice and the two cannot drift.
-  Private stories and health records never leave the phone, and neither do their files.
-  Where Cloud Storage is not on the project, everything else still syncs and each file
-  waits on the phone that made it until Storage is there. Branch
-  stories reach other phones only once member rows carry a place in the tree, and nothing
-  writes that yet.
+  deleting hides a story everywhere with an undo under Recently deleted. Recordings,
+  photographs and documents travel the same way. On the Firebase emulator each one has
+  gone from one test phone to the other with its bytes unchanged and opened there. On
+  the live project no file travels until it has Cloud Storage, which needs the paid
+  plan. A person's portrait does not travel at all yet. Each file gets a record carrying
+  a copy of its story's permission fields, and `storage.rules` reads that record to
+  decide who may have the bytes, so one permission decision written once is asked twice
+  and the two cannot drift. Private stories and health records never leave the phone,
+  and neither do their files. Where Cloud Storage is not on the project, everything else
+  still syncs and each file waits on the phone that made it until Storage is there.
+  Branch stories reach other phones only once member rows carry a place in the tree, and
+  nothing writes that yet.
 
 Not started:
 
