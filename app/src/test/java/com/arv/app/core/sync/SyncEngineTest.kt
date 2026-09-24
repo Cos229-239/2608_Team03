@@ -549,6 +549,31 @@ class SyncEngineTest {
     }
 
     @Test
+    fun `a file that cannot go up does not hold back the family tree or the pull`() = runBlocking {
+        val first = recording("stuck")
+        val second = recording("next")
+        val grandma = PersonEntity(personId = "p_grandma", familyId = fam, displayName = "Grandma", updatedAt = 100L)
+        val local = FakeLocal(
+            stories = listOf(story("s_1")),
+            people = listOf(grandma),
+            assets = listOf(asset("a_1", "s_1", first.path), asset("a_2", "s_1", second.path))
+        )
+        // Cloud Storage not answering while Firestore does, which is every project without
+        // the paid plan.
+        val remote = FakeRemote().apply { uploadAnswer = Sent.Unreachable }
+        remote.stories["s_theirs"] = story("s_theirs", createdBy = "u_ruth")
+
+        val result = engine(local, remote).run(fam, me, pull = true)
+
+        assertTrue("the run still counts as done", result is SyncEngine.Result.Done)
+        assertTrue("the family tree still went up", "p_grandma" in remote.people)
+        assertTrue("and the pull still came down", "s_theirs" in local.stories)
+        assertEquals("both records went up", setOf("a_1", "a_2"), remote.assetDocs.keys)
+        assertEquals("storage was asked once, not once per file", 1, remote.calls.count { it.startsWith("upload:") })
+        assertEquals(UploadState.UPLOADING, local.assets.getValue("a_2").uploadState)
+    }
+
+    @Test
     fun `an account the server does not count as a member changes nothing on this phone`() = runBlocking {
         val theirs = story("s_theirs", createdBy = "u_ruth", syncedAt = 100L)
         val local = FakeLocal(stories = listOf(theirs))

@@ -6,12 +6,15 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.arv.app.core.ai.Viewer
 import com.arv.app.core.data.StoryRepository
 import com.arv.app.core.data.local.ArvDatabase
+import com.arv.app.core.data.local.AssetEntity
 import com.arv.app.core.data.local.MemberEntity
 import com.arv.app.core.data.local.StoryEntity
 import com.arv.app.core.model.AiUsePolicy
 import com.arv.app.core.model.ArchiveArea
+import com.arv.app.core.model.AssetType
 import com.arv.app.core.model.MemberRole
 import com.arv.app.core.model.StoryKind
+import com.arv.app.core.model.UploadState
 import com.arv.app.core.model.Visibility
 import com.arv.app.core.remote.FirebaseInviteRemote
 import com.arv.app.core.remote.RemoteRedeem
@@ -23,10 +26,12 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreSettings
 import com.google.firebase.firestore.MemoryCacheSettings
+import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -35,6 +40,7 @@ import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -47,7 +53,7 @@ import kotlin.coroutines.resumeWithException
  *
  * Skipped unless asked for, because it needs the emulators running:
  *
- *     firebase emulators:start --only auth,firestore --project <project_id in google-services.json>
+ *     firebase emulators:start --only auth,firestore,storage --project <project_id in google-services.json>
  *     adb shell am instrument -w -e firebaseEmulator 10.0.2.2 \
  *         -e class com.arv.app.core.sync.SyncOnEmulatorTest \
  *         com.arv.app.debug.test/androidx.test.runner.AndroidJUnitRunner
@@ -64,7 +70,7 @@ class SyncOnEmulatorTest {
     private val phones = mutableListOf<Phone>()
     private val now = System.currentTimeMillis()
 
-    private inner class Phone(label: String) {
+    private inner class Phone(label: String, withStorage: Boolean = true) {
         val app: FirebaseApp = FirebaseApp.initializeApp(
             context,
             FirebaseOptions.fromResource(context) ?: error("This build has no Firebase configuration."),
@@ -77,10 +83,21 @@ class SyncOnEmulatorTest {
                 .setLocalCacheSettings(MemoryCacheSettings.newBuilder().build())
                 .build()
         }
+        val storage: FirebaseStorage = FirebaseStorage.getInstance(app).apply {
+            useEmulator(host!!, STORAGE_PORT)
+        }
         val db: ArvDatabase = Room.inMemoryDatabaseBuilder(context, ArvDatabase::class.java).build()
         val repo = StoryRepository(db)
         val invites = FirebaseInviteRemote(firestore)
-        val sync = SyncEngine(RoomSyncLocal(db), FirestoreSyncRemote(firestore))
+
+        /** This phone's own folder, so a file Dana downloads cannot be one Ruth already had. */
+        val fileDir: File = File(context.cacheDir, "sync-test-" + UUID.randomUUID().toString().take(8))
+
+        /** Without storage, the app on a project that is not on the paid plan. */
+        val sync = SyncEngine(
+            RoomSyncLocal(db, fileDir),
+            FirestoreSyncRemote(firestore, if (withStorage) storage.reference else null)
+        )
         lateinit var uid: String
 
         suspend fun signUp(email: String): Phone = apply {
@@ -107,10 +124,11 @@ class SyncOnEmulatorTest {
             runCatching { phone.auth.signOut() }
             runCatching { phone.db.close() }
             runCatching { phone.app.delete() }
+            runCatching { phone.fileDir.deleteRecursively() }
         }
     }
 
-    private fun phone(label: String) = Phone(label).also { phones += it }
+    private fun phone(label: String, withStorage: Boolean = true) = Phone(label, withStorage).also { phones += it }
 
     private fun email(label: String) = "$label-" + UUID.randomUUID().toString().take(8) + "@example.test"
 
@@ -118,9 +136,9 @@ class SyncOnEmulatorTest {
      * Ruth makes a family and puts it on the server, the way the worker does for an owner, and
      * Dana joins it with a code, the way the join screen does.
      */
-    private suspend fun familyOfTwo(): Family {
+    private suspend fun familyOfTwo(ruthHasStorage: Boolean = true): Family {
         val ruthEmail = email("ruth")
-        val ruth = phone("ruth").signUp(ruthEmail)
+        val ruth = phone("ruth", withStorage = ruthHasStorage).signUp(ruthEmail)
         val dana = phone("dana").signUp(email("dana"))
 
         val fam = ruth.repo.createFamily("Delaney", "Ruth", now, userId = ruth.uid)
@@ -139,6 +157,12 @@ class SyncOnEmulatorTest {
         )
         return Family(fam.familyId, ruth, dana, ruthEmail)
     }
+
+    private fun asset(id: String, storyId: String, familyId: String, localPath: String) =
+        AssetEntity(
+            assetId = id, storyId = storyId, familyId = familyId, type = AssetType.AUDIO,
+            localPath = localPath, mimeType = "audio/mp4", createdAt = now
+        )
 
     private fun story(familyId: String, id: String, by: String, visibility: Visibility = Visibility.FAMILY, area: ArchiveArea = ArchiveArea.STORIES) =
         StoryEntity(
@@ -255,6 +279,91 @@ class SyncOnEmulatorTest {
         assertEquals("From the tablet", f.ruth.db.storyDao().byIdIncludingDeleted("s_levee")!!.title)
     }
 
+    /**
+     * The half that was cut from Gold in week 2 and built in week 4. Ruth records something,
+     * and the bytes reach Dana's phone through Cloud Storage with storage.rules in the way.
+     */
+    @Test
+    fun aRecordingReachesTheOtherPhone_bytesAndAll() = runBlocking {
+        val fam = familyOfTwo()
+        val spoken = "the night the levee broke".toByteArray()
+        val onRuthsPhone = File(fam.ruth.fileDir, "levee.m4a").apply {
+            parentFile?.mkdirs(); writeBytes(spoken)
+        }
+
+        fam.ruth.db.storyDao().upsert(story(fam.id, "s_levee", fam.ruth.uid))
+        fam.ruth.db.assetDao().upsert(asset("a_levee", "s_levee", fam.id, onRuthsPhone.path))
+
+        assertTrue(
+            "Ruth could not send it",
+            fam.ruth.sync.run(fam.id, fam.ruth.uid, pull = false) is SyncEngine.Result.Done
+        )
+        assertTrue(
+            "Dana could not pull",
+            fam.dana.sync.run(fam.id, fam.dana.uid, pull = true) is SyncEngine.Result.Done
+        )
+
+        val hers = fam.dana.db.assetDao().byId("a_levee")
+        assertNotNull("the record did not reach Dana", hers)
+        val landed = File(hers!!.localPath)
+        assertTrue("the file did not reach Dana: " + hers.localPath, landed.isFile)
+        assertArrayEquals("the bytes changed on the way", spoken, landed.readBytes())
+        assertTrue("Dana's copy is not Ruth's file", landed.path != onRuthsPhone.path)
+    }
+
+    /**
+     * The promise, checked where it actually has to hold. Not "the engine decided not to
+     * send it" but "the server was asked and holds nothing".
+     */
+    @Test
+    fun aPrivateRecordingIsNotOnTheServerAtAll() = runBlocking {
+        val fam = familyOfTwo()
+        val onRuthsPhone = File(fam.ruth.fileDir, "private.m4a").apply {
+            parentFile?.mkdirs(); writeBytes("only mine".toByteArray())
+        }
+
+        fam.ruth.db.storyDao().upsert(story(fam.id, "s_private", fam.ruth.uid, visibility = Visibility.PRIVATE))
+        fam.ruth.db.assetDao().upsert(asset("a_private", "s_private", fam.id, onRuthsPhone.path))
+        fam.ruth.sync.run(fam.id, fam.ruth.uid, pull = false)
+
+        // Asked from the other phone, which is where it would matter. Dana pulls the whole
+        // family in the shapes the rules allow and gets neither the story nor its file.
+        fam.dana.sync.run(fam.id, fam.dana.uid, pull = true)
+        assertNull("it reached the other phone", fam.dana.db.assetDao().byId("a_private"))
+        assertNull("its story reached the other phone", fam.dana.db.storyDao().byIdIncludingDeleted("s_private"))
+    }
+
+    /**
+     * The live project until it is on the paid plan: Firestore answers and Cloud Storage does
+     * not. Ruth holds a recording she cannot upload, and her sync still sends the family tree
+     * and still brings down what Dana added. The recording's record goes too, so Dana's phone
+     * knows it exists and fetches the bytes once they can travel.
+     */
+    @Test
+    fun aPhoneWithoutStorageStillSendsTheTreeAndStillPulls() = runBlocking {
+        val f = familyOfTwo(ruthHasStorage = false)
+        val onRuthsPhone = File(f.ruth.fileDir, "levee.m4a").apply {
+            parentFile?.mkdirs(); writeBytes("the night the levee broke".toByteArray())
+        }
+        f.ruth.db.storyDao().upsert(story(f.id, "s_levee", f.ruth.uid))
+        f.ruth.db.assetDao().upsert(asset("a_levee", "s_levee", f.id, onRuthsPhone.path))
+        val walt = f.ruth.repo.addPerson(f.id, "Walt Delaney", nowMillis = now)
+
+        f.dana.db.storyDao().upsert(story(f.id, "s_dana", f.dana.uid))
+        f.dana.syncOk(f.id)
+
+        f.ruth.syncOk(f.id)
+        assertNotNull("Dana's story did not reach Ruth", f.ruth.db.storyDao().byIdIncludingDeleted("s_dana"))
+        assertEquals(
+            "the bytes wait instead of being given up on",
+            UploadState.UPLOADING, f.ruth.db.assetDao().byId("a_levee")!!.uploadState
+        )
+
+        f.dana.syncOk(f.id)
+        assertNotNull("the tree did not reach Dana", f.dana.db.personDao().byId(walt))
+        assertNotNull("the record did not reach Dana", f.dana.db.assetDao().byId("a_levee"))
+    }
+
     @Test
     fun anAccountOutsideTheFamilyGetsNothingAndChangesNothing() = runBlocking {
         val f = familyOfTwo()
@@ -269,6 +378,7 @@ class SyncOnEmulatorTest {
     private companion object {
         const val AUTH_PORT = 9099
         const val FIRESTORE_PORT = 8080
+        const val STORAGE_PORT = 9199
         const val PASSWORD = "not a real password, only an emulator account"
     }
 }

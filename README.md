@@ -7,7 +7,8 @@ Arv is the Swedish word for inheritance.
 
 ## Where the build stands
 
-Updated 2026-09-12. 237 unit tests, 0 failures.
+Updated 2026-09-24. 341 unit tests, 0 failures, and 7 two-phone tests against the
+Firebase emulator.
 
 Working end to end:
 
@@ -23,6 +24,9 @@ Working end to end:
   who admitted whom. A code read out on one phone works on another. The phone checks it
   with the same seven answers either way, and Firestore rules, tested against the
   emulator, refuse anything the phone would have. No server code, and the free plan.
+- An invitation says what the person becomes: contributor, keeper or viewer. Picking a
+  different one mints a fresh code, because a code's role is fixed when it is minted and
+  the rules hold it there.
 - Permission rules on every read and every edit, unit tested.
 - Consent enforced on reads, including the decision a family made after a death.
 - Profile pictures. Upload one into the circle, or take one from a photograph already
@@ -37,15 +41,17 @@ Partly built:
 
 - Librarian and search screens exist and answer from local data. No embeddings yet.
 - Timeline shows dated memories and gaps. Undated memories still need a home.
-- Sync, first half. With sharing turned on in Settings, stories set to Family, Branch or
-  Selected, the family tree and the member list go between phones, the later edit wins,
-  and deleting hides a story everywhere with an undo under Recently deleted. Private
-  stories and health records never leave the phone. Recordings and photographs do not
-  travel yet; that half needs Cloud Storage, which needs the paid Firebase plan. Branch
+- Sync. With sharing turned on in Settings, stories set to Family, Branch or Selected,
+  the family tree and the member list go between phones, the later edit wins, and
+  deleting hides a story everywhere with an undo under Recently deleted. Recordings and
+  photographs travel as well. Each file gets a record carrying a copy of its story's
+  permission fields, and `storage.rules` reads that record to decide who may have the
+  bytes, so one permission decision written once is asked twice and the two cannot drift.
+  Private stories and health records never leave the phone, and neither do their files.
+  Where Cloud Storage is not on the project, everything else still syncs and each file
+  waits on the phone that made it until Storage is there. Branch
   stories reach other phones only once member rows carry a place in the tree, and nothing
   writes that yet.
-- Invitations always grant CONTRIBUTOR. The role travels on the invitation and the
-  other roles are built and tested, so what is missing is a picker, not a mechanism.
 
 Not started:
 

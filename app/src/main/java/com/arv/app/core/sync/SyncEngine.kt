@@ -162,6 +162,12 @@ class SyncEngine(
 
         // Files, after the stories they belong to. The record goes first and the bytes
         // follow, because storage.rules reads the record to decide who may write the file.
+        //
+        // Cloud Storage not answering does not make the run offline. Without the paid plan it
+        // never answers while Firestore does, and one file that cannot go up must not hold
+        // back the family tree or the pull. After the first such file the rest still send
+        // their records, and their bytes wait for the next run.
+        var storageAnswers = true
         for (work in local.unsentAssets(familyId)) {
             if (!SyncPolicy.sharesFile(work.story)) continue
             val file = File(work.asset.localPath)
@@ -177,13 +183,14 @@ class SyncEngine(
                     Sent.Unreachable -> return Result.Offline
                 }
             }
+            if (!storageAnswers) continue
             when (remote.uploadAssetFile(remotePath, file)) {
                 Sent.Done -> { local.assetUploaded(work.asset.assetId); sent++ }
                 Sent.Stale -> Unit
                 Sent.Refused -> { local.assetRefused(work.asset.assetId); refused++ }
                 // The record is on the server and the bytes are not. The row stays
                 // unfinished, so the next run sends only what is missing.
-                Sent.Unreachable -> return Result.Offline
+                Sent.Unreachable -> storageAnswers = false
             }
         }
 

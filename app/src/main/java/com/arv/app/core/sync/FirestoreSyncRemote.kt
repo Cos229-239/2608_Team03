@@ -98,7 +98,7 @@ class FirestoreSyncRemote(
     // whether this account may write the file.
 
     override suspend fun sendAsset(asset: AssetEntity, story: StoryEntity): Sent = attempt {
-        db.document("${'$'}{SyncPaths.assets(asset.familyId)}/${'$'}{asset.assetId}")
+        db.collection(SyncPaths.assets(asset.familyId)).document(asset.assetId)
             .set(SyncDocs.asset(asset, story)).awaitTask()
         Sent.Done
     }
