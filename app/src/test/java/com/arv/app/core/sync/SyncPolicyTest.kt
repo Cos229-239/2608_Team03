@@ -1,8 +1,11 @@
 package com.arv.app.core.sync
 
+import com.arv.app.core.data.local.AssetEntity
 import com.arv.app.core.data.local.StoryEntity
 import com.arv.app.core.model.ArchiveArea
+import com.arv.app.core.model.AssetType
 import com.arv.app.core.model.StoryKind
+import com.arv.app.core.model.UploadState
 import com.arv.app.core.model.Visibility
 import com.arv.app.core.sync.SyncPolicy.StoryAction
 import org.junit.Assert.assertEquals
@@ -33,6 +36,31 @@ class SyncPolicyTest {
         refusedAt = refusedAt,
         deletedAt = deletedAt
     )
+
+    @Test
+    fun `a file is waiting when its story is shared and it has not gone up, and not otherwise`() {
+        fun file(id: String, storyId: String, state: UploadState = UploadState.LOCAL_ONLY, path: String = "/here/" + id) =
+            AssetEntity(
+                assetId = id, storyId = storyId, familyId = "fam_1", type = AssetType.AUDIO,
+                localPath = path, mimeType = "audio/mp4", uploadState = state
+            )
+        val stories = listOf(
+            story(),
+            story(visibility = Visibility.PRIVATE).copy(storyId = "s_private"),
+            story(deletedAt = 5L).copy(storyId = "s_deleted")
+        )
+        val files = listOf(
+            file("a_waiting", "s_1"),
+            file("a_record_only", "s_1", UploadState.UPLOADING),
+            file("a_up", "s_1", UploadState.SYNCED),
+            file("a_private", "s_private"),
+            file("a_deleted", "s_deleted"),
+            file("a_gone", "s_1", path = "/gone"),
+            file("a_no_story", "s_nowhere")
+        )
+
+        assertEquals(2, SyncPolicy.filesWaiting(files, stories) { it != "/gone" })
+    }
 
     @Test
     fun `private and health never leave the phone, whatever else is true`() {

@@ -46,20 +46,23 @@ class SyncViewModel(app: Application) : AndroidViewModel(app) {
         val on: Boolean = false,
         val running: Boolean = false,
         val waiting: Int = 0,
-        val last: SyncSettings.Last? = null
+        val last: SyncSettings.Last? = null,
+        val filesWaiting: Int = 0
     )
 
     val ui: StateFlow<Ui> = familyId?.let { family ->
         combine(
             SyncSettings.version,
             SyncScheduler.observeRunning(app),
-            SyncScheduler.observeWaiting(app, family)
-        ) { _, running, waiting ->
+            SyncScheduler.observeWaiting(app, family),
+            SyncScheduler.observeFilesWaiting(app, family)
+        ) { _, running, waiting, filesWaiting ->
             Ui(
                 on = SyncSettings.isOn(app, family),
                 running = running,
                 waiting = waiting,
-                last = SyncSettings.last(app, family)
+                last = SyncSettings.last(app, family),
+                filesWaiting = filesWaiting
             )
         }
     }?.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Ui())
@@ -160,12 +163,20 @@ fun SyncSection(
 }
 
 /** What to say about the last attempt, and whether it is something the person should fix. */
-private fun statusLine(ui: SyncViewModel.Ui): Pair<String, Boolean> {
-    val waiting = when (ui.waiting) {
+internal fun statusLine(ui: SyncViewModel.Ui): Pair<String, Boolean> {
+    val changes = when (ui.waiting) {
         0 -> ""
         1 -> " 1 change is waiting to go."
         else -> " ${ui.waiting} changes are waiting to go."
     }
+    // Apart from the changes, because a record can reach the family while its file cannot,
+    // and "Shared" alone would hide that the only copy is still on this phone.
+    val files = when (ui.filesWaiting) {
+        0 -> ""
+        1 -> " 1 file has not reached the family yet."
+        else -> " ${ui.filesWaiting} files have not reached the family yet."
+    }
+    val waiting = changes + files
     val last = ui.last
     return when {
         ui.running -> "Sharing now." to false

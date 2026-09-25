@@ -1,7 +1,9 @@
 package com.arv.app.core.sync
 
+import com.arv.app.core.data.local.AssetEntity
 import com.arv.app.core.data.local.StoryEntity
 import com.arv.app.core.model.ArchiveArea
+import com.arv.app.core.model.UploadState
 import com.arv.app.core.model.Visibility
 
 /**
@@ -63,6 +65,18 @@ object SyncPolicy {
      * shareable has never been offered to the server in the first place.
      */
     fun sharesFile(story: StoryEntity): Boolean = shares(story) && story.deletedAt == null
+
+    /**
+     * How many of these files this phone should share and has not got up yet: the rows the
+     * engine would try to send. [exists] is asked last, because it touches the disk.
+     */
+    fun filesWaiting(assets: List<AssetEntity>, stories: List<StoryEntity>, exists: (String) -> Boolean): Int {
+        val shared = stories.filter { sharesFile(it) }.map { it.storyId }.toSet()
+        return assets.count {
+            it.storyId in shared && it.uploadState != UploadState.SYNCED &&
+                it.localPath.isNotBlank() && exists(it.localPath)
+        }
+    }
 
     fun dueToErase(deletedAt: Long?, now: Long): Boolean =
         deletedAt != null && now - deletedAt >= ERASE_AFTER_MS
