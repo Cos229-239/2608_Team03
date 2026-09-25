@@ -57,8 +57,14 @@ interface SyncRemote {
     /** Brings a file down to [into]. The caller keeps nothing on a failure. */
     suspend fun downloadAssetFile(remotePath: String, into: File): Sent
 
-    /** Takes a file off the server when its story is withdrawn or erased. */
+    /** Takes a file off the server when its story is withdrawn or erased. Nothing there is done. */
     suspend fun removeAssetFile(remotePath: String): Sent
+
+    /**
+     * Takes a file's record off the server. After the bytes, never before: storage.rules reads
+     * this record to decide who may delete them.
+     */
+    suspend fun withdrawAsset(familyId: String, assetId: String): Sent
 
     /**
      * Everything in the family this account may read, asked for in the shapes the rules can
@@ -78,6 +84,7 @@ interface SyncRemote {
         override suspend fun uploadAssetFile(remotePath: String, file: File) = Sent.Unreachable
         override suspend fun downloadAssetFile(remotePath: String, into: File) = Sent.Unreachable
         override suspend fun removeAssetFile(remotePath: String) = Sent.Unreachable
+        override suspend fun withdrawAsset(familyId: String, assetId: String) = Sent.Unreachable
         override suspend fun fetch(familyId: String, userId: String): Fetched = Fetched.Unreachable
     }
 }

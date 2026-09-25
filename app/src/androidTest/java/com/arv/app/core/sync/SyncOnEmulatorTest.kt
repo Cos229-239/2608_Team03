@@ -47,8 +47,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
+import org.json.JSONObject
 import org.junit.runner.RunWith
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -165,6 +168,41 @@ class SyncOnEmulatorTest {
         )
         return Family(fam.familyId, ruth, dana, ruthEmail)
     }
+
+    /**
+     * Asks the Storage emulator itself, past the rules, whether it holds [path]. Through the
+     * rules a file that is gone and a file that is only refused look the same; this cannot
+     * be fooled that way.
+     */
+    private fun objectsOnServer(phone: Phone, path: String): Int {
+        val url = URL("http://" + host + ":" + STORAGE_PORT + "/storage/v1/b/" + phone.storage.reference.bucket + "/o")
+        val body = (url.openConnection() as HttpURLConnection).run {
+            try { inputStream.bufferedReader().readText() } finally { disconnect() }
+        }
+        val items = JSONObject(body).optJSONArray("items") ?: return 0
+        return (0 until items.length()).count { items.getJSONObject(it).optString("name") == path }
+    }
+
+    private fun recordingOn(phone: Phone): File =
+        File(phone.fileDir, "levee.m4a").apply { parentFile?.mkdirs(); writeBytes("the night the levee broke".toByteArray()) }
+
+    /** Ruth shares a recording and Dana's phone downloads it. Returns where it sits on the server. */
+    private suspend fun sharedRecording(f: Family, onRuthsPhone: File): String {
+        f.ruth.db.storyDao().upsert(story(f.id, "s_levee", f.ruth.uid))
+        f.ruth.db.assetDao().upsert(asset("a_levee", "s_levee", f.id, onRuthsPhone.path))
+        f.ruth.syncOk(f.id)
+        f.dana.syncOk(f.id)
+        return f.ruth.db.assetDao().byId("a_levee")!!.remotePath!!
+    }
+
+    /** The edit screen's own call, as the story's owner makes it. */
+    private suspend fun Phone.changeWhoMaySee(familyId: String, storyId: String, visibility: Visibility, at: Long) =
+        repo.updateStoryDetails(
+            storyId = storyId, viewer = viewer(familyId, MemberRole.OWNER), title = "Story " + storyId,
+            eraText = "", eraUnknown = true, placeLabel = null, tags = emptyList(),
+            visibility = visibility, branchRootPersonId = null,
+            aiUsePolicy = AiUsePolicy.SUMMARY_OK, nowMillis = at
+        )
 
     private fun asset(id: String, storyId: String, familyId: String, localPath: String) =
         AssetEntity(
@@ -457,6 +495,72 @@ class SyncOnEmulatorTest {
         f.dana.syncOk(f.id)
         assertNotNull("the tree did not reach Dana", f.dana.db.personDao().byId(walt))
         assertNotNull("the record did not reach Dana", f.dana.db.assetDao().byId("a_levee"))
+    }
+
+    /**
+     * Private has to mean private after the fact too. Ruth shares a recording, Dana's phone
+     * downloads it, then Ruth takes the story back. The bytes and the record leave the server,
+     * Dana's copy leaves her phone, and Ruth's own recording stays where it was made.
+     */
+    @Test
+    fun aRecordingTakenBackToPrivateLeavesTheServerAndTheOtherPhone() = runBlocking {
+        val f = familyOfTwo()
+        val onRuthsPhone = recordingOn(f.ruth)
+        val remotePath = sharedRecording(f, onRuthsPhone)
+        val danasCopy = File(f.dana.db.assetDao().byId("a_levee")!!.localPath)
+        assertTrue("Dana needs a copy for this test to mean anything", danasCopy.isFile)
+        assertEquals(1, objectsOnServer(f.ruth, remotePath))
+
+        assertTrue(f.ruth.changeWhoMaySee(f.id, "s_levee", Visibility.PRIVATE, now + 1000))
+        f.ruth.syncOk(f.id)
+
+        assertEquals("the bytes are still on the server", 0, objectsOnServer(f.ruth, remotePath))
+        assertTrue("Ruth's own recording was deleted", onRuthsPhone.isFile)
+
+        f.dana.syncOk(f.id)
+        assertNull("the story is still on Dana's phone", f.dana.db.storyDao().byIdIncludingDeleted("s_levee"))
+        assertNull("the file's record is still on Dana's phone", f.dana.db.assetDao().byId("a_levee"))
+        assertTrue("Dana's copy of the recording is still on her phone", !danasCopy.exists())
+    }
+
+    /**
+     * The same promise when a story narrows instead of going private. The file stays on the
+     * server for the people still allowed, its record carries the new answer, and Dana, who is
+     * no longer one of them, can neither read the bytes nor keep her copy.
+     */
+    @Test
+    fun aStoryThatNarrowsWhoMaySeeItNarrowsItsFileToo() = runBlocking {
+        val f = familyOfTwo()
+        val remotePath = sharedRecording(f, recordingOn(f.ruth))
+        val danasCopy = File(f.dana.db.assetDao().byId("a_levee")!!.localPath)
+        assertTrue("Dana needs a copy for this test to mean anything", danasCopy.isFile)
+
+        assertTrue(f.ruth.changeWhoMaySee(f.id, "s_levee", Visibility.SELECTED, now + 1000))
+        f.ruth.syncOk(f.id)
+
+        assertEquals("the file left the server for everyone", 1, objectsOnServer(f.ruth, remotePath))
+        val read = runCatching { f.dana.storage.reference.child(remotePath).getBytes(1024 * 1024).awaitTask() }
+        assertTrue("Dana can still read the bytes", read.isFailure)
+
+        f.dana.syncOk(f.id)
+        assertNull("the story is still on Dana's phone", f.dana.db.storyDao().byIdIncludingDeleted("s_levee"))
+        assertTrue("Dana's copy of the recording is still on her phone", !danasCopy.exists())
+    }
+
+    /** Erasing, after the thirty days or from Recently deleted, takes the file off the server too. */
+    @Test
+    fun anErasedRecordingLeavesTheServer() = runBlocking {
+        val f = familyOfTwo()
+        val remotePath = sharedRecording(f, recordingOn(f.ruth))
+        val ruthAsOwner = f.ruth.viewer(f.id, MemberRole.OWNER)
+
+        assertTrue(f.ruth.repo.deleteStory("s_levee", ruthAsOwner, now + 1000))
+        f.ruth.syncOk(f.id)
+        assertEquals("a deleted story's file should wait out the thirty days", 1, objectsOnServer(f.ruth, remotePath))
+
+        assertTrue(f.ruth.repo.eraseStory("s_levee", ruthAsOwner, now + 2000))
+        f.ruth.syncOk(f.id)
+        assertEquals("the erased story's file is still on the server", 0, objectsOnServer(f.ruth, remotePath))
     }
 
     @Test

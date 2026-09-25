@@ -19,7 +19,7 @@ import {
   doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, writeBatch,
   runTransaction
 } from 'firebase/firestore'
-import { ref, uploadBytes, getBytes } from 'firebase/storage'
+import { ref, uploadBytes, getBytes, deleteObject } from 'firebase/storage'
 
 const PROJECT = 'arv-archive-rules-test'
 const FAM = 'fam_1'
@@ -554,6 +554,16 @@ test('the file is readable exactly when its asset is', async () => {
   await assertFails(getBytes(ref(env.unauthenticatedContext().storage(BUCKET), filePath)))
   await assertFails(getBytes(ref(env.authenticatedContext('u_keeper').storage(BUCKET), privatePath)))
   await assertSucceeds(getBytes(ref(env.authenticatedContext('u_contrib').storage(BUCKET), privatePath)))
+})
+
+test('whoever may edit the story takes its file down; nobody else does', async () => {
+  const upload = () => env.withSecurityRulesDisabled((ctx) => uploadBytes(ref(ctx.storage(BUCKET), filePath), bytes))
+  await upload()
+  await assertFails(deleteObject(ref(env.authenticatedContext('u_viewer').storage(BUCKET), filePath)))
+  await assertFails(deleteObject(ref(env.unauthenticatedContext().storage(BUCKET), filePath)))
+  await assertSucceeds(deleteObject(ref(env.authenticatedContext('u_contrib').storage(BUCKET), filePath)))
+  await upload()
+  await assertSucceeds(deleteObject(ref(env.authenticatedContext('u_keeper').storage(BUCKET), filePath)))
 })
 
 test('nothing outside a family path is reachable', async () => {

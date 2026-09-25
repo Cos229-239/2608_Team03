@@ -65,9 +65,13 @@ service firebase.storage {
       // The asset document is written before the bytes, so an upload is authorised by
       // a record the rules can already read. Half a gigabyte covers an hour of audio
       // with room to spare.
-      allow write: if canContribute(familyId)
+      allow create, update: if canContribute(familyId)
         && canEdit(asset(familyId, assetId), familyId)
         && request.resource.size < 512 * 1024 * 1024;
+      // A delete carries no request.resource, so it has its own rule without the size
+      // check. Whoever may edit the story may take its file down, which is what going
+      // private or being erased needs. The bytes go before the record this reads.
+      allow delete: if canEdit(asset(familyId, assetId), familyId);
     }
 
     match /{allPaths=**} {

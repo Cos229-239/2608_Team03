@@ -1167,6 +1167,22 @@ class StoryRepository(
                     )
                 )
             }
+            // Its files as well, or a recording outlives its story on the server. The path
+            // rides in the payload because the row that knew it is about to be gone.
+            if (fromServer) {
+                for (asset in assets) {
+                    val remotePath = asset.remotePath ?: continue
+                    db.outboxDao().enqueue(
+                        OutboxEntity(
+                            op = OutboxOp.DELETE,
+                            collectionPath = SyncPaths.assets(entity.familyId),
+                            docId = asset.assetId,
+                            payloadJson = "{\"remotePath\":\"" + remotePath + "\"}",
+                            createdAt = nowMillis
+                        )
+                    )
+                }
+            }
         }
         for (asset in assets) {
             runCatching {

@@ -14,6 +14,7 @@ import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.Source
 import com.google.firebase.storage.FirebaseStorage
+import com.google.firebase.storage.StorageException
 import com.google.firebase.storage.StorageReference
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -25,9 +26,10 @@ import kotlin.coroutines.resumeWithException
 /**
  * [SyncRemote] on Firestore for the records and Cloud Storage for the files.
  *
- * Cloud Storage needs the paid Firebase plan. On a project without it, every file call comes
- * back [Sent.Unreachable], which is the same answer as no connection: the records still
- * travel, the bytes wait, and nothing is lost. So the class works on either plan.
+ * Cloud Storage needs the paid Firebase plan. On a project without it, every upload and
+ * download comes back [Sent.Unreachable], which is the same answer as no connection: the
+ * records still travel, the bytes wait, and nothing is lost. A removal comes back done,
+ * because there is nothing there to take down. So the class works on either plan.
  *
  * Construction throws when the app has no Firebase configuration, which is how a build
  * without google-services.json ends up with [SyncRemote.None]. See ServiceLocator.
@@ -126,8 +128,33 @@ class FirestoreSyncRemote(
     }
 
     override suspend fun removeAssetFile(remotePath: String): Sent {
-        val ref = files ?: return Sent.Unreachable
-        return attempt { ref.child(remotePath).delete().awaitTask(); Sent.Done }
+        // No Storage in this app means no bytes this phone could have put there, and a removal
+        // that can never be tried must not hold up the ones behind it. Taking the record down
+        // is what takes the file away from everyone, because storage.rules reads the record.
+        val ref = files ?: return Sent.Done
+        return try {
+            withTimeoutOrNull(WRITE_TIMEOUT_MS) { ref.child(remotePath).delete().awaitTask(); Sent.Done }
+                ?: Sent.Unreachable
+        } catch (c: CancellationException) {
+            throw c
+        } catch (e: StorageException) {
+            when (e.errorCode) {
+                // Nothing there to take down: never uploaded, already removed, or a project
+                // with no Storage at all.
+                StorageException.ERROR_OBJECT_NOT_FOUND,
+                StorageException.ERROR_BUCKET_NOT_FOUND,
+                StorageException.ERROR_PROJECT_NOT_FOUND -> Sent.Done
+                StorageException.ERROR_NOT_AUTHORIZED -> Sent.Refused
+                else -> Sent.Unreachable
+            }
+        } catch (t: Throwable) {
+            Sent.Unreachable
+        }
+    }
+
+    override suspend fun withdrawAsset(familyId: String, assetId: String): Sent = attempt {
+        db.collection(SyncPaths.assets(familyId)).document(assetId).delete().awaitTask()
+        Sent.Done
     }
 
     override suspend fun fetch(familyId: String, userId: String): Fetched =
