@@ -65,7 +65,8 @@ class SyncEngineTest {
         members: List<MemberEntity> = emptyList(),
         removals: List<OutboxEntity> = emptyList(),
         storyRemovals: List<OutboxEntity> = emptyList(),
-        assets: List<AssetEntity> = emptyList()
+        assets: List<AssetEntity> = emptyList(),
+        assetRemovals: List<AssetRemoval> = emptyList()
     ) : SyncLocal {
         val assets = assets.associateBy { it.assetId }.toMutableMap()
         val downloads = mutableListOf<String>()
@@ -75,6 +76,7 @@ class SyncEngineTest {
         val members = members.associateBy { it.userId }.toMutableMap()
         val removals = removals.toMutableList()
         val storyRemovals = storyRemovals.toMutableList()
+        val assetRemovals = assetRemovals.toMutableList()
 
         /** Runs while a story is being sent, to stand in for an edit made at that moment. */
         var duringSend: (() -> Unit)? = null
@@ -86,6 +88,12 @@ class SyncEngineTest {
         override suspend fun unsyncedRelationships(familyId: String) = edges.values.filter { unsent(it.updatedAt, it.syncedAt) }
         override suspend fun pendingRelationshipRemovals(familyId: String) = removals.toList()
         override suspend fun pendingStoryRemovals(familyId: String) = storyRemovals.toList()
+        override suspend fun pendingAssetRemovals(familyId: String) = assetRemovals.toList()
+        override suspend fun filesOnServer(storyId: String) =
+            assets.values.filter { it.storyId == storyId && it.remotePath != null }
+        override suspend fun assetWithdrawn(assetId: String) {
+            assets[assetId] = assets.getValue(assetId).copy(remotePath = null, uploadState = UploadState.LOCAL_ONLY)
+        }
 
         override suspend fun storySent(storyId: String, updatedAt: Long?) {
             stories[storyId]?.let { stories[storyId] = it.copy(syncedAt = updatedAt) }
@@ -110,6 +118,7 @@ class SyncEngineTest {
         override suspend fun removalFinished(outboxId: Long) {
             removals.removeAll { it.id == outboxId }
             storyRemovals.removeAll { it.id == outboxId }
+            assetRemovals.removeAll { it.outboxId == outboxId }
         }
         override suspend fun removalFailed(outboxId: Long, why: String) = Unit
 
@@ -182,6 +191,11 @@ class SyncEngineTest {
         var assetDocAnswer: Sent = Sent.Done
         var uploadAnswer: Sent = Sent.Done
         var downloadAnswer: Sent = Sent.Done
+        var removeFileAnswer: Sent = Sent.Done
+        var withdrawAssetAnswer: Sent = Sent.Done
+
+        /** The story each file record was last sent with, so a test can read its permission copy. */
+        val assetDocStories = mutableMapOf<String, StoryEntity>()
 
         override suspend fun sendStory(story: StoryEntity, neverSent: Boolean): Sent {
             calls += "story:${story.storyId}:${if (neverSent) "new" else "checked"}"
@@ -201,7 +215,10 @@ class SyncEngineTest {
 
         override suspend fun sendAsset(asset: AssetEntity, story: StoryEntity): Sent {
             calls += "assetdoc:${asset.assetId}"
-            if (assetDocAnswer == Sent.Done) assetDocs[asset.assetId] = asset
+            if (assetDocAnswer == Sent.Done) {
+                assetDocs[asset.assetId] = asset
+                assetDocStories[asset.assetId] = story
+            }
             return assetDocAnswer
         }
 
@@ -223,8 +240,14 @@ class SyncEngineTest {
 
         override suspend fun removeAssetFile(remotePath: String): Sent {
             calls += "rmfile:$remotePath"
-            uploaded.remove(remotePath)
-            return Sent.Done
+            if (removeFileAnswer == Sent.Done) uploaded.remove(remotePath)
+            return removeFileAnswer
+        }
+
+        override suspend fun withdrawAsset(familyId: String, assetId: String): Sent {
+            calls += "rmdoc:" + assetId
+            if (withdrawAssetAnswer == Sent.Done) assetDocs.remove(assetId)
+            return withdrawAssetAnswer
         }
 
         override suspend fun sendPerson(person: PersonEntity): Sent {
@@ -503,7 +526,8 @@ class SyncEngineTest {
     fun `a record that already landed is not sent twice when the bytes had to wait`() = runBlocking {
         val file = recording("waiting")
         val local = FakeLocal(
-            stories = listOf(story("s_1")),
+            // Sent in the run that put its record up, so only the bytes are left.
+            stories = listOf(story("s_1", syncedAt = 100L)),
             assets = listOf(
                 asset("a_1", "s_1", file.path, remotePath = "families/$fam/assets/a_1/file.m4a", state = UploadState.UPLOADING)
             )
@@ -571,6 +595,73 @@ class SyncEngineTest {
         assertEquals("both records went up", setOf("a_1", "a_2"), remote.assetDocs.keys)
         assertEquals("storage was asked once, not once per file", 1, remote.calls.count { it.startsWith("upload:") })
         assertEquals(UploadState.UPLOADING, local.assets.getValue("a_2").uploadState)
+    }
+
+    // --- taking files down ---
+
+    @Test
+    fun `a story taken back to private takes its file off the server, bytes then record then story`() = runBlocking {
+        val path = SyncPaths.assetFile(fam, "a_1", "file.m4a")
+        val local = FakeLocal(
+            stories = listOf(story("s_1", visibility = Visibility.PRIVATE, updatedAt = 200L, syncedAt = 100L)),
+            assets = listOf(asset("a_1", "s_1", recording("private").path, remotePath = path, state = UploadState.SYNCED))
+        )
+        val remote = FakeRemote()
+
+        engine(local, remote).run(fam, me, pull = false)
+
+        assertEquals(listOf("rmfile:" + path, "rmdoc:a_1", "withdraw:s_1"), remote.calls)
+        val mine = local.assets.getValue("a_1")
+        assertNull("this phone still thinks the file is on the server", mine.remotePath)
+        assertEquals("ready to go up again if the story is shared again", UploadState.LOCAL_ONLY, mine.uploadState)
+    }
+
+    @Test
+    fun `bytes that cannot be reached keep their record, so they can still be taken down later`() = runBlocking {
+        val path = SyncPaths.assetFile(fam, "a_1", "file.m4a")
+        val local = FakeLocal(
+            stories = listOf(story("s_1", visibility = Visibility.PRIVATE, updatedAt = 200L, syncedAt = 100L)),
+            assets = listOf(asset("a_1", "s_1", recording("stuck").path, remotePath = path, state = UploadState.SYNCED))
+        )
+        val remote = FakeRemote().apply { removeFileAnswer = Sent.Unreachable }
+
+        val result = engine(local, remote).run(fam, me, pull = false)
+
+        assertEquals(SyncEngine.Result.Offline, result)
+        assertEquals("nothing after the bytes was asked", listOf("rmfile:" + path), remote.calls)
+        assertEquals(path, local.assets.getValue("a_1").remotePath)
+    }
+
+    @Test
+    fun `a story that changes who may see it sends its file's record again with the new answer`() = runBlocking {
+        val path = SyncPaths.assetFile(fam, "a_1", "file.m4a")
+        val local = FakeLocal(
+            stories = listOf(story("s_1", visibility = Visibility.SELECTED, updatedAt = 200L, syncedAt = 100L)),
+            assets = listOf(asset("a_1", "s_1", recording("narrowed").path, remotePath = path, state = UploadState.SYNCED))
+        )
+        val remote = FakeRemote()
+
+        engine(local, remote).run(fam, me, pull = false)
+
+        assertEquals(listOf("story:s_1:checked", "assetdoc:a_1"), remote.calls)
+        assertEquals(Visibility.SELECTED, remote.assetDocStories.getValue("a_1").visibility)
+    }
+
+    @Test
+    fun `an erased story's file comes off the server before the story does`() = runBlocking {
+        val path = SyncPaths.assetFile(fam, "a_1", "file.m4a")
+        val local = FakeLocal(
+            storyRemovals = listOf(
+                OutboxEntity(id = 7L, op = OutboxOp.DELETE, collectionPath = SyncPaths.stories(fam), docId = "s_1", payloadJson = "{}")
+            ),
+            assetRemovals = listOf(AssetRemoval(outboxId = 8L, assetId = "a_1", remotePath = path))
+        )
+        val remote = FakeRemote()
+
+        engine(local, remote).run(fam, me, pull = false)
+
+        assertEquals(listOf("rmfile:" + path, "rmdoc:a_1", "withdraw:s_1"), remote.calls)
+        assertTrue("both removals finished", local.assetRemovals.isEmpty() && local.storyRemovals.isEmpty())
     }
 
     @Test

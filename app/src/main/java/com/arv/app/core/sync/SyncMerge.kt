@@ -30,8 +30,9 @@ import com.arv.app.core.model.UploadState
  * showing something as saved that nobody else will ever see. Settings has already said it
  * was not accepted.
  *
- * Removing a story here removes its rows, never a file. A recording somebody attached to it
- * from this phone is still on this phone's storage.
+ * Removing a story here removes its rows, and the copy of any file that came down to this
+ * phone for it: the story stopped being this account's to see, and so did the recording. A
+ * file made on this phone is never deleted by a pull. It may be the only copy there is.
  */
 object SyncMerge {
 

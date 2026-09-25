@@ -18,6 +18,7 @@ import com.arv.app.core.remote.RemoteWrite
 import com.arv.app.core.session.ActiveSession
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
@@ -28,8 +29,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
@@ -195,6 +198,22 @@ object SyncScheduler {
      */
     fun observeWaiting(context: Context, familyId: String): Flow<Int> =
         observeWaitingVersions(context, familyId).map { it.size }
+
+    /**
+     * Recordings, photographs and documents this phone should share and has not got up yet.
+     * Counted apart from [observeWaiting] because a record can reach the family without its
+     * file: on a project without Cloud Storage the family sees the story while this phone
+     * still holds the only copy, and Settings should say so rather than only "Shared".
+     */
+    fun observeFilesWaiting(context: Context, familyId: String): Flow<Int> {
+        val db = ArvDatabase.get(context.applicationContext)
+        return combine(
+            db.assetDao().observeForFamily(familyId),
+            db.storyDao().observeRecent(familyId)
+        ) { assets, stories ->
+            SyncPolicy.filesWaiting(assets, stories) { File(it).isFile }
+        }.distinctUntilChanged().flowOn(Dispatchers.IO)
+    }
 
     /**
      * Every waiting change as its row and version. A second edit to a row that was already

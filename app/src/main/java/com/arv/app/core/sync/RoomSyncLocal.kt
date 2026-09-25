@@ -76,6 +76,19 @@ class RoomSyncLocal(private val db: ArvDatabase, private val fileDir: File? = nu
         db.assetDao().upsert(asset.copy(localPath = localPath, uploadState = UploadState.SYNCED))
     }
 
+    override suspend fun filesOnServer(storyId: String): List<AssetEntity> =
+        db.assetDao().forStory(storyId).filter { it.remotePath != null }
+
+    override suspend fun assetWithdrawn(assetId: String) {
+        val asset = db.assetDao().byId(assetId) ?: return
+        db.assetDao().upsert(asset.copy(remotePath = null, uploadState = UploadState.LOCAL_ONLY))
+    }
+
+    override suspend fun pendingAssetRemovals(familyId: String): List<AssetRemoval> =
+        db.outboxDao().pendingDeletes(SyncPaths.assets(familyId)).map { row ->
+            AssetRemoval(row.id, row.docId, REMOTE_PATH.find(row.payloadJson)?.groupValues?.get(1))
+        }
+
     override suspend fun storySent(storyId: String, updatedAt: Long?) =
         db.storyDao().markSynced(storyId, updatedAt)
 
@@ -102,44 +115,60 @@ class RoomSyncLocal(private val db: ArvDatabase, private val fileDir: File? = nu
     override suspend fun merge(
         familyId: String,
         plan: (SyncMerge.Local) -> SyncMerge.Plan
-    ): SyncMerge.Plan = db.withTransaction {
-        val p = plan(
-            SyncMerge.Local(
-                stories = db.storyDao().allIncludingDeleted(familyId),
-                people = db.personDao().all(familyId),
-                relationships = db.relationshipDao().observeAllOnce(familyId),
-                members = db.memberDao().all(familyId),
-                assets = db.assetDao().forFamily(familyId),
-                removingEdgeIds = db.outboxDao()
-                    .pendingDeletes(SyncPaths.relationships(familyId))
-                    .map { it.docId }
-                    .toSet()
+    ): SyncMerge.Plan {
+        val cameDown = mutableListOf<File>()
+        val merged = db.withTransaction {
+            val p = plan(
+                SyncMerge.Local(
+                    stories = db.storyDao().allIncludingDeleted(familyId),
+                    people = db.personDao().all(familyId),
+                    relationships = db.relationshipDao().observeAllOnce(familyId),
+                    members = db.memberDao().all(familyId),
+                    assets = db.assetDao().forFamily(familyId),
+                    removingEdgeIds = db.outboxDao()
+                        .pendingDeletes(SyncPaths.relationships(familyId))
+                        .map { it.docId }
+                        .toSet()
+                )
             )
-        )
 
-        if (p.writeStories.isNotEmpty()) db.storyDao().upsertAll(p.writeStories)
-        for (storyId in p.removeStories) {
-            // Rows only. See SyncMerge on why a file is never deleted by a pull.
-            for (asset in db.assetDao().forStory(storyId)) {
-                db.transcriptDao().clearForAsset(asset.assetId)
-                db.outboxDao().deleteForDoc(asset.assetId)
+            if (p.writeStories.isNotEmpty()) db.storyDao().upsertAll(p.writeStories)
+            for (storyId in p.removeStories) {
+                // The rows, and any file that came down to this phone for them. A file made
+                // here is never deleted by a pull. See SyncMerge.
+                for (asset in db.assetDao().forStory(storyId)) {
+                    db.transcriptDao().clearForAsset(asset.assetId)
+                    db.outboxDao().deleteForDoc(asset.assetId)
+                    if (downloadedHere(asset)) cameDown += File(asset.localPath)
+                }
+                db.assetDao().deleteForStory(storyId)
+                db.outboxDao().deleteForDoc(storyId)
+                db.storyDao().deleteById(storyId)
             }
-            db.assetDao().deleteForStory(storyId)
-            db.outboxDao().deleteForDoc(storyId)
-            db.storyDao().deleteById(storyId)
+
+            if (p.writePeople.isNotEmpty()) db.personDao().upsertAll(p.writePeople)
+
+            if (p.writeRelationships.isNotEmpty()) db.relationshipDao().upsertAll(p.writeRelationships)
+            for (edge in p.removeRelationships) db.relationshipDao().delete(edge)
+
+            for (member in p.writeMembers) db.memberDao().upsert(member)
+            // After the stories, because an asset row whose story is not here yet would be a
+            // record of a file nothing in the app can open.
+            for (asset in p.writeAssets) db.assetDao().upsert(asset)
+            for (userId in p.removeMembers) db.memberDao().remove(familyId, userId)
+
+            p
         }
-
-        if (p.writePeople.isNotEmpty()) db.personDao().upsertAll(p.writePeople)
-
-        if (p.writeRelationships.isNotEmpty()) db.relationshipDao().upsertAll(p.writeRelationships)
-        for (edge in p.removeRelationships) db.relationshipDao().delete(edge)
-
-        for (member in p.writeMembers) db.memberDao().upsert(member)
-        // After the stories, because an asset row whose story is not here yet would be a
-        // record of a file nothing in the app can open.
-        for (asset in p.writeAssets) db.assetDao().upsert(asset)
-        for (userId in p.removeMembers) db.memberDao().remove(familyId, userId)
-
-        p
+        // Files after the rows, the same order erasing uses: a crash between the two costs
+        // disk, never a listed story whose file is already gone.
+        for (file in cameDown) runCatching { file.delete() }
+        return merged
     }
+
+    /** A file this phone downloaded sits where [fileFor] put it. One made here never does. */
+    private fun downloadedHere(asset: AssetEntity): Boolean =
+        asset.localPath.isNotBlank() && asset.localPath == fileFor(asset).path
 }
+
+/** Where an erased file sat on the server, carried in its removal's payload. */
+private val REMOTE_PATH = Regex("\"remotePath\":\"([^\"]*)\"")
