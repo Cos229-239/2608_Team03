@@ -36,7 +36,7 @@ import com.arv.app.core.model.PromptStatus
 @Composable
 fun PromptLibraryScreen(
     modifier: Modifier = Modifier,
-    onRecord: () -> Unit
+    onRecord: (String) -> Unit
 
 ){
     val viewModel: PromptLibraryViewModel = viewModel()
@@ -201,7 +201,9 @@ fun PromptLibraryScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
-                        onClick = onRecord
+                        onClick = {
+                            onRecord(whyThisOneText)
+                        }
                     ) {
                         Text("Record now")
                     }

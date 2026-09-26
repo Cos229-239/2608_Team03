@@ -68,6 +68,7 @@ import com.arv.app.feature.timeline.TimelineScreen
 import com.arv.app.feature.promptlibrary.PromptLibraryScreen
 import com.arv.app.feature.promptlibrary.PromptLibraryViewModel
 import com.arv.app.ui.theme.ArvHero
+import android.net.Uri
 
 sealed class Destination(val route: String) {
     /** Screen 00. Who is this. Reached only while nobody is signed in to an account. */
@@ -112,7 +113,9 @@ sealed class Destination(val route: String) {
 
     /** Same retrieval as the librarian, without generation. Reached from the Librarian tab. */
     data object Search : Destination("search")
-    data object Record : Destination("record")
+    data object Record : Destination("record/{question}"){
+        fun of(question: String) = "record/${Uri.encode(question)}"
+    }
 
     /**
      * Recording meant for a story that already exists, rather than a new one.
@@ -432,8 +435,8 @@ fun ArvAppRoot() {
                 }
                 composable(Destination.PromptLibrary.route){
                     PromptLibraryScreen(
-                        onRecord = {
-                            navController.navigate(Destination.Record.route)
+                        onRecord = { question ->
+                            navController.navigate(Destination.Record.of(question))
                         }
                     )
                 }
@@ -442,8 +445,14 @@ fun ArvAppRoot() {
                         onOpenStory = { navController.navigate(Destination.StoryDetail.of(it)) }
                     )
                 }
-                composable(Destination.Record.route) {
+                composable(
+                   route = Destination.Record.route,
+                    arguments = listOf(navArgument("question"){ type = NavType.StringType})
+                ){ entry->
+                    val question = entry.arguments?.getString("question").orEmpty()
+
                     RecordScreen(
+                        question = question,
                         onDone = { navController.navigate(Destination.ReviewSave.route) }
                     )
                 }
@@ -453,6 +462,7 @@ fun ArvAppRoot() {
                 ) { entry ->
                     val storyId = entry.arguments?.getString("storyId").orEmpty()
                     RecordScreen(
+                        question = "",
                         onDone = { navController.navigate(Destination.AttachRecording.of(storyId)) }
                     )
                 }
