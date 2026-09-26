@@ -32,11 +32,12 @@ import androidx.compose.material3.TextButton
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arv.app.core.model.PromptStatus
-import android.util.Log
 
 @Composable
 fun PromptLibraryScreen(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onRecord: () -> Unit
+
 ){
     val viewModel: PromptLibraryViewModel = viewModel()
 
@@ -200,7 +201,7 @@ fun PromptLibraryScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
-                        onClick = { },
+                        onClick = onRecord
                     ) {
                         Text("Record now")
                     }

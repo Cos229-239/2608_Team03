@@ -431,7 +431,11 @@ fun ArvAppRoot() {
                     )
                 }
                 composable(Destination.PromptLibrary.route){
-                    PromptLibraryScreen()
+                    PromptLibraryScreen(
+                        onRecord = {
+                            navController.navigate(Destination.Record.route)
+                        }
+                    )
                 }
                 composable(Destination.Search.route) {
                     SearchScreen(
