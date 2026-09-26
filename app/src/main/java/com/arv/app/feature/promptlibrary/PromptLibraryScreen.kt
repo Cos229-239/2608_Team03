@@ -32,6 +32,9 @@ import androidx.compose.material3.TextButton
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arv.app.core.model.PromptStatus
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material3.Icon
 
 @Composable
 fun PromptLibraryScreen(
@@ -607,6 +610,17 @@ fun PromptLibraryScreen(
                         text = prompt.text,
                         modifier = Modifier.weight(1f)
                     )
+
+                    Button(
+                        onClick = {
+                            onRecord(prompt.text)
+                        }
+                    ){
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = "Record question"
+                        )
+                    }
 
                     OutlinedIconButton(
                         onClick = {
