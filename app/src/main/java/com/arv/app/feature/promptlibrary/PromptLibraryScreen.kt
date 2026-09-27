@@ -26,7 +26,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.Alignment
 import androidx.compose.material3.TextButton
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -35,6 +34,8 @@ import com.arv.app.core.model.PromptStatus
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.text.font.FontWeight
 
 @Composable
 fun PromptLibraryScreen(
@@ -79,7 +80,9 @@ fun PromptLibraryScreen(
     ) {
         Text(
             text = "Questions to ask",
-            style = MaterialTheme.typography.headlineSmall
+            style = MaterialTheme.typography.headlineSmall.copy(
+                fontWeight = FontWeight.Bold
+            )
         )
         Spacer(modifier = Modifier.height(20.dp))
 
@@ -175,7 +178,9 @@ fun PromptLibraryScreen(
 
 
                 Text(
-                    text = "WHY THIS ONE?"
+                    text = "WHY THIS ONE?",
+                    fontWeight = FontWeight.Bold
+
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -246,7 +251,8 @@ fun PromptLibraryScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "Who taught you to cook?"
+                            text = "Who taught you to cook?",
+                            fontWeight = FontWeight.Bold
                         )
 
                         Text(
@@ -294,7 +300,8 @@ fun PromptLibraryScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "What did your street sound like at night?"
+                            text = "What did your street sound like at night?",
+                            fontWeight = FontWeight.Bold
                         )
 
                         Text(
@@ -344,7 +351,8 @@ fun PromptLibraryScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "What's a word your family used that nobody else did?"
+                            text = "What's a word your family used that nobody else did?",
+                            fontWeight = FontWeight.Bold
                         )
 
                         Text(
@@ -394,7 +402,8 @@ fun PromptLibraryScreen(
                         modifier = Modifier.weight(1F)
                     ) {
                         Text(
-                            text = "Tell me about a day you'd live again."
+                            text = "Tell me about a day you'd live again.",
+                            fontWeight = FontWeight.Bold
                         )
 
                         Text(
@@ -446,7 +455,8 @@ fun PromptLibraryScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "What was your first job, and what do you remember most about it?"
+                            text = "What was your first job, and what do you remember most about it?",
+                            fontWeight = FontWeight.Bold
                         )
 
                         Text(
@@ -499,7 +509,8 @@ fun PromptLibraryScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "What was one difficult time your family made it through together?"
+                            text = "What was one difficult time your family made it through together?",
+                            fontWeight = FontWeight.Bold
                         )
 
                         Text(
@@ -550,7 +561,8 @@ fun PromptLibraryScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "Was there a tradition, prayer, or belief that brought your family comfort?"
+                            text = "Was there a tradition, prayer, or belief that brought your family comfort?",
+                            fontWeight = FontWeight.Bold
                         )
 
                         Text(
@@ -603,15 +615,16 @@ fun PromptLibraryScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.Start,
                     verticalAlignment = Alignment.CenterVertically
                 ){
                     Text(
                         text = prompt.text,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        fontWeight = FontWeight.SemiBold
                     )
 
-                    Button(
+                    IconButton(
                         onClick = {
                             onRecord(prompt.text)
                         }
@@ -658,14 +671,26 @@ fun PromptLibraryScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.Start,
                     verticalAlignment = Alignment.CenterVertically
 
                 ){
                     Text(
                         text = prompt.text,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        fontWeight = FontWeight.SemiBold
                     )
+
+                    IconButton(
+                        onClick = {
+                            onRecord(prompt.text)
+                        }
+                    ){
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = "Record question"
+                        )
+                    }
 
                     TextButton(
                         onClick = {
@@ -681,8 +706,6 @@ fun PromptLibraryScreen(
 
    }
         Spacer(modifier = Modifier.height(16.dp))
-
-
 
      if(!showOwnQuestion){
          OutlinedButton(
@@ -704,7 +727,7 @@ fun PromptLibraryScreen(
 
              },
              modifier = Modifier.fillMaxWidth()
-                 .padding(vertical = 8.dp),
+                 .padding(vertical = 4.dp),
              label = {
                  Text("Your question")
              },
