@@ -52,6 +52,7 @@ import com.arv.app.feature.feed.FeedScreen
 import com.arv.app.feature.librarian.LibrarianScreen
 import com.arv.app.feature.record.AttachRecordingScreen
 import com.arv.app.feature.auth.AuthScreen
+import com.arv.app.feature.invite.InviteScreen
 import com.arv.app.feature.invite.JoinFamilyScreen
 import com.arv.app.feature.onboarding.OnboardingScreen
 import com.arv.app.feature.people.AddPersonScreen
@@ -91,6 +92,9 @@ sealed class Destination(val route: String) {
 
     /** Speech-model setup and the way out of an archive. */
     data object Settings : Destination("settings")
+
+    /** Handing somebody a code, reached from the home screen. Settings keeps a copy too. */
+    data object Invite : Destination("invite")
 
     /** The imported people the archive cannot yet place in the tree. */
     data object PlacePeople : Destination("placePeople")
@@ -353,6 +357,7 @@ fun ArvAppRoot() {
                         onOpenPerson = { navController.navigate(Destination.PersonDetail.of(it)) },
                         onRecord = { navController.navigate(Destination.Record.route) },
                         onOpenSettings = { navController.navigate(Destination.Settings.route) },
+                        onInvite = { navController.navigate(Destination.Invite.route) },
                         onViewAll = {
                             navController.navigate(Destination.Timeline.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
@@ -410,8 +415,12 @@ fun ArvAppRoot() {
                             navController.navigate(Destination.Onboarding.route) {
                                 popUpTo(navController.graph.id) { inclusive = true }
                             }
-                        }
+                        },
+                        onJoinWithCode = { navController.navigate(Destination.JoinFamily.route) }
                     )
+                }
+                composable(Destination.Invite.route) {
+                    InviteScreen()
                 }
                 composable(Destination.AddDocument.route) {
                     AddDocumentScreen(
@@ -514,7 +523,9 @@ fun ArvAppRoot() {
                 ) {
                     com.arv.app.feature.story.EditStoryScreen(
                         onAddRecording = { navController.navigate(Destination.RecordForStory.of(it)) },
-                        onDone = { navController.popBackStack() }
+                        onDone = { navController.popBackStack() },
+                        // Past the story's own page too, back to the list it was opened from.
+                        onDeleted = { navController.popBackStack(Destination.StoryDetail.route, inclusive = true) }
                     )
                 }
             }

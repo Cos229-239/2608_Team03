@@ -1087,7 +1087,7 @@ private fun PortraitPicker(
                 ) { Text("Upload a picture") }
 
                 Text(
-                    "Stays on this phone like everything else, and is not filed as a record. " +
+                    "Stays on this phone, even when the archive is shared, and is not filed as a record. " +
                         "To keep the photograph itself in the archive, add it through Documents.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

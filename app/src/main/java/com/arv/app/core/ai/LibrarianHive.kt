@@ -11,17 +11,19 @@ import com.arv.app.core.model.TranscriptSegment
  * The hive: retrieval reorganized into shelf librarians that get routed to, instead of one
  * librarian scoring the whole archive flat.
  *
- * Every person, every era, and every archive area gets its own librarian. A question comes
- * in, each shelf looks at it, and the shelves that recognize something nominate memories
- * from their own slice with the reason stated. Nominations for the same memory add up
- * across shelves, so a memory that a person shelf, an era shelf, and an area shelf all
- * point to outranks any single-signal match.
+ * Every person, every era, every place, and every archive area gets its own librarian. A
+ * question comes in, each shelf looks at it, and the shelves that recognize something
+ * nominate memories from their own slice with the reason stated. Nominations for the same
+ * memory add up across shelves, so a memory that a person shelf, an era shelf, and an area
+ * shelf all point to outranks any single-signal match.
  *
- * The weights are identical to [LocalLibrarianService], deliberately: the hive is an
- * accountability structure over the same scoring, not a different ranking. What it adds is
- * the route. The answer names which shelves it came through, so a family member can see
- * how the librarian found what it found. Retrieval that cannot explain itself has no place
- * in an archive built on provenance.
+ * The signals are the flat pipeline's, called from the same [Signals] code rather than
+ * copied, so the two cannot rank differently. They once could: this file was written
+ * with its own copy of the scoring and a comment promising the weights matched, and the
+ * place signal did not make the trip. What the hive adds is the route. The answer names
+ * which shelves it came through, so a family member can see how the librarian found what it
+ * found. Retrieval that cannot explain itself has no place in an archive built on
+ * provenance.
  *
  * Still deterministic, still entirely on device, still zero network.
  */
@@ -52,41 +54,41 @@ class LibrarianHive(
 
         // Blend before permission, so the withheld count stays honest: "shelves matched
         // it, and you may not read it" is real information.
-        val blendedScore = HashMap<String, Int>()
+        val reasonsById = LinkedHashMap<String, MutableList<Reason>>()
         val storiesById = HashMap<String, Story>()
         nominationsByShelf.forEach { (_, nominations) ->
             nominations.forEach { nomination ->
-                blendedScore.merge(nomination.story.storyId, nomination.score, Int::plus)
+                reasonsById.getOrPut(nomination.story.storyId) { mutableListOf() } += nomination.reason
                 storiesById[nomination.story.storyId] = nomination.story
             }
         }
 
-        val matched = blendedScore.keys.map { storiesById.getValue(it) }
+        val matched = reasonsById.keys.map { storiesById.getValue(it) }
         val (usable, withheldCount) = MemoryAccess.partition(matched, viewer, scope, people)
         if (usable.isEmpty()) return LibrarianOutcome.AllWithheld(withheldCount)
 
-        val byScore = usable.sortedWith(
-            compareByDescending<Story> { blendedScore.getValue(it.storyId) }
-                .thenByDescending { it.createdAt }
-        ).take(AnswerAssembly.MAX_SOURCES)
+        val ranked = AnswerAssembly.rank(
+            usable.map { AnswerAssembly.Match(it, reasonsById.getValue(it.storyId)) }
+        )
+        val shown = ranked.take(AnswerAssembly.MAX_SOURCES)
 
         // The route only names shelves that contributed to what is actually shown.
         // Naming a shelf whose nominations were all cut or withheld would leak that
         // something matched there.
-        val chosenIds = byScore.map { it.storyId }.toSet()
+        val chosenIds = shown.map { it.story.storyId }.toSet()
         val route = nominationsByShelf
             .filter { (_, nominations) -> nominations.any { it.story.storyId in chosenIds } }
             .map { (shelf, _) -> shelf.shelfName }
 
-        val sources = byScore.map { story ->
-            AnswerAssembly.sourceFor(story, parsed, segmentsForStory)
+        val sources = shown.map { match ->
+            AnswerAssembly.sourceFor(match, parsed, segmentsForStory)
         }
 
         return LibrarianOutcome.Answered(
             LibrarianAnswer(
                 question = question,
                 scope = scope,
-                text = AnswerAssembly.composeLead(byScore, people, withheldCount),
+                text = AnswerAssembly.composeLead(ranked, people, withheldCount),
                 sources = sources,
                 withheldCount = withheldCount,
                 routedThrough = route
@@ -110,25 +112,34 @@ class LibrarianHive(
         }.distinct().sorted()
         val eraShelves = decades.map { EraShelfLibrarian(it, stories) }
 
+        // One shelf per place, however it was typed. "Mom's house" and "mom’s house" are one
+        // place, and the shelf takes its name from the first way somebody wrote it.
+        val placeShelves = stories
+            .filter { !it.placeLabel.isNullOrBlank() }
+            .groupBy { Matching.normalize(it.placeLabel!!) }
+            .filterKeys { it.isNotEmpty() }
+            .map { (_, slice) -> PlaceShelfLibrarian(slice.first().placeLabel!!.trim(), slice) }
+
         val areaShelves = ArchiveArea.entries
             .map { area -> area to stories.filter { it.area == area } }
             .filter { (_, slice) -> slice.isNotEmpty() }
             .map { (area, slice) -> AreaShelfLibrarian(area, slice, segmentsForStory) }
 
-        return personShelves + eraShelves + areaShelves
+        return personShelves + eraShelves + placeShelves + areaShelves
     }
 }
 
 /**
  * A memory put forward by one shelf, with the reason stated. The reason is not
  * decoration: it is what makes the routing inspectable when someone asks why the
- * librarian surfaced what it surfaced.
+ * librarian surfaced what it surfaced, and it is shown under the source.
  */
 data class Nomination(
     val story: Story,
-    val score: Int,
-    val reason: String
-)
+    val reason: Reason
+) {
+    val score: Int get() = reason.score
+}
 
 /** One shelf in the hive. It only ever speaks about its own slice of the archive. */
 interface ShelfLibrarian {
@@ -149,15 +160,8 @@ class PersonShelfLibrarian(
 
     override suspend fun nominate(parsed: QuestionParse): List<Nomination> {
         if (person.personId !in parsed.personIds) return emptyList()
-        return buildList {
-            stories.forEach { story ->
-                if (person.personId in story.narratorIds) {
-                    add(Nomination(story, 6, "told by ${person.displayName}"))
-                }
-                if (person.personId in story.subjectPersonIds) {
-                    add(Nomination(story, 4, "about ${person.displayName}"))
-                }
-            }
+        return stories.flatMap { story ->
+            Signals.person(story, person, parsed).map { Nomination(story, it) }
         }
     }
 }
@@ -173,14 +177,25 @@ class EraShelfLibrarian(
     override suspend fun nominate(parsed: QuestionParse): List<Nomination> {
         val yearsHere = parsed.years.filter { it in decadeStart until decadeStart + 10 }
         if (yearsHere.isEmpty()) return emptyList()
-
         return stories.flatMap { story ->
-            val start = story.eraStart ?: return@flatMap emptyList<Nomination>()
-            val end = story.eraEnd ?: start
-            yearsHere.filter { it in start..end }
-                .map { year -> Nomination(story, 5, "its era covers $year") }
+            Signals.era(story, yearsHere).map { Nomination(story, it) }
         }
     }
+}
+
+/**
+ * Owns every memory saved with one place. Activated when the question names the place, or
+ * shares a word with it, and says which.
+ */
+class PlaceShelfLibrarian(
+    place: String,
+    private val stories: List<Story>
+) : ShelfLibrarian {
+
+    override val shelfName = "the $place shelf"
+
+    override suspend fun nominate(parsed: QuestionParse): List<Nomination> =
+        stories.mapNotNull { story -> Signals.place(story, parsed)?.let { Nomination(story, it) } }
 }
 
 /**
@@ -198,37 +213,9 @@ class AreaShelfLibrarian(
 
     override suspend fun nominate(parsed: QuestionParse): List<Nomination> {
         if (parsed.terms.isEmpty()) return emptyList()
-
-        return stories.mapNotNull { story ->
-            var score = 0
-            val matchedOn = mutableListOf<String>()
-
-            val title = story.title.lowercase()
-            parsed.terms.forEach { term ->
-                if (title.contains(term)) {
-                    score += 3
-                    matchedOn += "\"$term\" in the title"
-                }
-                if (story.tags.any { it.lowercase().contains(term) }) {
-                    score += 2
-                    matchedOn += "the tag \"$term\""
-                }
-            }
-
-            if (story.durationMs > 0) {
-                val segments = segmentsForStory(story.storyId)
-                val transcriptHits = segments.sumOf { segment ->
-                    val text = segment.text.lowercase()
-                    parsed.terms.count { text.contains(it) }
-                }
-                if (transcriptHits > 0) {
-                    score += minOf(transcriptHits * 2, 8)
-                    matchedOn += "words spoken in the recording"
-                }
-            }
-
-            if (score <= 0) null
-            else Nomination(story, score, "matched ${matchedOn.distinct().joinToString(", ")}")
+        return stories.flatMap { story ->
+            (Signals.written(story, parsed) + listOfNotNull(Signals.spoken(story, parsed, segmentsForStory)))
+                .map { Nomination(story, it) }
         }
     }
 }

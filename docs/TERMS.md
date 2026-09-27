@@ -1,6 +1,6 @@
 # Terms of Use
 
-**Effective 12 September 2026.**
+**Effective 24 September 2026.**
 
 Arv is a student project, built by Team 03 for COS229. It is not a commercial product, it
 is not sold, and it is not distributed through any app store. These terms cover the use of
@@ -30,8 +30,9 @@ other people into it with a single-use code, good for two weeks. Anyone you invi
 and add to that archive according to the role their invitation granted them.
 
 So that a code read out on one phone can be typed into another, the family's name, its
-members' standings and its codes are held on a server. The privacy policy says exactly
-what, and that nothing else is.
+members' standings and its codes are held on a server. If you turn on sharing for an archive,
+the part of it the family is meant to see is held there too, its recordings, photographs and
+scans included. The privacy policy says exactly what, and that nothing else is.
 
 You are responsible for who you invite. An invitation is recorded against the account that
 issued it, permanently, which is deliberate.
@@ -57,8 +58,9 @@ the tools to do that.
 
 ## 5. Documents, photographs and copyright
 
-You keep ownership of everything you put into your archive. We claim no licence to it, we do
-not use it, and we cannot read it.
+You keep ownership of everything you put into your archive. We claim no licence to it and we
+do not use it. What sharing sends is held in a database and file storage that Team 03
+controls and could read; the privacy policy says exactly what that is.
 
 **When you add a document or a photograph you are stating that you have the right to use
 it.** A photograph being available online is not permission to use it. Photographs are
@@ -68,20 +70,21 @@ the print, and an unpublished family photograph can remain under copyright for d
 You are responsible for anything you upload and for any claim arising from it. Team 03 is
 not responsible for material a user chooses to add to their own archive.
 
-We host none of your material, so there is no copy of a recording, document or photograph
-for anyone to complain to us about. If
-that ever changes, a takedown process will be published before it does.
+With sharing turned on, a recording, document or photograph in a shared story is held in
+file storage Team 03 controls, readable only by the family members the story is shared with.
+There is no takedown process for that material yet. See the note at the end.
 
 ## 6. There is no backup, and you can lose everything
 
 Read this twice.
 
-Arv keeps your archive on your phone and nowhere else. No recording, story, document,
-photograph, person or health record is uploaded or copied to a server. There is no account
-recovery for an archive, because none of it is held anywhere to recover it from. Invitations
-are the one thing a server holds, and they are not your archive.
+Arv keeps your archive on your phone. Sharing, if you turn it on, sends the part the family
+is meant to see to the family's other phones through a server, but it is not a backup:
+private stories, health records, transcripts and profile pictures never leave the phone, a
+shared story can be taken back or erased by the people allowed to, and there is no account
+recovery that rebuilds an archive from what the server holds.
 
-That means an archive is lost, permanently and completely, if you:
+That means everything that is only on your phone is lost, permanently, if you:
 
 - lose the phone, or it is stolen, or it breaks
 - uninstall the app
@@ -90,7 +93,7 @@ That means an archive is lost, permanently and completely, if you:
 
 An archive can hold the only existing recording of someone's voice. **Use Settings to export
 the archive to a zip file and keep that file somewhere else.** That export is the only copy
-you will have. Doing it is your responsibility, and no part of this app will do it for you.
+of the whole archive you will have. Doing it is your responsibility, and no part of this app will do it for you.
 
 ## 7. Health information
 

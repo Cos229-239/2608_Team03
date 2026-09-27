@@ -98,7 +98,19 @@ data class PersonEntity(
      * permission check on that record happens once, at the moment of choosing, and the
      * face is a copy from then on.
      */
-    val portraitAssetId: String? = null
+    val portraitAssetId: String? = null,
+    /**
+     * The [updatedAt] the family's server last confirmed holding, or null when it has never
+     * held this person. A row whose [updatedAt] differs carries an edit the other phones
+     * have not had yet. That comparison is the whole of how sync finds its work, so no write
+     * path has to remember to queue anything.
+     */
+    val syncedAt: Long? = null,
+    /**
+     * The [updatedAt] the server refused, so one refusal is not asked for again on every
+     * pass. The next real edit moves [updatedAt] on and the row is tried afresh.
+     */
+    val refusedAt: Long? = null
 )
 
 /**
@@ -118,7 +130,11 @@ data class RelationshipEntity(
     val toPersonId: String,
     val kind: RelationshipKind,
     val uncertain: Boolean = false,
-    val updatedAt: Long = 0L
+    val updatedAt: Long = 0L,
+    /** As [PersonEntity.syncedAt]: what the server last confirmed, null if never. */
+    val syncedAt: Long? = null,
+    /** As [PersonEntity.refusedAt]. */
+    val refusedAt: Long? = null
 )
 
 @Entity(tableName = "stories", indices = [Index("familyId"), Index("eraStart")])
@@ -159,7 +175,23 @@ data class StoryEntity(
     val primaryAssetId: String? = null,
     val createdBy: String = "",
     val createdAt: Long = 0L,
-    val updatedAt: Long = 0L
+    val updatedAt: Long = 0L,
+    /**
+     * When somebody deleted this, or null while it is in the archive.
+     *
+     * A delete hides rather than erases. Once the family shares an archive across phones,
+     * an erased row cannot tell the other phones anything, so the story would come back on
+     * the next pull, and a mis-tap on a dead grandmother's only recording would be final.
+     * Hidden, it is gone from every screen on every phone and whoever could edit it can
+     * bring it back.
+     */
+    val deletedAt: Long? = null,
+    /** The account that deleted it, so the restore list can say who. */
+    val deletedBy: String? = null,
+    /** As [PersonEntity.syncedAt]: what the server last confirmed, null if never. */
+    val syncedAt: Long? = null,
+    /** As [PersonEntity.refusedAt]. */
+    val refusedAt: Long? = null
 )
 
 @Entity(tableName = "assets", indices = [Index("storyId"), Index("uploadState")])
@@ -194,8 +226,10 @@ data class TranscriptSegmentEntity(
 )
 
 /**
- * Every write in the app goes here first. A WorkManager job drains it.
- * This table is the entire offline story. See docs/SPEC.md §3.
+ * Sync work that cannot be read off a row. An edit can: a row whose updatedAt differs from
+ * its syncedAt has something to send. A removed family link cannot, because removing it
+ * left no row behind to compare, so the removal waits here. Files waiting to go up wait
+ * here too. See docs/SPEC.md §3.
  */
 @Entity(tableName = "outbox", indices = [Index("createdAt")])
 data class OutboxEntity(
@@ -380,6 +414,25 @@ data class PromptEntity(
         status = status
     )
 }
+
+/**
+ * An archive's own record on this phone: its id, and the name its family gave it.
+ *
+ * The name used to live only in the open session, and signing out wipes the session. The
+ * stories, the people and the member row all stayed on the phone, and nothing could name the
+ * archive they belonged to, so signing back in had no way to offer it and asked for a new
+ * family instead. A row here outlives any session.
+ *
+ * Its own table rather than a column on [MemberEntity], because a member row is rewritten
+ * whole from several places (a join, a sync pull, a backfill) and any one of them that did
+ * not know the name would quietly erase it.
+ */
+@Entity(tableName = "families")
+data class FamilyEntity(
+    @PrimaryKey val familyId: String,
+    val name: String,
+    val updatedAt: Long = 0L
+)
 
 /**
  * One account's membership in one family. See [Member] for why this is its own table.

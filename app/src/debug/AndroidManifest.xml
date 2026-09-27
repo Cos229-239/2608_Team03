@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        Debug builds only. Lets an Android emulator reach the Firebase emulators on the
+        development machine, which speak plain HTTP, so SyncOnEmulatorTest can prove sync
+        against firestore.rules without touching the real project. A release build never
+        merges this file, and keeps Android's default of refusing plain HTTP everywhere.
+    -->
+    <application android:networkSecurityConfig="@xml/network_security_config" />
+
+</manifest>

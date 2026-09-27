@@ -7,7 +7,8 @@ Arv is the Swedish word for inheritance.
 
 ## Where the build stands
 
-Updated 2026-09-12. 237 unit tests, 0 failures.
+Updated 2026-09-24. 349 unit tests, 34 on-device tests including 12 two-phone sync tests
+against the Firebase emulator, and 55 rules tests, all passing.
 
 Working end to end:
 
@@ -23,6 +24,9 @@ Working end to end:
   who admitted whom. A code read out on one phone works on another. The phone checks it
   with the same seven answers either way, and Firestore rules, tested against the
   emulator, refuse anything the phone would have. No server code, and the free plan.
+- An invitation says what the person becomes: contributor, keeper or viewer. Picking a
+  different one mints a fresh code, because a code's role is fixed when it is minted and
+  the rules hold it there.
 - Permission rules on every read and every edit, unit tested.
 - Consent enforced on reads, including the decision a family made after a death.
 - Profile pictures. Upload one into the circle, or take one from a photograph already
@@ -31,22 +35,36 @@ Working end to end:
   the archive, so a private one cannot be promoted onto the people list. Pictures are
   downscaled on the way in, and no face means initials, which is a design not a blank.
 - Dark mode, plus eight named palettes and an auto setting that follows the system.
-- Room schema at version 11 with real migrations and no destructive fallback.
+- Room schema at version 13 with real migrations and no destructive fallback.
 
 Partly built:
 
 - Librarian and search screens exist and answer from local data. No embeddings yet.
 - Timeline shows dated memories and gaps. Undated memories still need a home.
-- Sync has a database outbox and nothing that drains it. A code now works on a second
-  phone, but joining writes a standing, not a library, so the archive opens with nothing
-  in it there. The join screen says so rather than letting it look like a failed load.
-- Invitations always grant CONTRIBUTOR. The role travels on the invitation and the
-  other roles are built and tested, so what is missing is a picker, not a mechanism.
+- Sync. With sharing turned on in Settings, stories set to Family, Branch or Selected,
+  the family tree and the member list go between phones, the later edit wins, and
+  deleting hides a story everywhere with an undo under Recently deleted. Recordings,
+  photographs and documents travel the same way. On the Firebase emulator each one has
+  gone from one test phone to the other with its bytes unchanged, and the photograph and
+  the document opened there. On the live project no file travels until it has Cloud
+  Storage, which needs the paid plan. A person's portrait does not travel at all yet. Each
+  file gets a record carrying
+  a copy of its story's permission fields, and `storage.rules` reads that record to
+  decide who may have the bytes, so one permission decision written once is asked twice
+  and the two cannot drift. Private stories and health records never leave the phone,
+  and neither do their files. A story taken back to private or erased takes its files off
+  the server too. One narrowed to fewer people keeps its files there for the people still
+  allowed. Either way, a phone that can no longer see the story deletes its downloaded
+  copy the next time it syncs. Where Cloud Storage is not on the project, everything
+  else still syncs, each file waits on the phone that made it until Storage is there, and
+  Settings says how many have not reached the family yet. Branch stories reach other
+  phones only once member rows carry a place in the tree, and nothing writes that yet.
 
 Not started:
 
 - Family forest, the zoomed out view across households.
-- Compose UI tests. `androidTest` holds the migration tests only.
+- Compose UI tests. `androidTest` tests the database and sync on a device, and none of it
+  drives a screen.
 
 ## Team
 
@@ -57,9 +75,10 @@ Not started:
 ## Stack
 
 Kotlin and Jetpack Compose, no XML layouts. Room for local storage. Vosk for offline
-speech. OkHttp and Coil. Firebase Authentication for accounts and Firestore for
-invitations, both on the free plan. `google-services.json` is not committed; a build
-without it still runs, with the sample family and codes that work on one phone.
+speech. OkHttp and Coil. Firebase Authentication for accounts and Firestore for invitations
+and sharing, both on the free plan, and Cloud Storage for shared recordings, photographs and
+documents, which needs the paid plan. `google-services.json` is not committed, and a build
+needs it; see Running it.
 
 minSdk 26, target and compile SDK 35.
 
@@ -68,10 +87,12 @@ minSdk 26, target and compile SDK 35.
 - `app/src/main/java/com/arv/app/core/` model, database, permission rules, lineage
 - `app/src/main/java/com/arv/app/feature/` one folder per screen area
 - `app/src/test/` unit tests
-- `app/src/androidTest/` migration test, needs a device or emulator
+- `app/src/androidTest/` database tests and the two-phone sync tests, which need a device
+  or emulator, and for sync the Firebase emulators
 - `app/schemas/` exported Room schemas, one file per version
 - `firestore.rules`, `storage.rules`, and their tests under `firebase/rules-tests/`
 - `docs/SPEC.md` the spec the permission rules cite
+- `docs/adr/` decision records
 - `docs/PLAY_DATA_SAFETY.md` the Play form filled in against the code, plus the
   account-deletion blocker that has to be built before a listing is possible
 - `docs/TERMS.md`, `docs/PRIVACY.md` terms of use and privacy policy, both written

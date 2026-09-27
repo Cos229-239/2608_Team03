@@ -172,13 +172,26 @@ invites/{code}                                 -- top level: the joiner does not
 ### Room (local), mirrors the above plus
 
 ```
+stories, people, relationships
+  syncedAt?     -- the updatedAt the server last confirmed; null = never held there
+  refusedAt?    -- the updatedAt the rules turned down; not offered again until it changes
+stories
+  deletedAt?, deletedBy?   -- a delete hides; every read a screen makes filters on it
+
 outbox
   id, opType: CREATE|UPDATE|DELETE|UPLOAD
   collection, docId, payloadJson, localFilePath?
   attempts, lastError, createdAt
 ```
 
-The outbox is the whole offline story. Every write goes to Room and the outbox first; a `WorkManager` job drains it. The UI never waits on the network.
+Every write goes to Room and only Room. The UI never waits on the network.
+
+Sync finds its work in the rows themselves: a row whose `updatedAt` differs from its `syncedAt` has an edit the server has not confirmed, so no write path has to remember to queue anything. The outbox holds only what a row cannot show: a removed family link, which left no row to compare, and files waiting to upload. A `WorkManager` job (`core/sync/SyncWorker`) sends, then pulls, when sharing is on for the open archive. It is off by default, per archive, in Settings.
+
+- **What goes.** Stories whose visibility is not PRIVATE and whose area is not HEALTH (`SyncPolicy.shares`), people, relationships. A story narrowed to PRIVATE, or moved to HEALTH, after it was shared is deleted from the server. Local-only columns never cross: transcript and upload state, file paths, `relationLabel` (said from one person's point of view), and the sync columns.
+- **Conflicts.** The later `updatedAt` wins, row by row. Edits stamp `max(now, previous + 1)` so a slow clock cannot lose to the version it replaced. Sends of an existing document run as a transaction that reads the server's `updatedAt` first.
+- **Pulls.** Every query uses a shape the rules can prove (section 4), read from the server, never the cache. A pull removes a row only if this phone saw it on the server, holds no unsent edit to it, and, for stories, did not create it. A partial or refused pull removes nothing.
+- **Deletes.** Soft. `deletedAt` travels like any other edit; whoever could edit a story can restore it from Recently deleted.
 
 ---
 

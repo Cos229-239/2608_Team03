@@ -172,6 +172,17 @@ service cloud.firestore {
         allow read: if isMember(familyId);
         allow create, update: if canContribute(familyId)
           && request.resource.data.familyId == familyId;
+        // MemoryAccess.canRecordConsent. A person answers for themselves and a memory steward
+        // for the person they steward, whatever their role, so a viewer may write down their
+        // own answer. The consent record and nothing else about the person.
+        allow update: if isMember(familyId)
+          && resource.data.familyId == familyId
+          && (member(familyId).personId == personId
+              || resource.data.memoryStewardUserId == uid())
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+               'consentGranted', 'postMortemOk', 'consentDeclined', 'consentDecidedAt',
+               'consentMethod', 'consentRecordedBy', 'updatedAt'
+             ]);
         allow delete: if isKeeper(familyId);
       }
 

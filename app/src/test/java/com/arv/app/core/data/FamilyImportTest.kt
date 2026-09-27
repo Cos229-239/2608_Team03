@@ -1,6 +1,10 @@
 package com.arv.app.core.data
 
+import com.arv.app.core.data.local.PersonEntity
+import com.arv.app.core.data.local.toDomain
 import com.arv.app.core.model.Confidence
+import com.arv.app.core.model.ConsentMethod
+import com.arv.app.core.model.ProfileState
 import com.arv.app.core.model.RelationshipKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -207,5 +211,207 @@ class FamilyImportTest {
             """{"displayName":"Gus Delaney","relationLabel":"Uncle","confidence":"unverified"}"""
         )
         assertTrue(plan.edges.single().uncertain)
+    }
+
+    // --- importing again: what the archive already holds ---
+
+    /**
+     * Somebody the family has worked on since the first import: a documented record somebody
+     * checked, consent written down, a steward named, an account linked, a face chosen, and a
+     * copy on the family's server.
+     */
+    private fun held(updatedAt: Long = 500L) = PersonEntity(
+        personId = "p_ray",
+        familyId = "fam_delaney",
+        displayName = "Ray Delaney",
+        birthYear = 1947,
+        relationLabel = "Father",
+        confidence = Confidence.DOCUMENTED,
+        source = "Birth certificate",
+        verifiedAt = 300L,
+        linkedUserId = "u_ray",
+        memoryStewardUserId = "u_dana",
+        consentGranted = true,
+        postMortemOk = true,
+        consentDecidedAt = 400L,
+        consentMethod = ConsentMethod.IN_PERSON,
+        consentRecordedBy = "u_dana",
+        portraitPath = "portraits/p_ray.jpg",
+        portraitAssetId = "a_wedding",
+        updatedAt = updatedAt,
+        syncedAt = updatedAt,
+        refusedAt = 450L
+    )
+
+    @Test
+    fun `a re-import corrects what the file says and keeps everything it cannot say`() {
+        // The importer rebuilt this row from the file, which reset every column the file has
+        // no field for, and sync then gave the emptied copy to the whole family.
+        val before = held()
+        val after = FamilyImport.merge(
+            before,
+            one("""{"displayName":"Ray Delaney","birthYear":1948,"confidence":"verified"}"""),
+            nowMillis = 1_000L
+        )
+        assertEquals(before.copy(birthYear = 1948, updatedAt = 1_000L), after)
+    }
+
+    @Test
+    fun `a re-import is stamped past the version it replaces`() {
+        // This phone's clock is behind the one that wrote Ray's current row. Stamped with its
+        // own time, the import would lose to that row on the next pull and disappear.
+        val after = FamilyImport.merge(
+            held(updatedAt = 5_000L),
+            one("""{"displayName":"Ray Delaney","birthYear":1948,"confidence":"verified"}"""),
+            nowMillis = 1_000L
+        )
+        assertEquals(5_001L, after.updatedAt)
+    }
+
+    @Test
+    fun `importing the same file again changes nothing, so sync has nothing to send`() {
+        val before = held()
+        val after = FamilyImport.merge(
+            before,
+            one(
+                """{"displayName":"Ray Delaney","birthYear":1947,"relationLabel":"Father",
+                    "confidence":"verified","source":"Birth certificate"}"""
+            ),
+            nowMillis = 1_000L
+        )
+        assertEquals(before, after)
+    }
+
+    @Test
+    fun `a family-told row neither overwrites a documented person nor lowers their grade`() {
+        // The grade vouches for the whole person. Taking the file's year under it would pass
+        // a memory off as a document, and taking the file's grade would quietly undo a check.
+        val before = held()
+        val after = FamilyImport.merge(
+            before,
+            one(
+                """{"displayName":"Ray Delaney","birthYear":1950,"deathYear":2020,
+                    "note":"Mom remembers 1950","confidence":"user_reported"}"""
+            ),
+            nowMillis = 1_000L
+        )
+        assertEquals(before, after)
+    }
+
+    @Test
+    fun `leaving a death out of the file does not bring anybody back`() {
+        // A file can say somebody died and has no way to say they did not, so what it leaves
+        // out stays, and so does a birthplace somebody else recorded.
+        val before = held().copy(state = ProfileState.MEMORIAL, deathYear = 2019, birthPlace = "Tampa")
+        val after = FamilyImport.merge(
+            before,
+            one("""{"displayName":"Ray Delaney","birthYear":1948,"confidence":"verified"}"""),
+            nowMillis = 1_000L
+        )
+        assertEquals(before.copy(birthYear = 1948, updatedAt = 1_000L), after)
+    }
+
+    @Test
+    fun `a file that dates a death replaces the whole of the old answer`() {
+        // The two years are one answer. Keeping the old end would turn a correction to one
+        // exact year back into the range it corrected.
+        val before = held().copy(state = ProfileState.MEMORIAL, deathYear = 2019, deathYearEnd = 2020)
+        val after = FamilyImport.merge(
+            before,
+            one("""{"displayName":"Ray Delaney","deathYear":2019,"confidence":"verified"}"""),
+            nowMillis = 1_000L
+        )
+        assertEquals(2019, after.deathYear)
+        assertNull(after.deathYearEnd)
+    }
+
+    @Test
+    fun `a better-graded row replaces the record instead of vouching for what it left out`() {
+        // Unchecked research had Ray dead. The corrected row is backed by his birth certificate
+        // and says nothing about a death. Kept under the new grade, the old death would make
+        // him public record, and his recordings would stop waiting for his answer.
+        val before = PersonEntity(
+            personId = "p_ray",
+            familyId = "fam_delaney",
+            displayName = "Ray Delaney",
+            birthYear = 1947,
+            deathYear = 1990,
+            birthPlace = "Tampa",
+            relationLabel = "Father",
+            state = ProfileState.MEMORIAL,
+            confidence = Confidence.UNVERIFIED,
+            source = "Somebody's online tree",
+            memoryStewardUserId = "u_dana",
+            portraitPath = "portraits/p_ray.jpg",
+            updatedAt = 500L,
+            syncedAt = 500L
+        )
+        val after = FamilyImport.merge(
+            before,
+            one(
+                """{"displayName":"Ray Delaney","birthYear":1948,
+                    "confidence":"verified","source":"Birth certificate"}"""
+            ),
+            nowMillis = 1_000L
+        )
+        assertEquals(
+            before.copy(
+                birthYear = 1948,
+                deathYear = null,
+                birthPlace = null,
+                state = ProfileState.LIVING,
+                confidence = Confidence.DOCUMENTED,
+                source = "Birth certificate",
+                updatedAt = 1_000L
+            ),
+            after
+        )
+        assertTrue(after.toDomain().consentRestricts)
+    }
+
+    @Test
+    fun `a no written down for somebody survives the re-import that makes them public record`() {
+        // The worst thing the rebuild did. Once Gus is documented and dead he needs no consent
+        // decision, so the family's no is the only thing still holding his recordings back,
+        // and the rebuilt row had forgotten it.
+        val before = PersonEntity(
+            personId = "p_gus",
+            familyId = "fam_delaney",
+            displayName = "Gus Delaney",
+            deathYear = 1990,
+            state = ProfileState.MEMORIAL,
+            confidence = Confidence.UNVERIFIED,
+            consentDeclined = true,
+            consentDecidedAt = 400L,
+            consentMethod = ConsentMethod.ON_THEIR_BEHALF,
+            consentRecordedBy = "u_dana",
+            updatedAt = 500L,
+            syncedAt = 500L
+        )
+        val after = FamilyImport.merge(
+            before,
+            one("""{"displayName":"Gus Delaney","deathYear":1990,"confidence":"verified","source":"Obituary"}"""),
+            nowMillis = 1_000L
+        )
+        assertTrue(after.toDomain().isPublicRecord)
+        assertTrue(after.toDomain().consentRestricts)
+    }
+
+    @Test
+    fun `a dispute the file raises lands on an unverified person`() {
+        // Unverified and conflicted weigh the same. Neither has been checked, but only one
+        // tells whoever checks next that the sources disagree.
+        val after = FamilyImport.merge(
+            PersonEntity(
+                personId = "p_jane",
+                familyId = "fam_delaney",
+                displayName = "Jane Delaney",
+                confidence = Confidence.UNVERIFIED,
+                updatedAt = 500L
+            ),
+            one("""{"displayName":"Jane Delaney","confidence":"conflicting sources"}"""),
+            nowMillis = 1_000L
+        )
+        assertEquals(Confidence.CONFLICTED, after.confidence)
     }
 }

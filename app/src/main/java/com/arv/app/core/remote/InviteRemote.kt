@@ -9,10 +9,12 @@ import com.arv.app.core.model.MemberRole
  * The server half of an invitation, behind an interface so the app builds and tests
  * without one.
  *
- * Three things cross the wire and nothing else: that a family exists and who owns it, the
- * codes its keepers have issued, and the standing a joiner writes for themselves when they
- * spend one. No recording, story, person or health record goes through here, and there is
- * no method on this interface that could carry one. docs/PRIVACY.md lists exactly these.
+ * Three things cross the wire here and nothing else: that a family exists and who owns it,
+ * the codes its keepers have issued, and the standing a joiner writes for themselves when
+ * they spend one. No recording, story, person or health record goes through here, and there
+ * is no method on this interface that could carry one. Sharing an archive is a separate
+ * switch with its own interface, [com.arv.app.core.sync.SyncRemote]. docs/PRIVACY.md lists
+ * both. Removing a member deletes one of these rows and carries nothing.
  */
 interface InviteRemote {
 
@@ -35,10 +37,24 @@ interface InviteRemote {
     suspend fun revoke(invite: InviteEntity, nowMillis: Long): RemoteWrite
 
     /**
+     * What the server holds for one code, read by its exact id, which is the only read of a
+     * code the rules allow. It is how the phone that issued a code finds out it was spent on
+     * somebody else's, and how a join screen names a family before anyone agrees to it.
+     */
+    suspend fun lookup(code: String): RemoteLookup
+
+    /**
      * Redeems a code this phone has never seen: reads it, decides with [Invitation.redeem],
      * and writes the standing and the spend as one batch the rules accept only as a pair.
      */
     suspend fun redeem(typed: String, userId: String, nowMillis: Long): RemoteRedeem
+
+    /**
+     * Takes a member out of the family on the server, so no other phone treats them as in it.
+     *
+     * The rules accept this from the owner alone, and never for the owner's own row.
+     */
+    suspend fun removeMember(familyId: String, userId: String): RemoteWrite
 
     /** The remote for a build that has none. Every write is skipped; a redeem cannot reach. */
     object None : InviteRemote {
@@ -47,8 +63,10 @@ interface InviteRemote {
             RemoteWrite.Skipped
         override suspend fun publish(invite: InviteEntity) = RemoteWrite.Skipped
         override suspend fun revoke(invite: InviteEntity, nowMillis: Long) = RemoteWrite.Skipped
+        override suspend fun lookup(code: String): RemoteLookup = RemoteLookup.Unreachable
         override suspend fun redeem(typed: String, userId: String, nowMillis: Long): RemoteRedeem =
             RemoteRedeem.Unreachable
+        override suspend fun removeMember(familyId: String, userId: String) = RemoteWrite.Skipped
     }
 }
 
@@ -59,6 +77,17 @@ enum class RemoteWrite {
     Failed,
     /** There is no server on this build. */
     Skipped
+}
+
+/** What the server said when asked about one code. */
+sealed interface RemoteLookup {
+    data class Found(val invite: InviteEntity) : RemoteLookup
+
+    /** The server answered, and it holds no such code. */
+    data object Missing : RemoteLookup
+
+    /** Never got an answer. */
+    data object Unreachable : RemoteLookup
 }
 
 /** What the server said when asked to redeem a code. */

@@ -404,5 +404,12 @@ data class LibrarianSource(
     val quote: String,
     val startMs: Long?,
     val provenance: Provenance,
-    val area: ArchiveArea = ArchiveArea.STORIES
+    val area: ArchiveArea = ArchiveArea.STORIES,
+    /** Why the librarian picked this, in a sentence or two. Shown under the quote. */
+    val why: String? = null,
+    /**
+     * True when the only link is words said in the recording. The answer says the memory
+     * might be related instead of presenting it as what the question asked for.
+     */
+    val tentative: Boolean = false
 )

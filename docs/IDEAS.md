@@ -41,4 +41,4 @@ A developer outside the team reviewed the README and returned a forty-comment, c
 
 **Destructive and recovery tests for the demo path.** App killed mid-recording, storage full, phone lost, interrupted upload, corrupted audio, revoked member, conflicting edits, failed export and restore.
 
-**Deterministic pipeline before agents.** Policy check, permission-scoped retrieval, cited answer. Agents only when tests show a measurable benefit. The instructor's scope instinct and the external reviewer's audit instinct agree here, independently.
+**Deterministic pipeline before agents.** Policy check, permission-scoped retrieval, cited answer. Agents only when tests show a measurable benefit. The instructor's scope instinct and the external reviewer's audit instinct agree here, independently. Written up in [ADR 001](adr/001-librarian-pipeline-vs-agents.md).

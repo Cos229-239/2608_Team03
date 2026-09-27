@@ -1,7 +1,10 @@
 package com.arv.app.core.data
 
+import com.arv.app.core.data.local.PersonEntity
 import com.arv.app.core.model.Confidence
+import com.arv.app.core.model.ProfileState
 import com.arv.app.core.model.RelationshipKind
+import com.arv.app.core.sync.SyncPolicy
 import org.json.JSONObject
 
 /**
@@ -154,6 +157,99 @@ object FamilyImport {
         return Plan(people, edges.distinct())
     }
 
+    /** The row for somebody the archive does not hold yet. */
+    fun newPerson(personId: String, familyId: String, imported: ImportedPerson, nowMillis: Long) =
+        PersonEntity(
+            personId = personId,
+            familyId = familyId,
+            displayName = imported.displayName,
+            alsoKnownAs = imported.alsoKnownAs,
+            birthYear = imported.birthYear,
+            deathYear = imported.deathYear,
+            deathYearEnd = imported.deathYearEnd,
+            note = imported.note,
+            birthPlace = imported.birthPlace,
+            relationLabel = imported.relationLabel,
+            state = stateOf(imported),
+            confidence = imported.confidence,
+            source = imported.source,
+            updatedAt = nowMillis
+        )
+
+    /**
+     * What an import does to somebody the archive already holds.
+     *
+     * The row is copied, never rebuilt. Rebuilding it from the file reset every column the
+     * file has no field for, so importing a corrected file erased recorded consent and
+     * refusals, stewards, linked accounts, portraits and when anyone checked the record.
+     * Sync then sent the erased version to every phone in the family, because it was newer.
+     *
+     * The fields the file does carry change only as far as the file's grade reaches, because
+     * a grade vouches for the whole person and not only for the fields that came with it.
+     *
+     *  - A lower grade than the archive holds changes nothing. A family-told birth year does
+     *    not replace a documented one, and an import never lowers a grade. Lowering one is a
+     *    judgement about a person, not a side effect of a file.
+     *  - The same grade corrects. What the file states replaces what the archive holds, and
+     *    what it leaves out stays, since leaving something out is not saying it is wrong and
+     *    two relatives' files rarely know the same things. That includes a death: a file can
+     *    say somebody died but has no way to say they did not, so an import never turns a
+     *    memorial profile back into a living one. This is the fix-and-reimport case, because
+     *    everyone an import created carries that file's grade.
+     *  - A higher grade replaces. The person becomes what the better row says, blanks
+     *    included. Keeping the rest would put old claims under a grade they never earned, and
+     *    an old death kept under a documented grade makes somebody public record, which lifts
+     *    the consent their recordings wait for.
+     *
+     * What this costs: deleting a wrong value from the file and importing again leaves it in
+     * place at the same grade. Replacing it with the right value works.
+     *
+     * Returns [existing] itself when nothing changes, so a file imported twice gives sync
+     * nothing to send. Anything else is stamped past the version it replaces, or a phone
+     * whose clock runs slow would lose its own import to that version on the next pull.
+     */
+    fun merge(existing: PersonEntity, imported: ImportedPerson, nowMillis: Long): PersonEntity {
+        val file = weight(imported.confidence)
+        val archive = weight(existing.confidence)
+        if (file < archive) return existing
+
+        val merged = if (file > archive) {
+            existing.copy(
+                displayName = imported.displayName,
+                alsoKnownAs = imported.alsoKnownAs,
+                birthYear = imported.birthYear,
+                deathYear = imported.deathYear,
+                deathYearEnd = imported.deathYearEnd,
+                birthPlace = imported.birthPlace,
+                note = imported.note,
+                // Not a claim about them. It is this phone's word for them, which no grade
+                // vouches for, so a better row without one does not take it away.
+                relationLabel = imported.relationLabel ?: existing.relationLabel,
+                state = stateOf(imported),
+                confidence = imported.confidence,
+                source = imported.source
+            )
+        } else {
+            existing.copy(
+                displayName = imported.displayName,
+                alsoKnownAs = imported.alsoKnownAs.ifEmpty { existing.alsoKnownAs },
+                birthYear = imported.birthYear ?: existing.birthYear,
+                // The two years are one answer. A file that dates the death states all of it,
+                // so a range does not outlive a correction to one exact year.
+                deathYear = imported.deathYear ?: existing.deathYear,
+                deathYearEnd = if (imported.deathYear != null) imported.deathYearEnd else existing.deathYearEnd,
+                birthPlace = imported.birthPlace ?: existing.birthPlace,
+                note = imported.note ?: existing.note,
+                relationLabel = imported.relationLabel ?: existing.relationLabel,
+                state = if (imported.deceased) ProfileState.MEMORIAL else existing.state,
+                confidence = imported.confidence,
+                source = imported.source ?: existing.source
+            )
+        }
+        return if (merged == existing) existing
+        else merged.copy(updatedAt = SyncPolicy.stamp(existing.updatedAt, nowMillis))
+    }
+
     fun parse(json: String): Result<Parsed> = runCatching {
         val root = JSONObject(json)
         val arr = root.optJSONArray("people") ?: error("No people array in that file")
@@ -220,5 +316,26 @@ object FamilyImport {
         "brother", "sister", "stepsister", "stepbrother" -> RelationshipKind.SIBLING
         "aunt", "uncle" -> RelationshipKind.AUNT_UNCLE
         else -> null
+    }
+
+    /**
+     * A stated death counts as much as a dated one. Requiring a year meant somebody known to
+     * have died, with no year anybody recorded, imported as living.
+     */
+    private fun stateOf(imported: ImportedPerson) =
+        if (imported.deceased) ProfileState.MEMORIAL else ProfileState.LIVING
+
+    /**
+     * How far a grade can be trusted, for [merge]. The enum is not declared in this order, so
+     * compare these and never ordinals.
+     *
+     * Unverified and conflicted weigh the same. Neither has been checked, and only an
+     * imported file marks a dispute, so a file can raise one and can also take the mark off.
+     */
+    private fun weight(confidence: Confidence): Int = when (confidence) {
+        Confidence.DOCUMENTED -> 3
+        Confidence.PARTLY_DOCUMENTED -> 2
+        Confidence.FAMILY_TOLD -> 1
+        Confidence.UNVERIFIED, Confidence.CONFLICTED -> 0
     }
 }

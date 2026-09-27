@@ -43,6 +43,8 @@ import com.arv.app.core.data.ArchiveExport
 import com.arv.app.core.data.FamilyImport
 import com.arv.app.core.di.ServiceLocator
 import com.arv.app.feature.invite.InviteSection
+import com.arv.app.feature.invite.MembersSection
+import com.arv.app.core.model.MemberRole
 import com.arv.app.core.session.ActiveSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -220,6 +222,7 @@ class SettingsViewModel(app: Application) : AndroidViewModel(app) {
 fun SettingsScreen(
     onSignedOut: () -> Unit,
     onAccountSignedOut: () -> Unit,
+    onJoinWithCode: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = viewModel()
 ) {
@@ -503,6 +506,56 @@ fun SettingsScreen(
         item { InviteSection() }
 
         item { HorizontalDivider() }
+
+        // Only the owner can take somebody out, so only the owner is shown the list with
+        // that button on it.
+        if (ActiveSession.role == MemberRole.OWNER) {
+            item { SectionLabel("Who is in this family") }
+
+            item { MembersSection() }
+
+            item { HorizontalDivider() }
+        }
+
+        item { SectionLabel("Sharing between phones") }
+
+        item { SyncSection() }
+
+        item { HorizontalDivider() }
+
+        // Draws its own heading, and nothing at all when nothing has been deleted.
+        item { RecentlyDeletedSection() }
+
+        // Onboarding asks for a code once, right after the account is made. Somebody who
+        // started their own family first, or went straight to the sample one, may still be
+        // holding a code they never typed, so this asks again for as long as there is an
+        // account to join with.
+        if (ActiveSession.isAuthenticated) {
+            item { SectionLabel("Joining a family") }
+
+            item {
+                Text(
+                    "Got a code from a relative? Joining opens their archive on this phone. " +
+                        "Nothing here is deleted. This archive stays on this phone, and the " +
+                        "first screen offers it again.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = onJoinWithCode,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 52.dp)
+                ) {
+                    Text("I have an invite code")
+                }
+            }
+
+            item { HorizontalDivider() }
+        }
 
         item { SectionLabel("This archive") }
 
