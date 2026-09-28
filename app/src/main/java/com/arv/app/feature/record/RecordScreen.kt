@@ -56,6 +56,7 @@ import com.arv.app.ui.components.formatElapsed
  */
 @Composable
 fun RecordScreen(
+    question: String,
     onDone: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -165,7 +166,7 @@ fun RecordScreen(
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Text(
-                    "\"What did your grandma's kitchen smell like on a Sunday?\"",
+                    "\"$question\"",
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )

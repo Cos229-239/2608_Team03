@@ -25,16 +25,52 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-
-
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.TextButton
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.arv.app.core.model.PromptStatus
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.text.font.FontWeight
 
 @Composable
 fun PromptLibraryScreen(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onRecord: (String) -> Unit
+
 ){
+    val viewModel: PromptLibraryViewModel = viewModel()
+
+    val savedPrompts by viewModel.savedPrompts.collectAsStateWithLifecycle()
+
+    val prompts by viewModel.prompts.collectAsStateWithLifecycle()
+
+    val myQuestions by viewModel.myQuestions.collectAsStateWithLifecycle()
+
+
     var selectedCategory by remember{
         mutableStateOf("Suggested")
     }
+
+
+    var showOwnQuestion by remember{
+        mutableStateOf(false)
+    }
+
+    var ownQuestion by remember {
+        mutableStateOf("")
+    }
+
+    var questionSaved by remember {
+        mutableStateOf(false)
+    }
+
+
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -44,19 +80,11 @@ fun PromptLibraryScreen(
     ) {
         Text(
             text = "Questions to ask",
-            style = MaterialTheme.typography.headlineSmall
+            style = MaterialTheme.typography.headlineSmall.copy(
+                fontWeight = FontWeight.Bold
+            )
         )
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = "For Ruth Delaney",
-            style = MaterialTheme.typography.titleLarge
-        )
-
-        Text(
-            text = "Age 83 • 11 recordings • last recorded 2 days ago",
-            style = MaterialTheme.typography.bodySmall
-        )
+        Spacer(modifier = Modifier.height(20.dp))
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -67,6 +95,7 @@ fun PromptLibraryScreen(
                 selected = selectedCategory == "Suggested",
                 onClick = {
                     selectedCategory = "Suggested"
+                    questionSaved = false
                 },
                 label = {
                     Text("Suggested")
@@ -76,6 +105,7 @@ fun PromptLibraryScreen(
                 selected = selectedCategory == "Childhood",
                 onClick = {
                     selectedCategory = "Childhood"
+                    questionSaved = false
                 },
                 label = {
                     Text("Childhood")
@@ -86,6 +116,7 @@ fun PromptLibraryScreen(
                 selected = selectedCategory == "Food",
                 onClick = {
                     selectedCategory = "Food"
+                    questionSaved = false
                 },
                 label = {
                     Text("Food")
@@ -96,6 +127,7 @@ fun PromptLibraryScreen(
                 selected = selectedCategory == "Work",
                 onClick = {
                     selectedCategory = "Work"
+                    questionSaved = false
                 },
                 label = {
                     Text("Work")
@@ -125,6 +157,9 @@ fun PromptLibraryScreen(
                 }
             )
         }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
         Card(
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -132,20 +167,29 @@ fun PromptLibraryScreen(
                 modifier = Modifier.padding(16.dp)
 
             ) {
-                Text(
-                    text = "WHY THIS ONE"
-                )
+                val whyThisOneText = when (selectedCategory) {
+                    "Childhood" -> "What is one childhood memory you can still picture clearly?"
+                    "Food" -> "Is there a family recipe that brings back a specific memory?"
+                    "Work" -> "What is something your first job taught you that stayed with you?"
+                    "Hard Things" -> "What helped your family get through a difficult time?"
+                    "Faith" -> "Was there a belief or tradition that helped guide your family?"
+                    else -> "You mentioned a song your mother hummed. Can you try to sing it?"
+                }
+
 
                 Text(
-                    text = when (selectedCategory){
-                        "Childhood" -> "What is one childhood memory you can still picture clearly?"
-                        "Food" -> "Is there a family recipe that brings back a specific memory?"
-                        "Work" -> "What is something your first job taught you that stayed with you?"
-                        "Hard Things" -> "What helped your family get through a difficult time?"
-                        "Faith" -> "Was there a belief or tradition that helped guide your family?"
-                        else -> "You mentioned a song your mother hummed. Can you try to sing it?"
-                    }
+                    text = "WHY THIS ONE?",
+                    fontWeight = FontWeight.Bold
+
                 )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = whyThisOneText
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
                     text = when (selectedCategory){
@@ -159,23 +203,38 @@ fun PromptLibraryScreen(
 
                 )
 
+                Spacer(modifier = Modifier.height(10.dp))
+
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
-                        onClick = { },
+                        onClick = {
+                            onRecord(whyThisOneText)
+                        }
                     ) {
                         Text("Record now")
                     }
                     Button(
-                        onClick = { },
+                        onClick = {
+                           viewModel.saveWhyThisOnePrompt(whyThisOneText)
+                            questionSaved = true
+                        }
                     ) {
-                        Text("Save for later")
+                        Text(
+                            if (questionSaved) "Saved!" else "Save for later"
+                        )
                     }
                 }
+
             }
         }
+
         Spacer(modifier = Modifier.height(16.dp))
+
+        val cookingPrompt = prompts.find{
+            it.text == "Who taught you to cook?"
+        }
 
         if (selectedCategory == "Suggested" || selectedCategory == "Food") {
 
@@ -192,18 +251,32 @@ fun PromptLibraryScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "Who taught you to cook?"
+                            text = "Who taught you to cook?",
+                            fontWeight = FontWeight.Bold
                         )
 
                         Text(
                             text = "Food • often opens into migration stories"
                         )
                     }
+
+                    val isSaved = cookingPrompt?.status == PromptStatus.SAVED
+
                     OutlinedIconButton(
-                        onClick = { },
+                        onClick = {
+                            cookingPrompt?.let { prompt ->
+                                if(!isSaved){
+                                    viewModel.savePrompt(prompt.promptId)
+                                }
+                            }
+
+                        },
                         modifier = Modifier.size(36.dp)
+
                     ) {
-                        Text("+")
+                        Text(
+                            if(isSaved) "✓" else "+"
+                        )
 
                     }
                 }
@@ -227,18 +300,35 @@ fun PromptLibraryScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "What did your street sound like at night?"
+                            text = "What did your street sound like at night?",
+                            fontWeight = FontWeight.Bold
                         )
 
                         Text(
                             text = "Childhood • Sounds can unlock vivid memories"
                         )
                     }
+
+                    val streetPrompt = prompts.find {
+                        it.text == "What did your street sound like at night?"
+                    }
+
+                    val isSaved = streetPrompt?.status == PromptStatus.SAVED
+
                     OutlinedIconButton(
-                        onClick = { },
+                        onClick = {
+                            streetPrompt?.let {prompt ->
+                                if(!isSaved) {
+                                    viewModel.savePrompt(prompt.promptId)
+                                }
+                            }
+
+                        },
                         modifier = Modifier.size(36.dp)
                     ) {
-                        Text("+")
+                        Text(
+                            if(isSaved) "✓" else "+"
+                        )
                     }
                 }
             }
@@ -261,18 +351,35 @@ fun PromptLibraryScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "What's a word your family used that nobody else did?"
+                            text = "What's a word your family used that nobody else did?",
+                            fontWeight = FontWeight.Bold
                         )
 
                         Text(
                             text = "Childhood • Family language holds unique memories"
                         )
                     }
+
+                    val wordPrompt = prompts.find {
+                        it.text == "What's a word your family used that nobody else did?"
+                    }
+
+                    val isSaved = wordPrompt?.status == PromptStatus.SAVED
+
                     OutlinedIconButton(
-                        onClick = { },
+                        onClick = {
+                            wordPrompt?.let { prompt ->
+                                if(!isSaved) {
+                                    viewModel.savePrompt(prompt.promptId)
+                                }
+                            }
+
+                        },
                         modifier = Modifier.size(36.dp)
                     ) {
-                        Text("+")
+                        Text(
+                            if(isSaved) "✓" else "+"
+                        )
                     }
                 }
             }
@@ -295,24 +402,41 @@ fun PromptLibraryScreen(
                         modifier = Modifier.weight(1F)
                     ) {
                         Text(
-                            text = "Tell me about a day you'd live again."
+                            text = "Tell me about a day you'd live again.",
+                            fontWeight = FontWeight.Bold
                         )
 
                         Text(
                             text = "Reflection • Revisit a memory worth reliving"
                         )
                     }
+
+                    val dayPrompt = prompts.find {
+                        it.text == "Tell me about a day you'd live again."
+                    }
+
+                    val isSaved = dayPrompt?.status == PromptStatus.SAVED
+
                     OutlinedIconButton(
-                        onClick = { },
+                        onClick = {
+                            dayPrompt?.let { prompt ->
+                                if(!isSaved) {
+                                    viewModel.savePrompt(prompt.promptId)
+                                }
+                            }
+
+                        },
                         modifier = Modifier.size(36.dp)
                     ) {
-                        Text("+")
+                        Text(
+                            if(isSaved) "✓" else "+"
+                        )
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         if (selectedCategory == "Suggested" || selectedCategory == "Work") {
 
@@ -331,7 +455,8 @@ fun PromptLibraryScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "What was your first job, and what do you remember most about it?"
+                            text = "What was your first job, and what do you remember most about it?",
+                            fontWeight = FontWeight.Bold
                         )
 
                         Text(
@@ -339,17 +464,33 @@ fun PromptLibraryScreen(
                         )
                     }
 
+                    val jobPrompt = prompts.find {
+                        it.text == "What was your first job, and what do you remember most about it?"
+                    }
+
+                    val isSaved = jobPrompt?.status == PromptStatus.SAVED
+
                     OutlinedIconButton(
-                        onClick = { },
+                        onClick = {
+                            jobPrompt?.let { prompt ->
+                                if (!isSaved) {
+                                    viewModel.savePrompt(prompt.promptId)
+
+                                }
+                            }
+
+                        },
                         modifier = Modifier.size(36.dp)
                     ) {
-                        Text("+")
+                        Text(
+                            if(isSaved) "✓" else "+"
+                        )
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         if (selectedCategory == "Suggested" || selectedCategory == "Hard Things") {
 
@@ -368,7 +509,8 @@ fun PromptLibraryScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "What was one difficult time your family made it through together?"
+                            text = "What was one difficult time your family made it through together?",
+                            fontWeight = FontWeight.Bold
                         )
 
                         Text(
@@ -376,16 +518,31 @@ fun PromptLibraryScreen(
                         )
                     }
 
+                    val hardThingsPrompt = prompts.find {
+                        it.text == "What was one difficult time your family made it through together?"
+                    }
+
+                    val isSaved = hardThingsPrompt?.status == PromptStatus.SAVED
+
                     OutlinedIconButton(
-                        onClick = { },
+                        onClick = {
+                            hardThingsPrompt?.let { prompt ->
+                                if(!isSaved) {
+                                    viewModel.savePrompt(prompt.promptId)
+                                }
+                            }
+
+                        },
                         modifier = Modifier.size(36.dp)
                     ) {
-                        Text("+")
+                        Text(
+                            if (isSaved) "✓" else "+"
+                        )
                     }
                 }
             }
         }
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         if (selectedCategory == "Suggested" || selectedCategory == "Faith") {
 
@@ -404,7 +561,8 @@ fun PromptLibraryScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "Was there a tradition, prayer, or belief that brought your family comfort?"
+                            text = "Was there a tradition, prayer, or belief that brought your family comfort?",
+                            fontWeight = FontWeight.Bold
                         )
 
                         Text(
@@ -412,26 +570,188 @@ fun PromptLibraryScreen(
                         )
                     }
 
+                    val faithPrompt = prompts.find {
+                        it.text == "Was there a tradition, prayer, or belief that brought your family comfort?"
+                    }
+
+                    val isSaved = faithPrompt?.status == PromptStatus.SAVED
+
                     OutlinedIconButton(
-                        onClick = { },
+                        onClick = {
+                            faithPrompt?.let { prompt ->
+                                if(!isSaved) {
+                                    viewModel.savePrompt(prompt.promptId)
+                                }
+                            }
+
+                        },
                         modifier = Modifier.size(36.dp)
                     ) {
-                        Text("+")
+                        Text(
+                            if(isSaved) "✓" else "+"
+                        )
                     }
                 }
             }
         }
 
+    if (myQuestions.isNotEmpty()) {
         Spacer(modifier = Modifier.height(16.dp))
 
-        OutlinedButton(
-        onClick = { },
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
-    ){
-        Text("Write your own question")
+        Text(
+            text = "My Questions",
+            style  = MaterialTheme.typography.titleMedium
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        myQuestions.forEach { prompt ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            ){
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.Start,
+                    verticalAlignment = Alignment.CenterVertically
+                ){
+                    Text(
+                        text = prompt.text,
+                        modifier = Modifier.weight(1f),
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    IconButton(
+                        onClick = {
+                            onRecord(prompt.text)
+                        }
+                    ){
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = "Record question"
+                        )
+                    }
+
+                    OutlinedIconButton(
+                        onClick = {
+                            if (prompt.status != PromptStatus.SAVED) {
+                                viewModel.savePrompt(prompt.promptId)
+                            }
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ){
+                        Text(
+                            if (prompt.status == PromptStatus.SAVED) "✓" else "+"
+                        )
+                    }
+                }
+            }
+        }
     }
+
+    if(savedPrompts.isNotEmpty()){
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = "Saved Questions",
+            style = MaterialTheme.typography.titleMedium
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        savedPrompts.forEach { prompt ->
+            Card(
+                modifier = Modifier.fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            ){
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.Start,
+                    verticalAlignment = Alignment.CenterVertically
+
+                ){
+                    Text(
+                        text = prompt.text,
+                        modifier = Modifier.weight(1f),
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    IconButton(
+                        onClick = {
+                            onRecord(prompt.text)
+                        }
+                    ){
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = "Record question"
+                        )
+                    }
+
+                    TextButton(
+                        onClick = {
+                            viewModel.removeSavedPrompt(prompt.promptId)
+                        }
+                    ){
+                        Text("Remove")
+                    }
+                }
+
+            }
+        }
+
+   }
+        Spacer(modifier = Modifier.height(16.dp))
+
+     if(!showOwnQuestion){
+         OutlinedButton(
+             onClick = {
+                 showOwnQuestion = true
+             },
+             modifier = Modifier
+                 .fillMaxWidth()
+                 .padding(vertical = 8.dp)
+         ){
+             Text("Write your own question")
+         }
+
+     }  else {
+         OutlinedTextField(
+             value = ownQuestion,
+             onValueChange = { value: String ->
+                 ownQuestion = value
+
+             },
+             modifier = Modifier.fillMaxWidth()
+                 .padding(vertical = 4.dp),
+             label = {
+                 Text("Your question")
+             },
+             placeholder = {
+                 Text("Type your own question...")
+             }
+         )
+
+         Button(
+             onClick = {
+                 if (ownQuestion.isNotBlank()) {
+                     viewModel.addUserPrompt(ownQuestion)
+                     ownQuestion = ""
+                     showOwnQuestion = false
+                   }
+
+                 },
+             modifier = Modifier.fillMaxWidth()
+
+         ){
+             Text("Save question")
+         }
+
+     }
 }
 }
 
